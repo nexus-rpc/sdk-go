@@ -51,17 +51,11 @@ func (l *depsInstaller) installDeps(ctx context.Context) error {
 	outString := strings.TrimRight(string(out), "\r\n")
 	deps := strings.Split(outString, " ")
 
-	for _, dep := range deps {
-		args := []string{"install", dep}
-
-		l.logger.Infow("Installing dependency", "dep", dep)
-		cmd := exec.CommandContext(ctx, "go", args...)
-		cmd.Dir = filepath.Join(projectRoot(), "tools")
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		if err := cmd.Run(); err != nil {
-			return err
-		}
-	}
-	return nil
+	args = append([]string{"install"}, deps...)
+	l.logger.Infow("Installing dependencies", "deps", deps)
+	cmd = exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = filepath.Join(projectRoot(), "tools")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
 }
