@@ -1,4 +1,4 @@
-package nexustypes
+package nexusapi
 
 import (
 	"encoding/json"

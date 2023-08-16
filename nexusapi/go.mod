@@ -1,4 +1,4 @@
-module github.com/nexus-rpc/sdk-go/nexustypes
+module github.com/nexus-rpc/sdk-go/nexusapi
 
 go 1.19
 

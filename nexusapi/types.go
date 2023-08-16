@@ -1,4 +1,4 @@
-package nexustypes
+package nexusapi
 
 import (
 	"encoding/json"
@@ -25,20 +25,28 @@ type (
 	// PayloadFailure is a variant of the Failure struct, useful for transferring encrypted or binary information.
 	// The Message field must be a Payload that can be decoded as string.
 	PayloadFailure struct {
+		// A simple text message encoded as a Payload.
 		Message Payload `json:"message"`
+		// Structured data encoded as a Payload.
 		Details Payload `json:"details"`
 	}
 
 	// RawFailure is a variant of the Failure struct that contains raw (unparsed) details.
 	RawFailure struct {
-		Message string          `json:"message"`
+		// A simple text message.
+		Message string `json:"message"`
+		// Unparsed structured data.
 		Details json.RawMessage `json:"details"`
 	}
 
+	// OperationState represents the variable states of an operation.
 	OperationState string
 
+	// OperationInfo conveys information about an operation.
 	OperationInfo struct {
-		ID    string         `json:"id"`
+		// ID of the operation.
+		ID string `json:"id"`
+		// State of the operation.
 		State OperationState `json:"state"`
 	}
 )
