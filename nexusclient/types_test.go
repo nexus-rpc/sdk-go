@@ -47,19 +47,17 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 		},
 		{
 			name:    "with payload",
-			message: Payload{Metadata: map[string]string{}, Data: []byte("message")},
+			message: Payload{Metadata: map[string]string{"a": "b"}, Data: []byte("message")},
 			details: Payload{Metadata: map[string]string{}, Data: []byte{0x00, 0x01}},
 			serialized: `{
 	"message": {
 		"metadata": {
-			"Content-Transfer-Encoding": "base64"
+			"a": "b"
 		},
 		"data": "bWVzc2FnZQ=="
 	},
 	"details": {
-		"metadata": {
-			"Content-Transfer-Encoding": "base64"
-		},
+		"metadata": {},
 		"data": "AAE="
 	}
 }`,
@@ -89,10 +87,6 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 			require.Equal(t, tc.details, details)
 		})
 	}
-}
-
-func TestPayload_JSONMarshalling(t *testing.T) {
-	// TODO: test transfer encoding cases
 }
 
 func TestOperationInfo_JSONMarshalling(t *testing.T) {
