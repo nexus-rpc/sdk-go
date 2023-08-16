@@ -20,15 +20,32 @@ type (
 		Data     string            `json:"data"`
 	}
 
+	// TODO: Find a better name for this
+	UntypedFailure struct {
+		Message any `json:"message"`
+		Details any `json:"details"`
+	}
+
 	Failure struct {
-		Message string          `json:"message"`
+		Message json.RawMessage `json:"message"`
 		Details json.RawMessage `json:"details"`
+	}
+
+	OperationState string
+
+	OperationInfo struct {
+		ID    string         `json:"id"`
+		State OperationState `json:"state"`
 	}
 )
 
 const (
 	contentTransferEncoding      = "Content-Transfer-Encoding"
 	contentTransferEncodingLower = "content-transfer-encoding"
+	OperationStateRunning        = OperationState("running")
+	OperationStateSucceeded      = OperationState("succeeded")
+	OperationStateFailed         = OperationState("failed")
+	OperationStateCanceled       = OperationState("canceled")
 )
 
 var ErrInvalidPayloadTransferEncoding = errors.New("metadata field Content-Transfer-Encoding not set to base64")
@@ -69,32 +86,4 @@ func (p *Payload) UnmarshalJSON(data []byte) error {
 		}
 	}
 	return ErrInvalidPayloadTransferEncoding
-}
-
-func MarshalFailure(message string, details any) ([]byte, error) {
-	data, err := json.Marshal(details)
-	if err != nil {
-		return nil, err
-	}
-	failure := &Failure{
-		Message: message,
-		Details: data,
-	}
-	return json.Marshal(failure)
-}
-
-func MarshalFailureIndent(message string, details any, prefix string, indent string) ([]byte, error) {
-	data, err := json.MarshalIndent(details, prefix, indent)
-	if err != nil {
-		return nil, err
-	}
-	failure := &Failure{
-		Message: message,
-		Details: data,
-	}
-	return json.MarshalIndent(failure, prefix, indent)
-}
-
-func (f *Failure) UnmarshalDetails(v any) error {
-	return json.Unmarshal(f.Details, v)
 }
