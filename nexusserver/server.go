@@ -1,9 +1,11 @@
 package nexusserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -22,11 +24,6 @@ type (
 		LogHandler slog.Handler
 	}
 
-	ResultWriter interface {
-		Header() http.Header
-		Write([]byte) (int, error)
-	}
-
 	StartOperationRequest struct {
 		Operation   string
 		RequestID   string
@@ -37,6 +34,7 @@ type (
 	GetOperationResultRequest struct {
 		Operation   string
 		OperationID string
+		Wait        bool
 		HTTPRequest *http.Request
 	}
 
@@ -52,13 +50,13 @@ type (
 		HTTPRequest *http.Request
 	}
 
-	AsyncOperation struct {
-		ID string
+	OperationResponse interface {
+		applyToHTTP(http.ResponseWriter, Marshaler, slog.Logger)
 	}
 
 	Handler interface {
-		StartOperation(context.Context, ResultWriter, *StartOperationRequest) error
-		GetOperationResult(context.Context, ResultWriter, *GetOperationResultRequest) error
+		StartOperation(context.Context, *StartOperationRequest) (OperationResponse, error)
+		GetOperationResult(context.Context, *GetOperationResultRequest) (OperationResponse, error)
 		GetOperationInfo(context.Context, *GetOperationInfoRequest) (nexusapi.OperationInfo, error)
 		CancelOperation(context.Context, *CancelOperationRequest) error
 	}
@@ -68,9 +66,14 @@ type (
 		logger  slog.Logger
 	}
 
-	resultWriter struct {
-		writeCalled bool
-		httpWriter  http.ResponseWriter
+	OperationResponseSync struct {
+		Header  http.Header
+		Content io.ReadCloser
+	}
+
+	OperationResponseAsync struct {
+		Header      http.Header
+		OperationID string
 	}
 )
 
@@ -82,17 +85,59 @@ const (
 
 var ErrInternal = errors.New("internal server error")
 
-func (w *resultWriter) Header() http.Header {
-	return w.httpWriter.Header()
+func (response *OperationResponseAsync) applyToHTTP(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+	info := nexusapi.OperationInfo{
+		ID:    response.OperationID,
+		State: nexusapi.OperationStateRunning,
+	}
+	bytes, err := marshaler(info)
+	if err != nil {
+		logger.Error("failed to serialize operation info", "error", err)
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	writer.Header().Set(HeaderContentType, ContentTypeJSON)
+	writer.WriteHeader(http.StatusCreated)
+
+	if _, err := writer.Write(bytes); err != nil {
+		logger.Error("failed to write response body", "error", err)
+	}
 }
 
-func (w *resultWriter) Write(b []byte) (int, error) {
-	w.writeCalled = true
-	return w.httpWriter.Write(b)
+func (response *OperationResponseSync) applyToHTTP(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+	header := writer.Header()
+	for k, v := range response.Header {
+		header[k] = v
+	}
+	defer response.Content.Close()
+	if _, err := io.Copy(writer, response.Content); err != nil {
+		logger.Error("failed to write response body", "error", err)
+	}
 }
 
-func (o AsyncOperation) Error() string {
-	return "async operation"
+func NewBytesOperationResultSync(header http.Header, b []byte) (*OperationResponseSync, error) {
+	return &OperationResponseSync{
+		Header:  header,
+		Content: io.NopCloser(bytes.NewReader(b)),
+	}, nil
+}
+
+func NewJSONOperationResultSync(header http.Header, v any) (*OperationResponseSync, error) {
+	// TODO: do we want an indent option too?
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	header = header.Clone()
+	if header == nil {
+		header = make(http.Header)
+	}
+	header.Set(HeaderContentType, ContentTypeJSON)
+	return &OperationResponseSync{
+		Header:  header,
+		Content: io.NopCloser(bytes.NewReader(b)),
+	}, nil
 }
 
 func (h *httpHandler) WriteFailure(writer http.ResponseWriter, err error) {
@@ -138,34 +183,11 @@ func (h *httpHandler) StartOperation(writer http.ResponseWriter, request *http.R
 		CallbackURL: request.URL.Query().Get(nexusapi.QueryCallbackURL),
 		HTTPRequest: request,
 	}
-	rw := resultWriter{httpWriter: writer}
-
-	if err := h.options.Handler.StartOperation(request.Context(), &rw, handlerRequest); err != nil {
-		if rw.writeCalled {
-			h.logger.Error("ignoring error because handler wrote response body", "error", err)
-			return
-		}
-		var async *AsyncOperation
-		if errors.As(err, &async) {
-			info := nexusapi.OperationInfo{
-				ID:    async.ID,
-				State: nexusapi.OperationStateRunning,
-			}
-			bytes, err := h.options.Marshaler(info)
-			if err != nil {
-				writer.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			writer.Header().Set(HeaderContentType, ContentTypeJSON)
-			writer.WriteHeader(http.StatusCreated)
-
-			if _, err := writer.Write(bytes); err != nil {
-				h.logger.Error("failed to write response body", "error", err)
-			}
-			return
-		}
+	response, err := h.options.Handler.StartOperation(request.Context(), handlerRequest)
+	if err != nil {
 		h.WriteFailure(writer, err)
+	} else {
+		response.applyToHTTP(writer, h.options.Marshaler, h.logger)
 	}
 }
 
@@ -174,14 +196,12 @@ func (h *httpHandler) GetOperationResult(writer http.ResponseWriter, request *ht
 	prefix, operationID := path.Split(path.Dir(request.URL.Path))
 	operation := path.Base(prefix)
 	handlerRequest := &GetOperationResultRequest{Operation: operation, OperationID: operationID, HTTPRequest: request}
-	rw := resultWriter{httpWriter: writer}
 
-	if err := h.options.Handler.GetOperationResult(request.Context(), &rw, handlerRequest); err != nil {
-		if rw.writeCalled {
-			h.logger.Error("ignoring error because handler wrote response body", "error", err)
-			return
-		}
+	response, err := h.options.Handler.GetOperationResult(request.Context(), handlerRequest)
+	if err != nil {
 		h.WriteFailure(writer, err)
+	} else {
+		response.applyToHTTP(writer, h.options.Marshaler, h.logger)
 	}
 }
 

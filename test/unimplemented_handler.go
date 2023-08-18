@@ -9,11 +9,11 @@ import (
 
 type unimplementedHandler struct{}
 
-func (h *unimplementedHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
+func (h *unimplementedHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
 	panic("unimplemented")
 }
 
-func (h *unimplementedHandler) GetOperationResult(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.GetOperationResultRequest) error {
+func (h *unimplementedHandler) GetOperationResult(ctx context.Context, request *nexusserver.GetOperationResultRequest) (nexusserver.OperationResponse, error) {
 	panic("unimplemented")
 }
 

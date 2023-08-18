@@ -23,25 +23,18 @@ type successHandler struct {
 	unimplementedHandler
 }
 
-func (h *successHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
+func (h *successHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
 	if request.Operation != "foo" {
-		return fmt.Errorf("unexpected operation: %s", request.Operation)
+		return nil, fmt.Errorf("unexpected operation: %s", request.Operation)
 	}
 	if request.CallbackURL != "http://test/callback" {
-		return fmt.Errorf("unexpected callback URL: %s", request.CallbackURL)
+		return nil, fmt.Errorf("unexpected callback URL: %s", request.CallbackURL)
 	}
 
-	body, err := io.ReadAll(request.HTTPRequest.Body)
-	if err != nil {
-		return err
-	}
-	writer.Header().Add("Echo", request.HTTPRequest.Header.Get("Echo"))
-	_, err = writer.Write(body)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return &nexusserver.OperationResponseSync{
+		Header:  request.HTTPRequest.Header.Clone(),
+		Content: request.HTTPRequest.Body,
+	}, nil
 }
 
 func TestSuccess(t *testing.T) {
@@ -75,9 +68,8 @@ type requestIDEchoHandler struct {
 	unimplementedHandler
 }
 
-func (h *requestIDEchoHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
-	writer.Write([]byte(request.RequestID))
-	return nil
+func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+	return nexusserver.NewBytesOperationResultSync(nil, []byte(request.RequestID))
 }
 
 func TestClientRequestID(t *testing.T) {
@@ -151,45 +143,42 @@ func TestClientRequestID(t *testing.T) {
 	}
 }
 
-type writeAndFailHandler struct {
+type jsonHandler struct {
 	unimplementedHandler
 }
 
-func (h *writeAndFailHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
-	writer.Write([]byte("failure ignored"))
-	return &nexusapi.UnsuccessfulOperationError{
-		State: nexusapi.OperationStateFailed,
-		Failure: nexusapi.Failure{
-			Message: "test",
-		},
-	}
+func (h *jsonHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+	return nexusserver.NewJSONOperationResultSync(nil, "success")
 }
 
-func TestHandlerUsesWriterAndReportsFailure(t *testing.T) {
+func TestJSON(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
-	client, listener := setup(t, &writeAndFailHandler{})
+	client, listener := setup(t, &jsonHandler{})
 	defer listener.Close()
 
 	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
-	response, err := handle.Result(ctx)
-	require.NoError(t, err)
 	defer handle.Close()
+	response, err := handle.Result(ctx)
+	require.Equal(t, "application/json", response.Header.Get("Content-Type"))
+	require.NoError(t, err)
 	responseBody, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
-	require.Equal(t, []byte("failure ignored"), responseBody)
+	require.Equal(t, []byte(`"success"`), responseBody)
 }
 
 type asyncHandler struct {
 	unimplementedHandler
 }
 
-func (h *asyncHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
-	return &nexusserver.AsyncOperation{ID: "async"}
+func (h *asyncHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+	return &nexusserver.OperationResponseAsync{
+		OperationID: "async",
+	}, nil
 }
 
 func TestAsync(t *testing.T) {
@@ -204,7 +193,6 @@ func TestAsync(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer handle.Close()
-	require.Equal(t, "async", handle.ID())
 	require.Equal(t, nexusapi.OperationStateRunning, handle.State())
 }
 
@@ -212,8 +200,9 @@ type unsuccessfulHandler struct {
 	unimplementedHandler
 }
 
-func (h *unsuccessfulHandler) StartOperation(ctx context.Context, writer nexusserver.ResultWriter, request *nexusserver.StartOperationRequest) error {
-	return &nexusapi.UnsuccessfulOperationError{
+func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+	return nil, &nexusapi.UnsuccessfulOperationError{
+		// We're passing the desired state via request ID in this test.
 		State: nexusapi.OperationState(request.RequestID),
 		Failure: nexusapi.Failure{
 			Message: "intentional",
