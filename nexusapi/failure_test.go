@@ -12,19 +12,23 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 	type testcase struct {
 		message    string
 		details    any
+		metadata   map[string]string
 		serialized string
 	}
 	cases := []testcase{
 		{
-			message: "simple",
-			details: "details",
+			message:  "simple",
+			details:  "details",
+			metadata: map[string]string{},
 			serialized: `{
 	"message": "simple",
+	"metadata": {},
 	"details": "details"
 }`,
 		},
 		{
-			message: "complex",
+			message:  "complex",
+			metadata: map[string]string{"meta": "data"},
 			details: struct {
 				M map[string]string
 				I int64
@@ -34,6 +38,9 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 			},
 			serialized: `{
 	"message": "complex",
+	"metadata": {
+		"meta": "data"
+	},
 	"details": {
 		"M": {
 			"a": "b"
@@ -46,15 +53,18 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.message, func(t *testing.T) {
-			source, err := json.MarshalIndent(Failure{tc.message, tc.details}, "", "\t")
+			serializedDetails, err := json.MarshalIndent(tc.details, "", "\t")
+			require.NoError(t, err)
+			source, err := json.MarshalIndent(Failure{tc.message, tc.metadata, serializedDetails}, "", "\t")
 			require.NoError(t, err)
 			require.Equal(t, tc.serialized, string(source))
 
-			var failure RawFailure
+			var failure Failure
 			err = json.Unmarshal(source, &failure)
 			require.NoError(t, err)
 
 			require.Equal(t, tc.message, failure.Message)
+			require.Equal(t, tc.metadata, failure.Metadata)
 
 			detailsPointer := reflect.New(reflect.TypeOf(tc.details)).Interface()
 			err = json.Unmarshal(failure.Details, detailsPointer)
@@ -63,35 +73,6 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 			require.Equal(t, tc.details, details)
 		})
 	}
-}
-
-func TestPayloadFailure_JSONMarshalling(t *testing.T) {
-	failure := PayloadFailure{
-		Message: Payload{Metadata: map[string]string{"a": "b"}, Data: []byte("message")},
-		Details: Payload{Metadata: map[string]string{}, Data: []byte{0x00, 0x01}},
-	}
-	serialized := `{
-	"message": {
-		"metadata": {
-			"a": "b"
-		},
-		"data": "bWVzc2FnZQ=="
-	},
-	"details": {
-		"metadata": {},
-		"data": "AAE="
-	}
-}`
-	source, err := json.MarshalIndent(failure, "", "\t")
-	require.NoError(t, err)
-	require.Equal(t, serialized, string(source))
-
-	var decoded PayloadFailure
-	err = json.Unmarshal(source, &decoded)
-	require.NoError(t, err)
-
-	require.Equal(t, failure.Message, decoded.Message)
-	require.Equal(t, failure.Details, decoded.Details)
 }
 
 func TestOperationInfo_JSONMarshalling(t *testing.T) {
