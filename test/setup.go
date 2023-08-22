@@ -37,3 +37,25 @@ func setup(t *testing.T, handler nexusserver.Handler) (ctx context.Context, clie
 		listener.Close()
 	}
 }
+
+func setupForCompletion(t *testing.T, handler nexusserver.CompletionHandler) (ctx context.Context, client *nexusclient.Client, callbackURL string, teardown func()) {
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+
+	httpHandler := nexusserver.NewCompletionHTTPHandler(nexusserver.CompletionOptions{
+		Handler: handler,
+	})
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	callbackURL = fmt.Sprintf("http://%s/callback?a=b", listener.Addr().String())
+
+	client, err = nexusclient.NewClient(nexusclient.Options{})
+	require.NoError(t, err)
+
+	go http.Serve(listener, httpHandler)
+
+	return ctx, client, callbackURL, func() {
+		cancel()
+		listener.Close()
+	}
+}

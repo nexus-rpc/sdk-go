@@ -11,9 +11,6 @@ import (
 func TestServiceBaseURL(t *testing.T) {
 	var err error
 
-	_, err = NewClient(Options{})
-	require.ErrorIs(t, err, ErrEmptyServiceBaseURL)
-
 	_, err = NewClient(Options{ServiceBaseURL: "-http://invalid"})
 	var urlError *url.Error
 	require.ErrorAs(t, err, &urlError)

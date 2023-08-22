@@ -1,6 +1,7 @@
 package nexusclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +19,7 @@ import (
 
 type Options struct {
 	// Base URL of the service.
+	// Optional, if not provided, this client can only be used to deliver operation completions.
 	ServiceBaseURL string
 	// An Client to use for making HTTP requests.
 	// Defaults to http.DefaultClient.
@@ -39,22 +40,22 @@ type Client struct {
 	logger         slog.Logger
 }
 
-var ErrEmptyServiceBaseURL = errors.New("empty ServiceBaseURL")
 var ErrInvalidURLScheme = errors.New("invalid URL scheme")
 
 func NewClient(options Options) (*Client, error) {
 	if options.HTTPClient == nil {
 		options.HTTPClient = http.DefaultClient
 	}
-	if options.ServiceBaseURL == "" {
-		return nil, ErrEmptyServiceBaseURL
-	}
-	serviceBaseURL, err := url.Parse(options.ServiceBaseURL)
-	if err != nil {
-		return nil, err
-	}
-	if serviceBaseURL.Scheme != "http" && serviceBaseURL.Scheme != "https" {
-		return nil, ErrInvalidURLScheme
+	var serviceBaseURL *url.URL
+	if options.ServiceBaseURL != "" {
+		var err error
+		serviceBaseURL, err = url.Parse(options.ServiceBaseURL)
+		if err != nil {
+			return nil, err
+		}
+		if serviceBaseURL.Scheme != "http" && serviceBaseURL.Scheme != "https" {
+			return nil, ErrInvalidURLScheme
+		}
 	}
 	if options.LogHandler == nil {
 		options.LogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
@@ -63,6 +64,7 @@ func NewClient(options Options) (*Client, error) {
 		options.GetResultMaxRequestTimeout = time.Minute
 	}
 	// TODO: default user agent (not here, in all requests constructed)
+	// TODO: assert that service base URL is set for GetHandle and StartOperation methods.
 
 	return &Client{
 		Options:        options,
@@ -179,7 +181,7 @@ type UnexpectedResponseError struct {
 }
 
 func (e *UnexpectedResponseError) Error() string {
-	if strings.HasPrefix(e.Response.Header.Get(nexusapi.HeaderContentType), nexusapi.ContentTypeJSON) {
+	if nexusapi.IsContentTypeJSON(e.Response.Header) {
 		var failure nexusapi.Failure
 		if err := json.Unmarshal(e.ResponseBody, &failure); err == nil && failure.Message != "" {
 			return fmt.Sprintf("%s: %s", e.Message, failure.Message)
@@ -441,7 +443,7 @@ func (c *Client) cancelOperation(ctx context.Context, request cancelOperationReq
 }
 
 func (c *Client) operationInfoFromResponse(response *http.Response) (*nexusapi.OperationInfo, error) {
-	if response.Header.Get(nexusapi.HeaderContentType) != nexusapi.ContentTypeJSON {
+	if !nexusapi.IsContentTypeJSON(response.Header) {
 		return nil, c.newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get(nexusapi.HeaderContentType)), response)
 	}
 	var info nexusapi.OperationInfo
@@ -457,7 +459,7 @@ func (c *Client) operationInfoFromResponse(response *http.Response) (*nexusapi.O
 }
 
 func (c *Client) failureFromResponse(response *http.Response) (*nexusapi.Failure, error) {
-	if response.Header.Get(nexusapi.HeaderContentType) != nexusapi.ContentTypeJSON {
+	if !nexusapi.IsContentTypeJSON(response.Header) {
 		return nil, c.newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get(nexusapi.HeaderContentType)), response)
 	}
 	body, err := io.ReadAll(response.Body)
@@ -481,4 +483,96 @@ func (c *Client) getUnsuccessfulStateFromHeader(response *http.Response) (nexusa
 	default:
 		return state, c.newUnexpectedResponseError(fmt.Sprintf("invalid operation state header: %q", state), response)
 	}
+}
+
+type OperationCompletion interface {
+	io.Closer
+	applyToHTTPRequest(*http.Request) error
+}
+
+type SuccessfulOperationCompletion struct {
+	Header http.Header
+	Body   io.ReadCloser
+}
+
+type UnsuccessfulOperationCompletion struct {
+	State   nexusapi.OperationState
+	Header  http.Header
+	Failure *nexusapi.Failure
+}
+
+func NewBytesSuccessfulOperationCompletion(header http.Header, b []byte) *SuccessfulOperationCompletion {
+	return &SuccessfulOperationCompletion{
+		Header: header,
+		Body:   io.NopCloser(bytes.NewReader(b)),
+	}
+}
+
+func NewJSONSuccessfulOperationCompletion(header http.Header, v any) (*SuccessfulOperationCompletion, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SuccessfulOperationCompletion{
+		Header: header,
+		Body:   io.NopCloser(bytes.NewReader(b)),
+	}, nil
+}
+
+func (c *SuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request) error {
+	if c.Header != nil {
+		request.Header = c.Header.Clone()
+	}
+	request.Header.Set(nexusapi.HeaderOperationState, string(nexusapi.OperationStateSucceeded))
+	request.Body = c.Body
+	return nil
+}
+
+func (c *SuccessfulOperationCompletion) Close() error {
+	return c.Body.Close()
+}
+
+func (c *UnsuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request) error {
+	if c.Header != nil {
+		request.Header = c.Header.Clone()
+	}
+	request.Header.Set(nexusapi.HeaderOperationState, string(c.State))
+	request.Header.Set(nexusapi.HeaderContentType, nexusapi.ContentTypeJSON)
+
+	b, err := json.Marshal(c.Failure)
+	if err != nil {
+		return err
+	}
+
+	request.Body = io.NopCloser(bytes.NewReader(b))
+	return nil
+}
+
+func (c *UnsuccessfulOperationCompletion) Close() error {
+	return nil
+}
+
+func (c *Client) DeliverCompletion(ctx context.Context, url string, completion OperationCompletion) error {
+	// while the http client is expected to close the body, we close in case request creation fails
+	defer completion.Close()
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return err
+	}
+	if err := completion.applyToHTTPRequest(httpReq); err != nil {
+		return err
+	}
+
+	response, err := c.Options.HTTPClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
+	}
+
+	return nil
 }
