@@ -17,7 +17,7 @@ func (h *unimplementedHandler) GetOperationResult(ctx context.Context, request *
 	panic("unimplemented")
 }
 
-func (h *unimplementedHandler) GetOperationInfo(ctx context.Context, request *nexusserver.GetOperationInfoRequest) (nexusapi.OperationInfo, error) {
+func (h *unimplementedHandler) GetOperationInfo(ctx context.Context, request *nexusserver.GetOperationInfoRequest) (*nexusapi.OperationInfo, error) {
 	panic("unimplemented")
 }
 

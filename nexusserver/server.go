@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nexus-rpc/sdk-go/nexusapi"
@@ -19,9 +21,10 @@ type (
 	Marshaler = func(v any) ([]byte, error)
 
 	Options struct {
-		Handler    Handler
-		Marshaler  Marshaler
-		LogHandler slog.Handler
+		Handler                    Handler
+		Marshaler                  Marshaler
+		LogHandler                 slog.Handler
+		GetResultMaxRequestTimeout time.Duration
 	}
 
 	StartOperationRequest struct {
@@ -51,13 +54,20 @@ type (
 	}
 
 	OperationResponse interface {
-		applyToHTTP(http.ResponseWriter, Marshaler, slog.Logger)
+		applyToStartResponse(http.ResponseWriter, Marshaler, slog.Logger)
+		applyToGetResultResponse(http.ResponseWriter, Marshaler, slog.Logger)
+	}
+
+	HandlerError struct {
+		// Defaults to 500
+		StatusCode int
+		Failure    *nexusapi.Failure
 	}
 
 	Handler interface {
 		StartOperation(context.Context, *StartOperationRequest) (OperationResponse, error)
 		GetOperationResult(context.Context, *GetOperationResultRequest) (OperationResponse, error)
-		GetOperationInfo(context.Context, *GetOperationInfoRequest) (nexusapi.OperationInfo, error)
+		GetOperationInfo(context.Context, *GetOperationInfoRequest) (*nexusapi.OperationInfo, error)
 		CancelOperation(context.Context, *CancelOperationRequest) error
 	}
 
@@ -83,11 +93,13 @@ const (
 	ContentTypeJSON      = nexusapi.ContentTypeJSON
 )
 
-var ErrInternal = errors.New("internal server error")
+func (e *HandlerError) Error() string {
+	return fmt.Sprintf("%d: %s", e.StatusCode, e.Failure.Message)
+}
 
-func (response *OperationResponseAsync) applyToHTTP(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+func (r *OperationResponseAsync) applyToStartResponse(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
 	info := nexusapi.OperationInfo{
-		ID:    response.OperationID,
+		ID:    r.OperationID,
 		State: nexusapi.OperationStateRunning,
 	}
 	bytes, err := marshaler(info)
@@ -105,15 +117,25 @@ func (response *OperationResponseAsync) applyToHTTP(writer http.ResponseWriter, 
 	}
 }
 
-func (response *OperationResponseSync) applyToHTTP(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+func (r *OperationResponseAsync) applyToGetResultResponse(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+	writer.Header().Set(HeaderOperationState, string(nexusapi.OperationStateRunning))
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (r *OperationResponseSync) applyToStartResponse(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
 	header := writer.Header()
-	for k, v := range response.Header {
+	for k, v := range r.Header {
 		header[k] = v
 	}
-	defer response.Content.Close()
-	if _, err := io.Copy(writer, response.Content); err != nil {
+	defer r.Content.Close()
+	if _, err := io.Copy(writer, r.Content); err != nil {
 		logger.Error("failed to write response body", "error", err)
 	}
+}
+
+func (r *OperationResponseSync) applyToGetResultResponse(writer http.ResponseWriter, marshaler Marshaler, logger slog.Logger) {
+	writer.Header().Set(HeaderOperationState, string(nexusapi.OperationStateSucceeded))
+	r.applyToStartResponse(writer, marshaler, logger)
 }
 
 func NewBytesOperationResultSync(header http.Header, b []byte) (*OperationResponseSync, error) {
@@ -140,36 +162,46 @@ func NewJSONOperationResultSync(header http.Header, v any) (*OperationResponseSy
 	}, nil
 }
 
+// TODO: test me
 func (h *httpHandler) WriteFailure(writer http.ResponseWriter, err error) {
-	var failure nexusapi.Failure
+	var failure *nexusapi.Failure
 	var unsuccessfulError *nexusapi.UnsuccessfulOperationError
+	var handlerError *HandlerError
 	var operationState nexusapi.OperationState
+	statusCode := http.StatusInternalServerError
 
 	if errors.As(err, &unsuccessfulError) {
 		operationState = unsuccessfulError.State
 		failure = unsuccessfulError.Failure
-	} else {
-		failure = nexusapi.Failure{
-			Message: err.Error(),
+		statusCode = nexusapi.StatusOperationFailed
+
+		if operationState == nexusapi.OperationStateFailed || operationState == nexusapi.OperationStateCanceled {
+			writer.Header().Set(HeaderOperationState, string(operationState))
+		} else {
+			h.logger.Error("unexpected operation state", "state", operationState)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-	}
-
-	bytes, err := h.options.Marshaler(failure)
-	if err != nil {
-		h.logger.Error("failed to marshal failure", "error", err)
-		writer.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	writer.Header().Set(HeaderContentType, ContentTypeJSON)
-
-	if operationState == nexusapi.OperationStateFailed || operationState == nexusapi.OperationStateCanceled {
-		writer.Header().Set(HeaderOperationState, string(operationState))
-		writer.WriteHeader(nexusapi.StatusOperationFailed)
+	} else if errors.As(err, &handlerError) {
+		failure = handlerError.Failure
+		statusCode = handlerError.StatusCode
 	} else {
-		h.logger.Error("unexpected operation state", "state", operationState)
-		writer.WriteHeader(http.StatusInternalServerError)
+		h.logger.Error("handler failed", "error", err)
 	}
+
+	var bytes []byte
+	if failure != nil {
+		bytes, err = h.options.Marshaler(failure)
+		if err != nil {
+			h.logger.Error("failed to marshal failure", "error", err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writer.Header().Set(HeaderContentType, ContentTypeJSON)
+	}
+
+	writer.WriteHeader(statusCode)
+
 	if _, err := writer.Write(bytes); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}
@@ -187,7 +219,7 @@ func (h *httpHandler) StartOperation(writer http.ResponseWriter, request *http.R
 	if err != nil {
 		h.WriteFailure(writer, err)
 	} else {
-		response.applyToHTTP(writer, h.options.Marshaler, h.logger)
+		response.applyToStartResponse(writer, h.options.Marshaler, h.logger)
 	}
 }
 
@@ -197,11 +229,36 @@ func (h *httpHandler) GetOperationResult(writer http.ResponseWriter, request *ht
 	operation := path.Base(prefix)
 	handlerRequest := &GetOperationResultRequest{Operation: operation, OperationID: operationID, HTTPRequest: request}
 
-	response, err := h.options.Handler.GetOperationResult(request.Context(), handlerRequest)
+	ctx := request.Context()
+	waitStr := request.URL.Query().Get(nexusapi.QueryWait)
+	if waitStr != "" {
+		waitDuration, err := time.ParseDuration(waitStr)
+		if err != nil {
+			h.logger.Warn("invalid wait duration query parameter", "wait", waitStr)
+			h.WriteFailure(writer, &HandlerError{
+				StatusCode: http.StatusBadRequest,
+				Failure: &nexusapi.Failure{
+					Message: "invalid wait query parameter",
+				},
+			})
+			return
+		}
+
+		var cancel func()
+		if waitDuration > h.options.GetResultMaxRequestTimeout {
+			waitDuration = h.options.GetResultMaxRequestTimeout
+		}
+		// TODO: reduce duration a bit to give some grace time?
+		ctx, cancel = context.WithTimeout(ctx, waitDuration)
+		handlerRequest.Wait = true
+		defer cancel()
+	}
+
+	response, err := h.options.Handler.GetOperationResult(ctx, handlerRequest)
 	if err != nil {
 		h.WriteFailure(writer, err)
 	} else {
-		response.applyToHTTP(writer, h.options.Marshaler, h.logger)
+		response.applyToGetResultResponse(writer, h.options.Marshaler, h.logger)
 	}
 }
 
@@ -218,8 +275,7 @@ func (h *httpHandler) GetOperationInfo(writer http.ResponseWriter, request *http
 
 	bytes, err := h.options.Marshaler(info)
 	if err != nil {
-		h.logger.Error("failed to marshal operation info", "error", err)
-		h.WriteFailure(writer, ErrInternal)
+		h.WriteFailure(writer, fmt.Errorf("failed to marshal operation info: %w", err))
 		return
 	}
 	writer.Header().Set(HeaderContentType, ContentTypeJSON)
@@ -250,6 +306,9 @@ func NewHTTPHandler(options Options) http.Handler {
 	}
 	if options.LogHandler == nil {
 		options.LogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+	}
+	if options.GetResultMaxRequestTimeout == 0 {
+		options.GetResultMaxRequestTimeout = time.Minute
 	}
 	handler := &httpHandler{options, *slog.New(options.LogHandler)}
 	router := mux.NewRouter()

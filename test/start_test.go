@@ -3,12 +3,9 @@ package test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexusapi"
@@ -17,18 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testTimeout = time.Second * 5
-
 type successHandler struct {
 	unimplementedHandler
 }
 
 func (h *successHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
 	if request.Operation != "foo" {
-		return nil, fmt.Errorf("unexpected operation: %s", request.Operation)
+		return nil, newBadRequestError("unexpected operation: %s", request.Operation)
 	}
 	if request.CallbackURL != "http://test/callback" {
-		return nil, fmt.Errorf("unexpected callback URL: %s", request.CallbackURL)
+		return nil, newBadRequestError("unexpected callback URL: %s", request.CallbackURL)
 	}
 
 	return &nexusserver.OperationResponseSync{
@@ -38,11 +33,8 @@ func (h *successHandler) StartOperation(ctx context.Context, request *nexusserve
 }
 
 func TestSuccess(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	client, listener := setup(t, &successHandler{})
-	defer listener.Close()
+	ctx, client, teardown := setup(t, &successHandler{})
+	defer teardown()
 
 	requestBody := []byte{0x00, 0x01}
 
@@ -53,11 +45,11 @@ func TestSuccess(t *testing.T) {
 		Body:        bytes.NewReader(requestBody),
 	})
 	require.NoError(t, err)
+	defer handle.Close()
 	require.Equal(t, "", handle.ID())
 	require.Equal(t, nexusapi.OperationStateSucceeded, handle.State())
-	response, err := handle.Result(ctx)
+	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
 	require.NoError(t, err)
-	defer handle.Close()
 	require.Equal(t, "test", response.Header.Get("Echo"))
 	responseBody, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
@@ -73,11 +65,8 @@ func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *nexu
 }
 
 func TestClientRequestID(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	client, listener := setup(t, &requestIDEchoHandler{})
-	defer listener.Close()
+	ctx, client, teardown := setup(t, &requestIDEchoHandler{})
+	defer teardown()
 
 	type testcase struct {
 		name      string
@@ -133,7 +122,7 @@ func TestClientRequestID(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			handle, err := client.StartOperation(ctx, c.request)
 			require.NoError(t, err)
-			response, err := handle.Result(ctx)
+			response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
 			require.NoError(t, err)
 			defer handle.Close()
 			responseBody, err := io.ReadAll(response.Body)
@@ -152,18 +141,15 @@ func (h *jsonHandler) StartOperation(ctx context.Context, request *nexusserver.S
 }
 
 func TestJSON(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	client, listener := setup(t, &jsonHandler{})
-	defer listener.Close()
+	ctx, client, teardown := setup(t, &jsonHandler{})
+	defer teardown()
 
 	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
 	defer handle.Close()
-	response, err := handle.Result(ctx)
+	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
 	require.Equal(t, "application/json", response.Header.Get("Content-Type"))
 	require.NoError(t, err)
 	responseBody, err := io.ReadAll(response.Body)
@@ -182,11 +168,8 @@ func (h *asyncHandler) StartOperation(ctx context.Context, request *nexusserver.
 }
 
 func TestAsync(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	client, listener := setup(t, &asyncHandler{})
-	defer listener.Close()
+	ctx, client, teardown := setup(t, &asyncHandler{})
+	defer teardown()
 
 	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
@@ -204,18 +187,15 @@ func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *nexus
 	return nil, &nexusapi.UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
 		State: nexusapi.OperationState(request.RequestID),
-		Failure: nexusapi.Failure{
+		Failure: &nexusapi.Failure{
 			Message: "intentional",
 		},
 	}
 }
 
 func TestUnsuccessful(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	client, listener := setup(t, &unsuccessfulHandler{})
-	defer listener.Close()
+	ctx, client, teardown := setup(t, &unsuccessfulHandler{})
+	defer teardown()
 
 	cases := []string{"canceled", "failed"}
 	for _, c := range cases {
@@ -225,26 +205,9 @@ func TestUnsuccessful(t *testing.T) {
 		})
 		require.NoError(t, err)
 		defer handle.Close()
-		_, err = handle.Result(ctx)
+		_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{})
 		var unsuccessfulError *nexusapi.UnsuccessfulOperationError
 		require.ErrorAs(t, err, &unsuccessfulError)
 		require.Equal(t, nexusapi.OperationState(c), unsuccessfulError.State)
 	}
-}
-
-func setup(t *testing.T, handler nexusserver.Handler) (*nexusclient.Client, io.Closer) {
-	httpHandler := nexusserver.NewHTTPHandler(nexusserver.Options{
-		Handler: handler,
-	})
-
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	client, err := nexusclient.NewClient(nexusclient.Options{
-		ServiceBaseURL: fmt.Sprintf("http://%s/", listener.Addr().String()),
-	})
-	require.NoError(t, err)
-
-	go http.Serve(listener, httpHandler)
-
-	return client, listener
 }

@@ -19,7 +19,7 @@ type (
 
 	UnsuccessfulOperationError struct {
 		State   OperationState
-		Failure Failure
+		Failure *Failure
 	}
 )
 
