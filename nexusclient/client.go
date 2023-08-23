@@ -43,7 +43,10 @@ type Client struct {
 	logger         slog.Logger
 }
 
-var ErrInvalidURLScheme = errors.New("invalid URL scheme")
+var (
+	ErrEmptyServiceBaseURL = errors.New("empty serviceBaseURL")
+	ErrInvalidURLScheme    = errors.New("invalid URL scheme")
+)
 
 func NewClient(options Options) (*Client, error) {
 	if options.HTTPClient == nil {
@@ -70,7 +73,6 @@ func NewClient(options Options) (*Client, error) {
 		options.Marshaler = nexusapi.DefaultMarshaler
 	}
 	// TODO: default user agent (not here, in all requests constructed)
-	// TODO: assert that service base URL is set for GetHandle and StartOperation methods.
 
 	return &Client{
 		Options:        options,
@@ -209,12 +211,11 @@ func (c *Client) newUnexpectedResponseError(message string, response *http.Respo
 	}
 }
 
-type StartOperationRequest struct {
-	Operation   string
-	CallbackURL string
-	RequestID   string
-	Header      http.Header
-	Body        io.Reader
+func (c *Client) joinURL(parts ...string) (*url.URL, error) {
+	if c.serviceBaseURL == nil {
+		return nil, ErrEmptyServiceBaseURL
+	}
+	return c.serviceBaseURL.JoinPath(parts...), nil
 }
 
 func (c *Client) GetHandle(operation string, operationID string) *OperationHandle {
@@ -225,8 +226,19 @@ func (c *Client) GetHandle(operation string, operationID string) *OperationHandl
 	}
 }
 
+type StartOperationRequest struct {
+	Operation   string
+	CallbackURL string
+	RequestID   string
+	Header      http.Header
+	Body        io.Reader
+}
+
 func (c *Client) StartOperation(ctx context.Context, request StartOperationRequest) (*OperationHandle, error) {
-	url := c.serviceBaseURL.JoinPath(request.Operation)
+	url, err := c.joinURL(request.Operation)
+	if err != nil {
+		return nil, err
+	}
 	if request.CallbackURL != "" {
 		q := url.Query()
 		q.Set(nexusapi.QueryCallbackURL, request.CallbackURL)
@@ -313,7 +325,10 @@ type getOperationInfoRequest struct {
 }
 
 func (c *Client) getOperationInfo(ctx context.Context, request getOperationInfoRequest) (*nexusapi.OperationInfo, error) {
-	url := c.serviceBaseURL.JoinPath(request.Operation, request.OperationID)
+	url, err := c.joinURL(request.Operation, request.OperationID)
+	if err != nil {
+		return nil, err
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
@@ -341,7 +356,10 @@ type getOperationResultRequest struct {
 }
 
 func (c *Client) getOperationResult(ctx context.Context, request getOperationResultRequest) (*http.Response, error) {
-	url := c.serviceBaseURL.JoinPath(request.Operation, request.OperationID, "result")
+	url, err := c.joinURL(request.Operation, request.OperationID, "result")
+	if err != nil {
+		return nil, err
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
@@ -430,7 +448,10 @@ type cancelOperationRequest struct {
 }
 
 func (c *Client) cancelOperation(ctx context.Context, request cancelOperationRequest) error {
-	url := c.serviceBaseURL.JoinPath(request.Operation, request.OperationID, "cancel")
+	url, err := c.joinURL(request.Operation, request.OperationID, "cancel")
+	if err != nil {
+		return err
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
 	if err != nil {
 		return err
