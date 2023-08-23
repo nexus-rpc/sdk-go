@@ -25,6 +25,9 @@ func (h *successHandler) StartOperation(ctx context.Context, request *nexusserve
 	if request.CallbackURL != "http://test/callback" {
 		return nil, newBadRequestError("unexpected callback URL: %s", request.CallbackURL)
 	}
+	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	}
 
 	return &nexusserver.OperationResponseSync{
 		Header:  request.HTTPRequest.Header.Clone(),

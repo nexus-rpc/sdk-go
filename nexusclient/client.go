@@ -44,6 +44,9 @@ type Client struct {
 }
 
 var (
+	Version                = "dev" // TODO: Actual version to be set by goreleaser
+	UserAgent              = fmt.Sprintf("Nexus-go-sdk/%s", Version)
+	headerUserAgent        = "User-Agent"
 	ErrEmptyServiceBaseURL = errors.New("empty serviceBaseURL")
 	ErrInvalidURLScheme    = errors.New("invalid URL scheme")
 )
@@ -72,7 +75,6 @@ func NewClient(options Options) (*Client, error) {
 	if options.Marshaler == nil {
 		options.Marshaler = nexusapi.DefaultMarshaler
 	}
-	// TODO: default user agent (not here, in all requests constructed)
 
 	return &Client{
 		Options:        options,
@@ -262,6 +264,7 @@ func (c *Client) StartOperation(ctx context.Context, request StartOperationReque
 	}
 	httpReq.Header.Set(nexusapi.HeaderRequestID, request.RequestID)
 
+	httpReq.Header.Set(headerUserAgent, UserAgent)
 	response, err := c.Options.HTTPClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -333,8 +336,11 @@ func (c *Client) getOperationInfo(ctx context.Context, request getOperationInfoR
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header = request.Header.Clone()
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
 
+	httpReq.Header.Set(headerUserAgent, UserAgent)
 	response, err := c.Options.HTTPClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -364,7 +370,10 @@ func (c *Client) getOperationResult(ctx context.Context, request getOperationRes
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header = request.Header.Clone()
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
+	httpReq.Header.Set(headerUserAgent, UserAgent)
 
 	for {
 		response, err := c.getOperationResultOnce(ctx, httpReq, request.Wait)
@@ -456,8 +465,11 @@ func (c *Client) cancelOperation(ctx context.Context, request cancelOperationReq
 	if err != nil {
 		return err
 	}
-	httpReq.Header = request.Header.Clone()
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
 
+	httpReq.Header.Set(headerUserAgent, UserAgent)
 	response, err := c.Options.HTTPClient.Do(httpReq)
 	if err != nil {
 		return err
@@ -591,6 +603,7 @@ func (c *Client) DeliverCompletion(ctx context.Context, url string, completion O
 		return err
 	}
 
+	httpReq.Header.Set(headerUserAgent, UserAgent)
 	response, err := c.Options.HTTPClient.Do(httpReq)
 	if err != nil {
 		return err

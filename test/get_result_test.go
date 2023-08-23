@@ -26,6 +26,9 @@ func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *ne
 }
 
 func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *nexusserver.GetOperationResultRequest) (nexusserver.OperationResponse, error) {
+	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	}
 	h.timesCalled++
 	if h.expectWait == 0 {
 		if request.Wait {

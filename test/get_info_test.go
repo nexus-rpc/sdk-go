@@ -32,6 +32,9 @@ func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, request *ne
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
 		return nil, newBadRequestError("invalid 'foo' request header")
 	}
+	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	}
 	return &nexusapi.OperationInfo{
 		ID:    request.OperationID,
 		State: nexusapi.OperationStateCanceled,

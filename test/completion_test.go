@@ -21,6 +21,12 @@ func (h *successfulCompletionHandler) Complete(ctx context.Context, completion *
 	if completion.HTTPRequest.URL.Query().Get("a") != "b" {
 		return newBadRequestError("invalid 'a' query param: %q", completion.HTTPRequest.URL.Query().Get("a"))
 	}
+	if completion.HTTPRequest.Header.Get("foo") != "bar" {
+		return newBadRequestError("invalid 'foo' header: %q", completion.HTTPRequest.Header.Get("foo"))
+	}
+	if completion.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+		return newBadRequestError("invalid 'User-Agent' header: %q", completion.HTTPRequest.Header.Get("User-Agent"))
+	}
 	return nil
 }
 
@@ -28,7 +34,10 @@ func TestSuccessfulCompletion(t *testing.T) {
 	ctx, client, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{})
 	defer teardown()
 
-	err := client.DeliverCompletion(ctx, callbackURL, nexusclient.NewBytesSuccessfulOperationCompletion(nil, []byte("success")))
+	err := client.DeliverCompletion(ctx, callbackURL, nexusclient.NewBytesSuccessfulOperationCompletion(
+		http.Header{"foo": []string{"bar"}},
+		[]byte("success"),
+	))
 	require.NoError(t, err)
 }
 
@@ -42,6 +51,10 @@ func (h *failureExpectingCompletionHandler) Complete(ctx context.Context, comple
 	if completion.Failure.Message != "expected message" {
 		return newBadRequestError("invalid failure: %v", completion.Failure)
 	}
+	if completion.HTTPRequest.Header.Get("foo") != "bar" {
+		return newBadRequestError("invalid 'foo' header: %q", completion.HTTPRequest.Header.Get("foo"))
+	}
+
 	return nil
 }
 
@@ -50,7 +63,8 @@ func TestFailureCompletion(t *testing.T) {
 	defer teardown()
 
 	err := client.DeliverCompletion(ctx, callbackURL, &nexusclient.UnsuccessfulOperationCompletion{
-		State: nexusapi.OperationStateCanceled,
+		Header: http.Header{"foo": []string{"bar"}},
+		State:  nexusapi.OperationStateCanceled,
 		Failure: &nexusapi.Failure{
 			Message: "expected message",
 		},

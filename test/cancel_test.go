@@ -31,6 +31,9 @@ func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, request *n
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
 		return newBadRequestError("invalid 'foo' request header")
 	}
+	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+		return newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	}
 	return nil
 }
 
