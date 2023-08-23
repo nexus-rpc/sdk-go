@@ -3,13 +3,13 @@ package nexusserver
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/nexus-rpc/sdk-go/nexusapi"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slog"
 )
 
 func TestWriteFailure_GenericError(t *testing.T) {

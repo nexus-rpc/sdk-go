@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/nexus-rpc/sdk-go/nexusapi"
-	"golang.org/x/exp/slog"
 )
 
 type (

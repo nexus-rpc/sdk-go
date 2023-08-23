@@ -3,7 +3,6 @@ package test
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"testing"
@@ -32,9 +31,8 @@ func setup(t *testing.T, handler nexusserver.Handler) (ctx context.Context, clie
 	require.NoError(t, err)
 
 	go func() {
-		if err := http.Serve(listener, httpHandler); err != nil {
-			log.Panicf("serve failed: %s", err)
-		}
+		// Ignore for test purposes
+		_ = http.Serve(listener, httpHandler)
 	}()
 
 	return ctx, client, func() {
@@ -58,9 +56,8 @@ func setupForCompletion(t *testing.T, handler nexusserver.CompletionHandler) (ct
 	require.NoError(t, err)
 
 	go func() {
-		if err := http.Serve(listener, httpHandler); err != nil {
-			log.Panicf("serve failed: %s", err)
-		}
+		// Ignore for test purposes
+		_ = http.Serve(listener, httpHandler)
 	}()
 
 	return ctx, client, callbackURL, func() {
