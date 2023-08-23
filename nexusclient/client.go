@@ -31,6 +31,9 @@ type Options struct {
 	// A stuctured logging handler.
 	// Defaults to logging with text format to stderr at info level.
 	LogHandler slog.Handler
+	// Optional marshaler for marshaling objects to JSON.
+	// Defaults to output with indentation.
+	Marshaler nexusapi.Marshaler
 }
 
 type Client struct {
@@ -62,6 +65,9 @@ func NewClient(options Options) (*Client, error) {
 	}
 	if options.GetResultMaxRequestTimeout == 0 {
 		options.GetResultMaxRequestTimeout = time.Minute
+	}
+	if options.Marshaler == nil {
+		options.Marshaler = nexusapi.DefaultMarshaler
 	}
 	// TODO: default user agent (not here, in all requests constructed)
 	// TODO: assert that service base URL is set for GetHandle and StartOperation methods.
@@ -487,7 +493,7 @@ func (c *Client) getUnsuccessfulStateFromHeader(response *http.Response) (nexusa
 
 type OperationCompletion interface {
 	io.Closer
-	applyToHTTPRequest(*http.Request) error
+	applyToHTTPRequest(*http.Request, *Client) error
 }
 
 type SuccessfulOperationCompletion struct {
@@ -509,7 +515,7 @@ func NewBytesSuccessfulOperationCompletion(header http.Header, b []byte) *Succes
 }
 
 func NewJSONSuccessfulOperationCompletion(header http.Header, v any) (*SuccessfulOperationCompletion, error) {
-	b, err := json.Marshal(v)
+	b, err := nexusapi.DefaultMarshaler(v)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +526,7 @@ func NewJSONSuccessfulOperationCompletion(header http.Header, v any) (*Successfu
 	}, nil
 }
 
-func (c *SuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request) error {
+func (c *SuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request, client *Client) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
@@ -533,14 +539,14 @@ func (c *SuccessfulOperationCompletion) Close() error {
 	return c.Body.Close()
 }
 
-func (c *UnsuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request) error {
+func (c *UnsuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request, client *Client) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(nexusapi.HeaderOperationState, string(c.State))
 	request.Header.Set(nexusapi.HeaderContentType, nexusapi.ContentTypeJSON)
 
-	b, err := json.Marshal(c.Failure)
+	b, err := client.Options.Marshaler(c.Failure)
 	if err != nil {
 		return err
 	}
@@ -560,7 +566,7 @@ func (c *Client) DeliverCompletion(ctx context.Context, url string, completion O
 	if err != nil {
 		return err
 	}
-	if err := completion.applyToHTTPRequest(httpReq); err != nil {
+	if err := completion.applyToHTTPRequest(httpReq, c); err != nil {
 		return err
 	}
 

@@ -1,9 +1,12 @@
 package nexusapi
 
 import (
+	"encoding/json"
 	"mime"
 	"net/http"
 )
+
+type Marshaler = func(v any) ([]byte, error)
 
 const (
 	HeaderContentType    = "Content-Type"
@@ -15,6 +18,10 @@ const (
 	QueryCallbackURL = "callback"
 	QueryWait        = "wait"
 )
+
+func DefaultMarshaler(v any) ([]byte, error) {
+	return json.MarshalIndent(v, "", "  ")
+}
 
 func IsContentTypeJSON(header http.Header) bool {
 	contentType := header.Get(HeaderContentType)

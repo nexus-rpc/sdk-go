@@ -18,11 +18,9 @@ import (
 )
 
 type (
-	Marshaler = func(v any) ([]byte, error)
-
 	Options struct {
 		Handler                    Handler
-		Marshaler                  Marshaler
+		Marshaler                  nexusapi.Marshaler
 		LogHandler                 slog.Handler
 		GetResultMaxRequestTimeout time.Duration
 	}
@@ -72,7 +70,7 @@ type (
 	}
 
 	baseHTTPHandler struct {
-		marshaler Marshaler
+		marshaler nexusapi.Marshaler
 		logger    *slog.Logger
 	}
 
@@ -93,9 +91,9 @@ type (
 )
 
 const (
-	HeaderOperationState = nexusapi.HeaderOperationState
-	HeaderContentType    = nexusapi.HeaderContentType
-	ContentTypeJSON      = nexusapi.ContentTypeJSON
+	headerOperationState = nexusapi.HeaderOperationState
+	headerContentType    = nexusapi.HeaderContentType
+	contentTypeJSON      = nexusapi.ContentTypeJSON
 )
 
 func newBadRequestError(format string, args ...any) *HandlerError {
@@ -123,7 +121,7 @@ func (r *OperationResponseAsync) applyToStartResponse(writer http.ResponseWriter
 		return
 	}
 
-	writer.Header().Set(HeaderContentType, ContentTypeJSON)
+	writer.Header().Set(headerContentType, contentTypeJSON)
 	writer.WriteHeader(http.StatusCreated)
 
 	if _, err := writer.Write(bytes); err != nil {
@@ -132,7 +130,7 @@ func (r *OperationResponseAsync) applyToStartResponse(writer http.ResponseWriter
 }
 
 func (r *OperationResponseAsync) applyToGetResultResponse(writer http.ResponseWriter, handler *httpHandler) {
-	writer.Header().Set(HeaderOperationState, string(nexusapi.OperationStateRunning))
+	writer.Header().Set(headerOperationState, string(nexusapi.OperationStateRunning))
 	writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -148,7 +146,7 @@ func (r *OperationResponseSync) applyToStartResponse(writer http.ResponseWriter,
 }
 
 func (r *OperationResponseSync) applyToGetResultResponse(writer http.ResponseWriter, handler *httpHandler) {
-	writer.Header().Set(HeaderOperationState, string(nexusapi.OperationStateSucceeded))
+	writer.Header().Set(headerOperationState, string(nexusapi.OperationStateSucceeded))
 	r.applyToStartResponse(writer, handler)
 }
 
@@ -160,8 +158,7 @@ func NewBytesOperationResultSync(header http.Header, b []byte) (*OperationRespon
 }
 
 func NewJSONOperationResultSync(header http.Header, v any) (*OperationResponseSync, error) {
-	// TODO: do we want an indent option too?
-	b, err := json.Marshal(v)
+	b, err := nexusapi.DefaultMarshaler(v)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +166,14 @@ func NewJSONOperationResultSync(header http.Header, v any) (*OperationResponseSy
 	if header == nil {
 		header = make(http.Header)
 	}
-	header.Set(HeaderContentType, ContentTypeJSON)
+	header.Set(headerContentType, contentTypeJSON)
 	return &OperationResponseSync{
 		Header:  header,
 		Content: io.NopCloser(bytes.NewReader(b)),
 	}, nil
 }
 
-// TODO: test me
-func (h *baseHTTPHandler) WriteFailure(writer http.ResponseWriter, err error) {
+func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	var failure *nexusapi.Failure
 	var unsuccessfulError *nexusapi.UnsuccessfulOperationError
 	var handlerError *HandlerError
@@ -190,7 +186,7 @@ func (h *baseHTTPHandler) WriteFailure(writer http.ResponseWriter, err error) {
 		statusCode = nexusapi.StatusOperationFailed
 
 		if operationState == nexusapi.OperationStateFailed || operationState == nexusapi.OperationStateCanceled {
-			writer.Header().Set(HeaderOperationState, string(operationState))
+			writer.Header().Set(headerOperationState, string(operationState))
 		} else {
 			h.logger.Error("unexpected operation state", "state", operationState)
 			writer.WriteHeader(http.StatusInternalServerError)
@@ -200,6 +196,9 @@ func (h *baseHTTPHandler) WriteFailure(writer http.ResponseWriter, err error) {
 		failure = handlerError.Failure
 		statusCode = handlerError.StatusCode
 	} else {
+		failure = &nexusapi.Failure{
+			Message: "internal server error",
+		}
 		h.logger.Error("handler failed", "error", err)
 	}
 
@@ -211,7 +210,7 @@ func (h *baseHTTPHandler) WriteFailure(writer http.ResponseWriter, err error) {
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		writer.Header().Set(HeaderContentType, ContentTypeJSON)
+		writer.Header().Set(headerContentType, contentTypeJSON)
 	}
 
 	writer.WriteHeader(statusCode)
@@ -231,7 +230,7 @@ func (h *httpHandler) StartOperation(writer http.ResponseWriter, request *http.R
 	}
 	response, err := h.options.Handler.StartOperation(request.Context(), handlerRequest)
 	if err != nil {
-		h.WriteFailure(writer, err)
+		h.writeFailure(writer, err)
 	} else {
 		response.applyToStartResponse(writer, h)
 	}
@@ -249,7 +248,7 @@ func (h *httpHandler) GetOperationResult(writer http.ResponseWriter, request *ht
 		waitDuration, err := time.ParseDuration(waitStr)
 		if err != nil {
 			h.logger.Warn("invalid wait duration query parameter", "wait", waitStr)
-			h.WriteFailure(writer, newBadRequestError("invalid wait query parameter"))
+			h.writeFailure(writer, newBadRequestError("invalid wait query parameter"))
 			return
 		}
 
@@ -265,7 +264,7 @@ func (h *httpHandler) GetOperationResult(writer http.ResponseWriter, request *ht
 
 	response, err := h.options.Handler.GetOperationResult(ctx, handlerRequest)
 	if err != nil {
-		h.WriteFailure(writer, err)
+		h.writeFailure(writer, err)
 	} else {
 		response.applyToGetResultResponse(writer, h)
 	}
@@ -278,16 +277,16 @@ func (h *httpHandler) GetOperationInfo(writer http.ResponseWriter, request *http
 
 	info, err := h.options.Handler.GetOperationInfo(request.Context(), handlerRequest)
 	if err != nil {
-		h.WriteFailure(writer, err)
+		h.writeFailure(writer, err)
 		return
 	}
 
 	bytes, err := h.options.Marshaler(info)
 	if err != nil {
-		h.WriteFailure(writer, fmt.Errorf("failed to marshal operation info: %w", err))
+		h.writeFailure(writer, fmt.Errorf("failed to marshal operation info: %w", err))
 		return
 	}
-	writer.Header().Set(HeaderContentType, ContentTypeJSON)
+	writer.Header().Set(headerContentType, contentTypeJSON)
 	if _, err := writer.Write(bytes); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}
@@ -300,7 +299,7 @@ func (h *httpHandler) CancelOperation(writer http.ResponseWriter, request *http.
 	handlerRequest := &CancelOperationRequest{Operation: operation, OperationID: operationID, HTTPRequest: request}
 
 	if err := h.options.Handler.CancelOperation(request.Context(), handlerRequest); err != nil {
-		h.WriteFailure(writer, err)
+		h.writeFailure(writer, err)
 		return
 	}
 
@@ -309,7 +308,7 @@ func (h *httpHandler) CancelOperation(writer http.ResponseWriter, request *http.
 
 func NewHTTPHandler(options Options) http.Handler {
 	if options.Marshaler == nil {
-		options.Marshaler = defaultMarshaller
+		options.Marshaler = nexusapi.DefaultMarshaler
 	}
 	if options.LogHandler == nil {
 		options.LogHandler = newDefaultLogHandler()
@@ -349,7 +348,7 @@ type CompletionHandler interface {
 type CompletionOptions struct {
 	Handler    CompletionHandler
 	LogHandler slog.Handler
-	Marshaler  Marshaler
+	Marshaler  nexusapi.Marshaler
 }
 
 type completionHTTPHandler struct {
@@ -360,40 +359,40 @@ type completionHTTPHandler struct {
 func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := request.Context()
 	completion := CompletionRequest{
-		State:       nexusapi.OperationState(request.Header.Get(HeaderOperationState)),
+		State:       nexusapi.OperationState(request.Header.Get(headerOperationState)),
 		HTTPRequest: request,
 	}
 	switch completion.State {
 	case nexusapi.OperationStateFailed, nexusapi.OperationStateCanceled:
 		if !nexusapi.IsContentTypeJSON(request.Header) {
-			h.WriteFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(HeaderContentType)))
+			h.writeFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(headerContentType)))
 			return
 		}
 		var failure nexusapi.Failure
 		b, err := io.ReadAll(request.Body)
 		if err != nil {
-			h.WriteFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
 			return
 		}
 		if err := json.Unmarshal(b, &failure); err != nil {
-			h.WriteFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
 			return
 		}
 		completion.Failure = &failure
 	case nexusapi.OperationStateSucceeded:
 		// Nothing to do here.
 	default:
-		h.WriteFailure(writer, newBadRequestError("invalid request operation state: %q", completion.State))
+		h.writeFailure(writer, newBadRequestError("invalid request operation state: %q", completion.State))
 		return
 	}
 	if err := h.handler.Complete(ctx, &completion); err != nil {
-		h.WriteFailure(writer, err)
+		h.writeFailure(writer, err)
 	}
 }
 
 func NewCompletionHTTPHandler(options CompletionOptions) http.Handler {
 	if options.Marshaler == nil {
-		options.Marshaler = defaultMarshaller
+		options.Marshaler = nexusapi.DefaultMarshaler
 	}
 	if options.LogHandler == nil {
 		options.LogHandler = newDefaultLogHandler()
@@ -405,10 +404,6 @@ func NewCompletionHTTPHandler(options CompletionOptions) http.Handler {
 		},
 		handler: options.Handler,
 	}
-}
-
-func defaultMarshaller(v any) ([]byte, error) {
-	return json.MarshalIndent(v, "", "  ")
 }
 
 func newDefaultLogHandler() slog.Handler {
