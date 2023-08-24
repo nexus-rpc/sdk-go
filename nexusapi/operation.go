@@ -14,8 +14,12 @@ type (
 )
 
 const (
-	OperationStateRunning   = OperationState("running")
-	OperationStateSucceeded = OperationState("succeeded")
-	OperationStateFailed    = OperationState("failed")
-	OperationStateCanceled  = OperationState("canceled")
+	// "running" operation state. Indicates an operation is started and not yet completed.
+	OperationStateRunning OperationState = "running"
+	// "succeeded" operation state. Indicates an operation completed successfully.
+	OperationStateSucceeded OperationState = "succeeded"
+	// "failed" operation state. Indicates an operation completed as failed.
+	OperationStateFailed OperationState = "failed"
+	// "canceled" operation state. Indicates an operation completed as canceled.
+	OperationStateCanceled OperationState = "canceled"
 )

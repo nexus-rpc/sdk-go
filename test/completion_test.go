@@ -1,7 +1,9 @@
 package test
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"testing"
 
@@ -14,7 +16,7 @@ import (
 type successfulCompletionHandler struct {
 }
 
-func (h *successfulCompletionHandler) Complete(ctx context.Context, completion *nexusserver.CompletionRequest) error {
+func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, completion *nexusserver.CompletionRequest) error {
 	if completion.HTTPRequest.URL.Path != "/callback" {
 		return newBadRequestError("invalid URL path: %q", completion.HTTPRequest.URL.Path)
 	}
@@ -27,6 +29,13 @@ func (h *successfulCompletionHandler) Complete(ctx context.Context, completion *
 	if completion.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
 		return newBadRequestError("invalid 'User-Agent' header: %q", completion.HTTPRequest.Header.Get("User-Agent"))
 	}
+	b, err := io.ReadAll(completion.HTTPRequest.Body)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(b, []byte("success")) {
+		return newBadRequestError("invalid request body: %q", b)
+	}
 	return nil
 }
 
@@ -34,17 +43,17 @@ func TestSuccessfulCompletion(t *testing.T) {
 	ctx, client, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{})
 	defer teardown()
 
-	err := client.DeliverCompletion(ctx, callbackURL, nexusclient.NewBytesSuccessfulOperationCompletion(
-		http.Header{"foo": []string{"bar"}},
-		[]byte("success"),
-	))
+	err := client.DeliverCompletion(ctx, callbackURL, &nexusclient.OperationCompletionSuccessful{
+		Header: http.Header{"foo": []string{"bar"}},
+		Body:   bytes.NewReader([]byte("success")),
+	})
 	require.NoError(t, err)
 }
 
 type failureExpectingCompletionHandler struct {
 }
 
-func (h *failureExpectingCompletionHandler) Complete(ctx context.Context, completion *nexusserver.CompletionRequest) error {
+func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Context, completion *nexusserver.CompletionRequest) error {
 	if completion.State != nexusapi.OperationStateCanceled {
 		return newBadRequestError("unexpected completion state: %q", completion.State)
 	}
@@ -62,7 +71,7 @@ func TestFailureCompletion(t *testing.T) {
 	ctx, client, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{})
 	defer teardown()
 
-	err := client.DeliverCompletion(ctx, callbackURL, &nexusclient.UnsuccessfulOperationCompletion{
+	err := client.DeliverCompletion(ctx, callbackURL, &nexusclient.OperationCompletionUnsuccessful{
 		Header: http.Header{"foo": []string{"bar"}},
 		State:  nexusapi.OperationStateCanceled,
 		Failure: &nexusapi.Failure{
@@ -75,7 +84,7 @@ func TestFailureCompletion(t *testing.T) {
 type failingCompletionHandler struct {
 }
 
-func (h *failingCompletionHandler) Complete(ctx context.Context, completion *nexusserver.CompletionRequest) error {
+func (h *failingCompletionHandler) CompleteOperation(ctx context.Context, completion *nexusserver.CompletionRequest) error {
 	return newBadRequestError("I can't get no satisfaction")
 }
 
@@ -83,7 +92,7 @@ func TestBadRequestCompletion(t *testing.T) {
 	ctx, client, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{})
 	defer teardown()
 
-	err := client.DeliverCompletion(ctx, callbackURL, nexusclient.NewBytesSuccessfulOperationCompletion(nil, []byte("success")))
+	err := client.DeliverCompletion(ctx, callbackURL, &nexusclient.OperationCompletionSuccessful{Body: bytes.NewReader([]byte("success"))})
 	var unexpectedResponseError *nexusclient.UnexpectedResponseError
 	require.ErrorAs(t, err, &unexpectedResponseError)
 	require.Equal(t, http.StatusBadRequest, unexpectedResponseError.Response.StatusCode)

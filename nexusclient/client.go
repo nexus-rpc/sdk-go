@@ -17,15 +17,17 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexusapi"
 )
 
+// Options for creating a Client.
 type Options struct {
 	// Base URL of the service.
-	// Optional, if not provided, this client can only be used to deliver operation completions.
+	// Optional. If not provided, this client can only be used to deliver operation completions.
 	ServiceBaseURL string
-	// An Client to use for making HTTP requests.
-	// Defaults to http.DefaultClient.
+	// An HTTP Client to use for making HTTP requests.
+	// Defaults to [http.DefaultClient].
 	HTTPClient *http.Client
 	// Max duration to wait for a single get result request.
 	// Enforced if context deadline for the request is unset or greater than this value.
+	//
 	// Defaults to one minute.
 	GetResultMaxRequestTimeout time.Duration
 	// A stuctured logging handler.
@@ -36,6 +38,8 @@ type Options struct {
 	Marshaler nexusapi.Marshaler
 }
 
+// A Client is used to start an operation, get an [OperationHandle] to an existing operation, and deliver operation
+// completions.
 type Client struct {
 	// The options this client was created with after applying defaults.
 	Options        Options
@@ -44,13 +48,59 @@ type Client struct {
 }
 
 var (
-	Version                = "dev" // TODO: Actual version to be set by goreleaser
-	UserAgent              = fmt.Sprintf("Nexus-go-sdk/%s", Version)
-	headerUserAgent        = "User-Agent"
+	// Package version.
+	Version = "dev" // TODO: Actual version to be set by goreleaser
+	// User agent used to make HTTP requests.
+	UserAgent       = fmt.Sprintf("Nexus-go-sdk/%s", Version)
+	headerUserAgent = "User-Agent"
+	// Error indicating an empty ServiceBaseURL option was used to create a client when making a Nexus service request.
 	ErrEmptyServiceBaseURL = errors.New("empty serviceBaseURL")
-	ErrInvalidURLScheme    = errors.New("invalid URL scheme")
+	// Error indicating a non HTTP URL was used to create a [Client].
+	ErrInvalidURLScheme = errors.New("invalid URL scheme")
+
+	// Asynchronous method was used on an [OperationHandle] representing a synchronous operation.
+	ErrHandleForSyncOperation = errors.New("handle represents a synchronous operation")
+
+	errOperationStillRunning = errors.New("operation still running")
 )
 
+// Error that indicates a client encountered something unexpected in the server's response.
+type UnexpectedResponseError struct {
+	// Error message.
+	Message string
+	// The HTTP response. The response body will have already been read into ResponseBody and closed.
+	Response *http.Response
+	// Body extracted from the HTTP response.
+	ResponseBody []byte
+}
+
+// Error implements the error interface.
+func (e *UnexpectedResponseError) Error() string {
+	if nexusapi.IsContentTypeJSON(e.Response.Header) {
+		var failure nexusapi.Failure
+		if err := json.Unmarshal(e.ResponseBody, &failure); err == nil && failure.Message != "" {
+			return fmt.Sprintf("%s: %s", e.Message, failure.Message)
+		}
+
+	}
+	return e.Message
+}
+
+func (c *Client) newUnexpectedResponseError(message string, response *http.Response) error {
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		c.logger.Error("failed to read response body", "error", err)
+	}
+	return &UnexpectedResponseError{
+		Message:      message,
+		Response:     response,
+		ResponseBody: body,
+	}
+}
+
+// NewClient creates a new [Client] from provided [Options].
+// None of the options are required. Provide BaseServiceURL if you intend to use this client to make Nexus service calls
+// or leave empty when using this client only to deliver completions.
 func NewClient(options Options) (*Client, error) {
 	if options.HTTPClient == nil {
 		options.HTTPClient = http.DefaultClient
@@ -83,12 +133,14 @@ func NewClient(options Options) (*Client, error) {
 	}, nil
 }
 
+// A Handle used to cancel operations and get their result and status.
+// Must be explicitly closed.
 type OperationHandle struct {
 	operation string
 	id        string
+	state     nexusapi.OperationState
 
 	client *Client
-	state  nexusapi.OperationState
 
 	// mutually exclusive with failure
 	response *http.Response
@@ -106,11 +158,15 @@ func (h *OperationHandle) ID() string {
 	return h.id
 }
 
-// TODO: note that GetInfo does not update the state
+// State is the last known operation state.
+// Empty for handles created with [nexusclient.Client.GetHandle] before issuing a request to get the result.
+//
+// ⚠️ [nexusclient.OperationHandle.GetInfo] does not update the handle's State.
 func (h *OperationHandle) State() nexusapi.OperationState {
 	return h.state
 }
 
+// Close the handle's associated http response, if present.
 func (h *OperationHandle) Close() error {
 	// Body will have already been closed
 	if h.state != nexusapi.OperationStateSucceeded {
@@ -119,12 +175,25 @@ func (h *OperationHandle) Close() error {
 	return h.response.Body.Close()
 }
 
-var ErrHandleForSyncOperation = errors.New("handle represents a synchronous operation")
-
+// Options for [nexusclient.OperationHandle.GetInfo].
 type GetInfoOptions struct {
+	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 }
 
+// GetHandle gets a handle to an asynchronous operation by name and ID.
+// Does not incur a trip to the server.
+func (c *Client) GetHandle(operation string, operationID string) *OperationHandle {
+	return &OperationHandle{
+		client:    c,
+		operation: operation,
+		id:        operationID,
+	}
+}
+
+// GetInfo gets operation information issuing a network request to the service handler.
+//
+// ⚠️ Does not update the handle's State.
 func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (*nexusapi.OperationInfo, error) {
 	if h.id == "" {
 		return nil, ErrHandleForSyncOperation
@@ -136,11 +205,60 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (
 	})
 }
 
-type GetResultOptions struct {
-	Header http.Header
-	Wait   bool
+type getOperationInfoRequest struct {
+	Operation   string
+	OperationID string
+	Header      http.Header
 }
 
+func (c *Client) getOperationInfo(ctx context.Context, request getOperationInfoRequest) (*nexusapi.OperationInfo, error) {
+	url, err := c.joinURL(request.Operation, request.OperationID)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
+
+	httpReq.Header.Set(headerUserAgent, UserAgent)
+	response, err := c.Options.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
+	}
+
+	return c.operationInfoFromResponse(response)
+}
+
+// Options for [nexusclient.OperationHandle.GetResult].
+type GetResultOptions struct {
+	// Header to attach to the HTTP request. Optional.
+	Header http.Header
+	// Boolean indicating whether to wait for operation completion or return the current status immediately.
+	Wait bool
+}
+
+// GetResult gets the result of an operation.
+//
+// If the handle was obtained using the StartOperation API, and the operation completed synchronously, the response may
+// already be stored in the handle, otherwise, the handle will use its associated client to issue a request to get the
+// operation's result.
+//
+// By default, GetResult returns a nil response immediately and no error after issuing a call if the operation has not
+// yet completed.
+//
+// Callers may set [nexusclient.GetResultOptions.Wait] to true to alter this behavior, causing the client to long poll
+// for the result until the provided context deadline is exceeded. When the deadline exceeds, GetResult will return a
+// nil response and [context.DeadlineExceeded] error. The client may issue multiple requests until the deadline exceeds
+// with a max request timeout of [nexusclient.Options.GetResultMaxRequestTimeout].
 func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOptions) (*http.Response, error) {
 	switch h.state {
 	case nexusapi.OperationStateCanceled, nexusapi.OperationStateFailed:
@@ -162,8 +280,10 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 		if err != nil {
 			if errors.As(err, &unsuccessfulError) {
 				h.state = unsuccessfulError.State
+				h.failure = unsuccessfulError.Failure
 			}
 		} else if response != nil {
+			h.response = response
 			h.state = nexusapi.OperationStateSucceeded
 		} else {
 			h.state = nexusapi.OperationStateRunning
@@ -172,11 +292,107 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 	}
 }
 
+func (c *Client) getOperationResult(ctx context.Context, request getOperationResultRequest) (*http.Response, error) {
+	url, err := c.joinURL(request.Operation, request.OperationID, "result")
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
+	httpReq.Header.Set(headerUserAgent, UserAgent)
+
+	for {
+		response, err := c.sendGetOperationResultRequest(ctx, httpReq, request.Wait)
+		if err != nil {
+			if errors.Is(err, errOperationStillRunning) {
+				if request.Wait {
+					continue
+				} else {
+					return nil, nil
+				}
+			}
+			return nil, err
+		}
+		return response, nil
+	}
+}
+
+func (c *Client) sendGetOperationResultRequest(ctx context.Context, httpReq *http.Request, wait bool) (*http.Response, error) {
+	if wait {
+		url := httpReq.URL
+		timeout := c.Options.GetResultMaxRequestTimeout
+		if deadline, set := ctx.Deadline(); set {
+			timeout = time.Until(deadline)
+			if timeout > c.Options.GetResultMaxRequestTimeout {
+				timeout = c.Options.GetResultMaxRequestTimeout
+			}
+		}
+
+		q := url.Query()
+		q.Set(nexusapi.QueryWait, fmt.Sprintf("%dms", timeout.Milliseconds()))
+		url.RawQuery = q.Encode()
+	}
+
+	response, err := c.Options.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode == 200 {
+		return response, nil
+	}
+
+	defer response.Body.Close()
+
+	switch response.StatusCode {
+	case 204:
+		state := nexusapi.OperationState(response.Header.Get(nexusapi.HeaderOperationState))
+
+		switch state {
+		case nexusapi.OperationStateRunning:
+			return nil, errOperationStillRunning
+		case nexusapi.OperationStateSucceeded:
+			return response, nil
+		default:
+			return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected operation state: %s", state), response)
+		}
+	case nexusapi.StatusOperationFailed:
+		state, err := c.getUnsuccessfulStateFromHeader(response)
+		if err != nil {
+			return nil, err
+		}
+		failure, err := c.failureFromResponse(response)
+		if err != nil {
+			return nil, err
+		}
+		return nil, &nexusapi.UnsuccessfulOperationError{
+			State:   state,
+			Failure: failure,
+		}
+	default:
+		return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
+	}
+}
+
+// Options for [nexusclient.OperationHandle.Cancel].
 type CancelOptions struct {
+	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 }
 
+// Cancel requests to cancel an asynchronous operation.
+//
+// Cancelation is asynchronous and may be not be respected by the operation's implementation.
 func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) error {
+	if h.id == "" {
+		return ErrHandleForSyncOperation
+	}
+
 	return h.client.cancelOperation(ctx, cancelOperationRequest{
 		Operation:   h.operation,
 		OperationID: h.id,
@@ -184,59 +400,78 @@ func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) err
 	})
 }
 
-type UnexpectedResponseError struct {
-	Message      string
-	Response     *http.Response
-	ResponseBody []byte
-}
-
-func (e *UnexpectedResponseError) Error() string {
-	if nexusapi.IsContentTypeJSON(e.Response.Header) {
-		var failure nexusapi.Failure
-		if err := json.Unmarshal(e.ResponseBody, &failure); err == nil && failure.Message != "" {
-			return fmt.Sprintf("%s: %s", e.Message, failure.Message)
-		}
-
-	}
-	return e.Message
-}
-
-func (c *Client) newUnexpectedResponseError(message string, response *http.Response) error {
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		c.logger.Error("failed to read response body", "error", err)
-	}
-	return &UnexpectedResponseError{
-		Message:      message,
-		Response:     response,
-		ResponseBody: body,
-	}
-}
-
-func (c *Client) joinURL(parts ...string) (*url.URL, error) {
-	if c.serviceBaseURL == nil {
-		return nil, ErrEmptyServiceBaseURL
-	}
-	return c.serviceBaseURL.JoinPath(parts...), nil
-}
-
-func (c *Client) GetHandle(operation string, operationID string) *OperationHandle {
-	return &OperationHandle{
-		client:    c,
-		operation: operation,
-		id:        operationID,
-	}
-}
-
-type StartOperationRequest struct {
+type cancelOperationRequest struct {
 	Operation   string
-	CallbackURL string
-	RequestID   string
+	OperationID string
 	Header      http.Header
-	Body        io.Reader
 }
 
+func (c *Client) cancelOperation(ctx context.Context, request cancelOperationRequest) error {
+	url, err := c.joinURL(request.Operation, request.OperationID, "cancel")
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
+	if err != nil {
+		return err
+	}
+	if request.Header != nil {
+		httpReq.Header = request.Header.Clone()
+	}
+
+	httpReq.Header.Set(headerUserAgent, UserAgent)
+	response, err := c.Options.HTTPClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		return c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
+	}
+	return nil
+}
+
+// Input for [nexusclient.Client.StartOperation].
+type StartOperationRequest struct {
+	// Name of the operation to start.
+	Operation string
+	// Callback URL to provide to the handle for receiving async operation completions. Optional.
+	CallbackURL string
+	// Request ID that may be used by the server handler to dedupe this start request.
+	// By default a v4 UUID will be generated by the client.
+	RequestID string
+	// Header to attach to the HTTP request. Optional.
+	Header http.Header
+	// Body of the operation request.
+	// If it is an [io.Closer], the body will be automatically closed by the client.
+	Body io.Reader
+}
+
+// NewJSONStartOperationRequest is shorthand for creating a StartOperationRequest with a JSON body.
+// Marhsals the provided value to JSON using [nexusapi.DefaultMarshaler].
+func NewJSONStartOperationRequest(operation string, v any) (request StartOperationRequest, err error) {
+	req := StartOperationRequest{}
+	var b []byte
+	b, err = nexusapi.DefaultMarshaler(v)
+	if err != nil {
+		return
+	}
+	req.Operation = operation
+	req.Header = http.Header{nexusapi.HeaderContentType: []string{nexusapi.ContentTypeJSON}}
+	req.Body = bytes.NewReader(b)
+	return
+}
+
+// StartOperation calls the configured Nexus endpoint to start an operation.
+// The operation may complete synchronously, delivering the result inline, or asynchronously returning a reference that
+// can be used via the returned handle to interact with the operation.
+//
+// Use the returned [OperationHandle] to retrieve the operation's result.
 func (c *Client) StartOperation(ctx context.Context, request StartOperationRequest) (*OperationHandle, error) {
+	if closer, ok := request.Body.(io.Closer); ok {
+		// Close the request body in case we error before sending the HTTP request.
+		defer closer.Close()
+	}
 	url, err := c.joinURL(request.Operation)
 	if err != nil {
 		return nil, err
@@ -321,164 +556,11 @@ func (c *Client) StartOperation(ctx context.Context, request StartOperationReque
 	}
 }
 
-type getOperationInfoRequest struct {
-	Operation   string
-	OperationID string
-	Header      http.Header
-}
-
-func (c *Client) getOperationInfo(ctx context.Context, request getOperationInfoRequest) (*nexusapi.OperationInfo, error) {
-	url, err := c.joinURL(request.Operation, request.OperationID)
-	if err != nil {
-		return nil, err
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if request.Header != nil {
-		httpReq.Header = request.Header.Clone()
-	}
-
-	httpReq.Header.Set(headerUserAgent, UserAgent)
-	response, err := c.Options.HTTPClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != 200 {
-		return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
-	}
-
-	return c.operationInfoFromResponse(response)
-}
-
 type getOperationResultRequest struct {
 	Operation   string
 	OperationID string
 	Wait        bool
 	Header      http.Header
-}
-
-func (c *Client) getOperationResult(ctx context.Context, request getOperationResultRequest) (*http.Response, error) {
-	url, err := c.joinURL(request.Operation, request.OperationID, "result")
-	if err != nil {
-		return nil, err
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if request.Header != nil {
-		httpReq.Header = request.Header.Clone()
-	}
-	httpReq.Header.Set(headerUserAgent, UserAgent)
-
-	for {
-		response, err := c.getOperationResultOnce(ctx, httpReq, request.Wait)
-		if err != nil {
-			if errors.Is(err, errOperationStillRunning) {
-				if request.Wait {
-					continue
-				} else {
-					return nil, nil
-				}
-			}
-			return nil, err
-		}
-		return response, nil
-	}
-}
-
-var errOperationStillRunning = errors.New("operation still running")
-
-func (c *Client) getOperationResultOnce(ctx context.Context, httpReq *http.Request, wait bool) (*http.Response, error) {
-	if wait {
-		url := httpReq.URL
-		timeout := c.Options.GetResultMaxRequestTimeout
-		if deadline, set := ctx.Deadline(); set {
-			timeout = time.Until(deadline)
-			if timeout > c.Options.GetResultMaxRequestTimeout {
-				timeout = c.Options.GetResultMaxRequestTimeout
-			}
-		}
-
-		q := url.Query()
-		q.Set(nexusapi.QueryWait, fmt.Sprintf("%dms", timeout.Milliseconds()))
-		url.RawQuery = q.Encode()
-	}
-
-	response, err := c.Options.HTTPClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	if response.StatusCode == 200 {
-		return response, nil
-	}
-
-	defer response.Body.Close()
-
-	switch response.StatusCode {
-	case 204:
-		state := nexusapi.OperationState(response.Header.Get(nexusapi.HeaderOperationState))
-
-		switch state {
-		case nexusapi.OperationStateRunning:
-			return nil, errOperationStillRunning
-		case nexusapi.OperationStateSucceeded:
-			return response, nil
-		default:
-			return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected operation state: %s", state), response)
-		}
-	case nexusapi.StatusOperationFailed:
-		state, err := c.getUnsuccessfulStateFromHeader(response)
-		if err != nil {
-			return nil, err
-		}
-		failure, err := c.failureFromResponse(response)
-		if err != nil {
-			return nil, err
-		}
-		return nil, &nexusapi.UnsuccessfulOperationError{
-			State:   state,
-			Failure: failure,
-		}
-	default:
-		return nil, c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
-	}
-}
-
-type cancelOperationRequest struct {
-	Operation   string
-	OperationID string
-	Header      http.Header
-}
-
-func (c *Client) cancelOperation(ctx context.Context, request cancelOperationRequest) error {
-	url, err := c.joinURL(request.Operation, request.OperationID, "cancel")
-	if err != nil {
-		return err
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
-	if err != nil {
-		return err
-	}
-	if request.Header != nil {
-		httpReq.Header = request.Header.Clone()
-	}
-
-	httpReq.Header.Set(headerUserAgent, UserAgent)
-	response, err := c.Options.HTTPClient.Do(httpReq)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusAccepted {
-		return c.newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response)
-	}
-	return nil
 }
 
 func (c *Client) operationInfoFromResponse(response *http.Response) (*nexusapi.OperationInfo, error) {
@@ -524,55 +606,71 @@ func (c *Client) getUnsuccessfulStateFromHeader(response *http.Response) (nexusa
 	}
 }
 
+// Input for [nexusclient.Client.CompletionOperation].
+// It has two implementations: [OperationCompletionSuccessful] and [OperationCompletionUnsuccessful].
 type OperationCompletion interface {
 	io.Closer
 	applyToHTTPRequest(*http.Request, *Client) error
 }
 
-type SuccessfulOperationCompletion struct {
+// Input for [nexusclient.Client.CompletionOperation] to deliver successful operation results.
+type OperationCompletionSuccessful struct {
+	// Header to send in the completion request.
 	Header http.Header
-	Body   io.ReadCloser
+	// Body to send in the completion HTTP request.
+	// If it implements `io.Closer` it will automatically be closed by the client
+	Body io.Reader
 }
 
-type UnsuccessfulOperationCompletion struct {
-	State   nexusapi.OperationState
-	Header  http.Header
+// Input for [nexusclient.Client.CompletionOperation] to deliver unsuccessful operation results.
+type OperationCompletionUnsuccessful struct {
+	// Header to send in the completion request.
+	Header http.Header
+	// State of the operation, should be failed or canceled.
+	State nexusapi.OperationState
+	// Failure object to send with the completion.
 	Failure *nexusapi.Failure
 }
 
-func NewBytesSuccessfulOperationCompletion(header http.Header, b []byte) *SuccessfulOperationCompletion {
-	return &SuccessfulOperationCompletion{
-		Header: header,
-		Body:   io.NopCloser(bytes.NewReader(b)),
-	}
-}
-
-func NewJSONSuccessfulOperationCompletion(header http.Header, v any) (*SuccessfulOperationCompletion, error) {
+// NewJSONSuccessfulOperationCompletion constructs an [OperationCompletionSuccessful] from a JSONable value.
+// Marhsals the provided value to JSON using [nexusapi.DefaultMarshaler].
+func NewJSONSuccessfulOperationCompletion(v any) (*OperationCompletionSuccessful, error) {
 	b, err := nexusapi.DefaultMarshaler(v)
 	if err != nil {
 		return nil, err
 	}
 
-	return &SuccessfulOperationCompletion{
+	header := make(http.Header, 1)
+	header.Set(nexusapi.HeaderContentType, nexusapi.ContentTypeJSON)
+
+	return &OperationCompletionSuccessful{
 		Header: header,
 		Body:   io.NopCloser(bytes.NewReader(b)),
 	}, nil
 }
 
-func (c *SuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request, client *Client) error {
+func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request, client *Client) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(nexusapi.HeaderOperationState, string(nexusapi.OperationStateSucceeded))
-	request.Body = c.Body
+	if closer, ok := c.Body.(io.ReadCloser); ok {
+		request.Body = closer
+	} else {
+		request.Body = io.NopCloser(c.Body)
+	}
 	return nil
 }
 
-func (c *SuccessfulOperationCompletion) Close() error {
-	return c.Body.Close()
+// Close implements the io.Closer interface.
+func (c *OperationCompletionSuccessful) Close() error {
+	if closer, ok := c.Body.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
-func (c *UnsuccessfulOperationCompletion) applyToHTTPRequest(request *http.Request, client *Client) error {
+func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request, client *Client) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
@@ -588,10 +686,12 @@ func (c *UnsuccessfulOperationCompletion) applyToHTTPRequest(request *http.Reque
 	return nil
 }
 
-func (c *UnsuccessfulOperationCompletion) Close() error {
+// Close implements the io.Closer interface.
+func (c *OperationCompletionUnsuccessful) Close() error {
 	return nil
 }
 
+// DeliverCompletion delivers the result of a completed asynchronous operation to the provided URL.
 func (c *Client) DeliverCompletion(ctx context.Context, url string, completion OperationCompletion) error {
 	// while the http client is expected to close the body, we close in case request creation fails
 	defer completion.Close()
@@ -615,4 +715,11 @@ func (c *Client) DeliverCompletion(ctx context.Context, url string, completion O
 	}
 
 	return nil
+}
+
+func (c *Client) joinURL(parts ...string) (*url.URL, error) {
+	if c.serviceBaseURL == nil {
+		return nil, ErrEmptyServiceBaseURL
+	}
+	return c.serviceBaseURL.JoinPath(parts...), nil
 }

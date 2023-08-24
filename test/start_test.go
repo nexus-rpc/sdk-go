@@ -30,8 +30,8 @@ func (h *successHandler) StartOperation(ctx context.Context, request *nexusserve
 	}
 
 	return &nexusserver.OperationResponseSync{
-		Header:  request.HTTPRequest.Header.Clone(),
-		Content: request.HTTPRequest.Body,
+		Header: request.HTTPRequest.Header.Clone(),
+		Body:   request.HTTPRequest.Body,
 	}, nil
 }
 
@@ -64,7 +64,7 @@ type requestIDEchoHandler struct {
 }
 
 func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return nexusserver.NewBytesOperationResultSync(nil, []byte(request.RequestID))
+	return &nexusserver.OperationResponseSync{Body: bytes.NewReader([]byte(request.RequestID))}, nil
 }
 
 func TestClientRequestID(t *testing.T) {
@@ -140,7 +140,7 @@ type jsonHandler struct {
 }
 
 func (h *jsonHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return nexusserver.NewJSONOperationResultSync(nil, "success")
+	return nexusserver.NewJSONOperationResponseSync("success")
 }
 
 func TestJSON(t *testing.T) {

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ type asyncWithResultHandler struct {
 	expectWait time.Duration
 	unimplementedHandler
 	timesCalled int
+	block       bool
 }
 
 func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
@@ -48,12 +50,19 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request
 			return nil, newBadRequestError("context deadline invalid")
 		}
 	}
+	if h.block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if h.timesCalled < 2 {
 		return &nexusserver.OperationResponseAsync{
 			OperationID: "async",
 		}, nil
 	}
-	return nexusserver.NewBytesOperationResultSync(request.HTTPRequest.Header, []byte("body"))
+	return &nexusserver.OperationResponseSync{
+		Header: request.HTTPRequest.Header,
+		Body:   bytes.NewReader([]byte("body")),
+	}, nil
 }
 
 func TestWaitResult(t *testing.T) {
@@ -88,7 +97,7 @@ func TestPeekResult(t *testing.T) {
 	require.Nil(t, response)
 }
 
-func TestPeekResultHandleFromClient(t *testing.T) {
+func TestPeekResult_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: 0})
 	defer teardown()
 
@@ -101,7 +110,7 @@ func TestPeekResultHandleFromClient(t *testing.T) {
 	require.Nil(t, response)
 }
 
-func TestWaitResultNoDeadline(t *testing.T) {
+func TestWaitResult_NoDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
 	defer teardown()
 
@@ -114,7 +123,7 @@ func TestWaitResultNoDeadline(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWaitResultCappedDeadline(t *testing.T) {
+func TestWaitResult_CappedDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
 	defer teardown()
 
@@ -126,4 +135,20 @@ func TestWaitResultCappedDeadline(t *testing.T) {
 	defer cancel()
 	_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{Wait: true})
 	require.NoError(t, err)
+}
+
+func TestWaitResult_Timeout(t *testing.T) {
+	waitTimeout := 500 * time.Millisecond
+	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: waitTimeout, block: true})
+	defer teardown()
+
+	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
+
+	handle := client.GetHandle("foo", "async")
+	defer handle.Close()
+	_, err := handle.GetResult(ctx, nexusclient.GetResultOptions{
+		Wait: true,
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
