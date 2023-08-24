@@ -4,16 +4,8 @@ Client and server libraries for working with the Nexus [HTTP API](https://github
 
 ## Installation
 
-### Intall the Client
-
 ```shell
-go get github.com/nexus-rpc/nexusclient
-```
-
-### Intall the Server
-
-```
-go get github.com/nexus-rpc/nexusserver
+go get -u github.com/nexus-rpc/sdk-go
 ```
 
 ## Usage
@@ -26,7 +18,7 @@ completions.
 #### Create a Client
 
 ```go
-use (
+import (
 	"github.com/nexus-rpc/sdk-go/nexusclient"
 )
 
@@ -345,24 +337,12 @@ The `Details` field is encoded and it is up to the library user to encode to and
 
 ### Test
 
-#### On Unix
-
 ```shell
-go test -v  $(go list -f '{{.Dir}}/...' -m | xargs)
+go test -v ./...
 ```
-
-#### On Windows
-
-> TODO
 
 ### Lint
 
-#### On Unix
-
 ```shell
-golangci-lint --verbose --timeout 10m --fix=false $(go list -f '{{.Dir}}/...' -m | xargs)
+golangci-lint run --verbose --timeout 10m --fix=false
 ```
-
-#### On Windows
-
-> TODO
