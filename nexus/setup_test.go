@@ -1,4 +1,4 @@
-package test
+package nexus
 
 import (
 	"context"
@@ -24,9 +24,9 @@ func setup(t *testing.T, handler nexusserver.Handler) (ctx context.Context, clie
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	client, err = nexusclient.NewClient(nexusclient.Options{
-		GetResultMaxRequestTimeout: time.Minute,
-		ServiceBaseURL:             fmt.Sprintf("http://%s/", listener.Addr().String()),
+	client, err = nexusclient.New(nexusclient.Options{
+		GetResultMaxTimeout: time.Minute,
+		ServiceBaseURL:      fmt.Sprintf("http://%s/", listener.Addr().String()),
 	})
 	require.NoError(t, err)
 
@@ -52,7 +52,7 @@ func setupForCompletion(t *testing.T, handler nexusserver.CompletionHandler) (ct
 	require.NoError(t, err)
 	callbackURL = fmt.Sprintf("http://%s/callback?a=b", listener.Addr().String())
 
-	client, err = nexusclient.NewClient(nexusclient.Options{})
+	client, err = nexusclient.New(nexusclient.Options{})
 	require.NoError(t, err)
 
 	go func() {

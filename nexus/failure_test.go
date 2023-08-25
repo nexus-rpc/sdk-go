@@ -1,4 +1,4 @@
-package nexusapi
+package nexus
 
 import (
 	"encoding/json"
@@ -17,12 +17,10 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 	}
 	cases := []testcase{
 		{
-			message:  "simple",
-			details:  "details",
-			metadata: map[string]string{},
+			message: "simple",
+			details: "details",
 			serialized: `{
 	"message": "simple",
-	"metadata": {},
 	"details": "details"
 }`,
 		},

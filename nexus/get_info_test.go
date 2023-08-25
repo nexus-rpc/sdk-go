@@ -1,4 +1,4 @@
-package test
+package nexus
 
 import (
 	"context"
@@ -45,16 +45,17 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{expectHeader: true})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
-	defer handle.Close()
+	handle := result.Pending
+	require.NotNil(t, handle)
 	info, err := handle.GetInfo(ctx, nexusclient.GetInfoOptions{
 		Header: http.Header{"foo": []string{"bar"}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, handle.ID(), info.ID)
+	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, nexusapi.OperationStateCanceled, info.State)
 }
 
@@ -62,9 +63,9 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
-	handle := client.GetHandle("foo", "async")
+	handle := client.NewHandle("foo", "async")
 	info, err := handle.GetInfo(ctx, nexusclient.GetInfoOptions{})
 	require.NoError(t, err)
-	require.Equal(t, handle.ID(), info.ID)
+	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, nexusapi.OperationStateCanceled, info.State)
 }

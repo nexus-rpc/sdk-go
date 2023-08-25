@@ -1,4 +1,4 @@
-package nexusserver
+package nexus
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
-	"os"
 	"path"
 	"time"
 
@@ -22,17 +22,17 @@ type (
 	Options struct {
 		// Handler for handling service requests.
 		Handler Handler
-		// A stuctured logging handler.
-		// Defaults to logging with text format to stderr at info level.
-		LogHandler slog.Handler
+		// A stuctured logger.
+		// Defaults to slog.Default().
+		Logger *slog.Logger
 		// Optional marshaler for marshaling objects to JSON.
-		// Defaults to output with indentation.
-		Marshaler nexusapi.Marshaler
+		// Defaults to json.Marshal.
+		Marshaler func(any) ([]byte, error)
 		// Max duration to allow waiting for a single get result request.
 		// Enforced if the provided wait query parameter for a request is greater than this value.
 		//
 		// Defaults to one minute.
-		GetResultMaxRequestTimeout time.Duration
+		GetResultMaxTimeout time.Duration
 	}
 
 	// Input for [nexusserver.Handler.StartOperation].
@@ -107,7 +107,7 @@ type (
 	}
 
 	baseHTTPHandler struct {
-		marshaler nexusapi.Marshaler
+		marshaler func(any) ([]byte, error)
 		logger    *slog.Logger
 	}
 
@@ -151,11 +151,11 @@ type (
 		// Handler for handling completion requests.
 		Handler CompletionHandler
 		// A stuctured logging handler.
-		// Defaults to logging with text format to stderr at info level.
-		LogHandler slog.Handler
+		// Defaults to slog.Default().
+		Logger *slog.Logger
 		// Optional marshaler for marshaling objects to JSON.
-		// Defaults to output with indentation.
-		Marshaler nexusapi.Marshaler
+		// Defaults to json.Marshal.
+		Marshaler func(any) ([]byte, error)
 	}
 
 	completionHTTPHandler struct {
@@ -164,11 +164,9 @@ type (
 	}
 )
 
-const (
-	headerOperationState = nexusapi.HeaderOperationState
-	headerContentType    = nexusapi.HeaderContentType
-	contentTypeJSON      = nexusapi.ContentTypeJSON
-)
+const headerOperationState = nexusapi.HeaderOperationState
+const headerContentType = "Content-Type"
+const contentTypeJSON = "application/json"
 
 func newBadRequestError(format string, args ...any) *HandlerError {
 	return &HandlerError{
@@ -230,7 +228,7 @@ func (r *OperationResponseSync) applyToGetResultResponse(writer http.ResponseWri
 // NewJSONOperationResponseSync constructs an [OperationResponseSync], setting the proper Content-Type header.
 // Marhsals the provided value to JSON using [nexusapi.DefaultMarshaler].
 func NewJSONOperationResponseSync(v any) (*OperationResponseSync, error) {
-	b, err := nexusapi.DefaultMarshaler(v)
+	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +320,8 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 		}
 
 		var cancel func()
-		if waitDuration > h.options.GetResultMaxRequestTimeout {
-			waitDuration = h.options.GetResultMaxRequestTimeout
+		if waitDuration > h.options.GetResultMaxTimeout {
+			waitDuration = h.options.GetResultMaxTimeout
 		}
 		// TODO: reduce duration a bit to give some grace time?
 		ctx, cancel = context.WithTimeout(ctx, waitDuration)
@@ -383,17 +381,17 @@ func (h *httpHandler) CancelOperation(writer http.ResponseWriter, request *http.
 // Constructs an [http.Handler] from given options for handling Nexus service requests.
 func NewHTTPHandler(options Options) http.Handler {
 	if options.Marshaler == nil {
-		options.Marshaler = nexusapi.DefaultMarshaler
+		options.Marshaler = json.Marshal
 	}
-	if options.LogHandler == nil {
-		options.LogHandler = newDefaultLogHandler()
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
-	if options.GetResultMaxRequestTimeout == 0 {
-		options.GetResultMaxRequestTimeout = time.Minute
+	if options.GetResultMaxTimeout == 0 {
+		options.GetResultMaxTimeout = time.Minute
 	}
 	handler := &httpHandler{
 		baseHTTPHandler: baseHTTPHandler{
-			logger:    slog.New(options.LogHandler),
+			logger:    slog.Default(),
 			marshaler: options.Marshaler,
 		},
 		options: options,
@@ -415,7 +413,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	}
 	switch completion.State {
 	case nexusapi.OperationStateFailed, nexusapi.OperationStateCanceled:
-		if !nexusapi.IsContentTypeJSON(request.Header) {
+		if !isContentTypeJSON(request.Header) {
 			h.writeFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(headerContentType)))
 			return
 		}
@@ -444,20 +442,26 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 // Constructs an [http.Handler] from given options for handling operation completion requests.
 func NewCompletionHTTPHandler(options CompletionOptions) http.Handler {
 	if options.Marshaler == nil {
-		options.Marshaler = nexusapi.DefaultMarshaler
+		options.Marshaler = json.Marshal
 	}
-	if options.LogHandler == nil {
-		options.LogHandler = newDefaultLogHandler()
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
 	return &completionHTTPHandler{
 		baseHTTPHandler: baseHTTPHandler{
-			logger:    slog.New(options.LogHandler),
+			logger:    options.Logger,
 			marshaler: options.Marshaler,
 		},
 		handler: options.Handler,
 	}
 }
 
-func newDefaultLogHandler() slog.Handler {
-	return slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+// isContentTypeJSON returns true if header contains a parsable Content-Type header with media type of application/json.
+func isContentTypeJSON(header http.Header) bool {
+	contentType := header.Get(headerContentType)
+	if contentType == "" {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == contentTypeJSON
 }

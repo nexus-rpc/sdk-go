@@ -1,4 +1,4 @@
-package test
+package nexus
 
 import (
 	"bytes"
@@ -41,18 +41,14 @@ func TestSuccess(t *testing.T) {
 
 	requestBody := []byte{0x00, 0x01}
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	response, err := client.ExecuteOperation(ctx, nexusclient.ExecuteOperationRequest{
 		Operation:   "foo",
 		CallbackURL: "http://test/callback",
-		Header:      http.Header{"Echo": []string{"test"}},
+		StartHeader: http.Header{"Echo": []string{"test"}},
 		Body:        bytes.NewReader(requestBody),
 	})
 	require.NoError(t, err)
-	defer handle.Close()
-	require.Equal(t, "", handle.ID())
-	require.Equal(t, nexusapi.OperationStateSucceeded, handle.State())
-	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
-	require.NoError(t, err)
+	defer response.Body.Close()
 	require.Equal(t, "test", response.Header.Get("Echo"))
 	responseBody, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
@@ -123,11 +119,11 @@ func TestClientRequestID(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			handle, err := client.StartOperation(ctx, c.request)
+			result, err := client.StartOperation(ctx, c.request)
 			require.NoError(t, err)
-			response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
-			require.NoError(t, err)
-			defer handle.Close()
+			response := result.Successful
+			require.NotNil(t, response)
+			defer response.Body.Close()
 			responseBody, err := io.ReadAll(response.Body)
 			require.NoError(t, err)
 			c.validator(t, responseBody)
@@ -147,12 +143,11 @@ func TestJSON(t *testing.T) {
 	ctx, client, teardown := setup(t, &jsonHandler{})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
-	defer handle.Close()
-	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
+	response := result.Successful
 	require.Equal(t, "application/json", response.Header.Get("Content-Type"))
 	require.NoError(t, err)
 	responseBody, err := io.ReadAll(response.Body)
@@ -174,12 +169,11 @@ func TestAsync(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncHandler{})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
-	defer handle.Close()
-	require.Equal(t, nexusapi.OperationStateRunning, handle.State())
+	require.NotNil(t, result.Pending)
 }
 
 type unsuccessfulHandler struct {
@@ -202,13 +196,10 @@ func TestUnsuccessful(t *testing.T) {
 
 	cases := []string{"canceled", "failed"}
 	for _, c := range cases {
-		handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+		_, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
 			Operation: "foo",
 			RequestID: c,
 		})
-		require.NoError(t, err)
-		defer handle.Close()
-		_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{})
 		var unsuccessfulError *nexusapi.UnsuccessfulOperationError
 		require.ErrorAs(t, err, &unsuccessfulError)
 		require.Equal(t, nexusapi.OperationState(c), unsuccessfulError.State)

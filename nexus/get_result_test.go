@@ -1,4 +1,4 @@
-package test
+package nexus
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexusapi"
 	"github.com/nexus-rpc/sdk-go/nexusclient"
 	"github.com/nexus-rpc/sdk-go/nexusserver"
 	"github.com/stretchr/testify/require"
@@ -69,15 +68,12 @@ func TestWaitResult(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: testTimeout})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
-	require.NoError(t, err)
-	defer handle.Close()
-	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{
-		Wait:   true,
-		Header: http.Header{"foo": []string{"bar"}},
+	response, err := client.ExecuteOperation(ctx, nexusclient.ExecuteOperationRequest{
+		Operation:       "foo",
+		GetResultHeader: http.Header{"foo": []string{"bar"}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, nexusapi.OperationStateSucceeded, handle.State())
+	defer response.Body.Close()
 	require.Equal(t, "bar", response.Header.Get("foo"))
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
@@ -88,12 +84,12 @@ func TestPeekResult(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: 0})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
 	require.NoError(t, err)
-	defer handle.Close()
+	handle := result.Pending
+	require.NotNil(t, handle)
 	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
 	require.NoError(t, err)
-	require.Equal(t, nexusapi.OperationStateRunning, handle.State())
 	require.Nil(t, response)
 }
 
@@ -101,12 +97,9 @@ func TestPeekResult_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: 0})
 	defer teardown()
 
-	handle := client.GetHandle("foo", "async")
-	require.Equal(t, nexusapi.OperationState(""), handle.State())
-	defer handle.Close()
+	handle := client.NewHandle("foo", "async")
 	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
 	require.NoError(t, err)
-	require.Equal(t, nexusapi.OperationStateRunning, handle.State())
 	require.Nil(t, response)
 }
 
@@ -114,9 +107,10 @@ func TestWaitResult_NoDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
 	require.NoError(t, err)
-	defer handle.Close()
+	handle := result.Pending
+	require.NotNil(t, handle)
 
 	ctx = context.Background()
 	_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{Wait: true})
@@ -127,9 +121,10 @@ func TestWaitResult_CappedDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
 	defer teardown()
 
-	handle, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
 	require.NoError(t, err)
-	defer handle.Close()
+	handle := result.Pending
+	require.NotNil(t, handle)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
@@ -145,8 +140,7 @@ func TestWaitResult_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
 	defer cancel()
 
-	handle := client.GetHandle("foo", "async")
-	defer handle.Close()
+	handle := client.NewHandle("foo", "async")
 	_, err := handle.GetResult(ctx, nexusclient.GetResultOptions{
 		Wait: true,
 	})

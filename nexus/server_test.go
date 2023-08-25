@@ -1,4 +1,4 @@
-package nexusserver
+package nexus
 
 import (
 	"encoding/json"
@@ -14,8 +14,8 @@ import (
 
 func TestWriteFailure_GenericError(t *testing.T) {
 	h := baseHTTPHandler{
-		marshaler: nexusapi.DefaultMarshaler,
-		logger:    slog.New(newDefaultLogHandler()),
+		marshaler: json.Marshal,
+		logger:    slog.Default(),
 	}
 
 	writer := httptest.NewRecorder()
@@ -31,8 +31,8 @@ func TestWriteFailure_GenericError(t *testing.T) {
 
 func TestWriteFailure_HandlerError(t *testing.T) {
 	h := baseHTTPHandler{
-		marshaler: nexusapi.DefaultMarshaler,
-		logger:    slog.New(newDefaultLogHandler()),
+		marshaler: json.Marshal,
+		logger:    slog.Default(),
 	}
 
 	writer := httptest.NewRecorder()
@@ -48,8 +48,8 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 
 func TestWriteFailure_UnsuccessfulOperationError(t *testing.T) {
 	h := baseHTTPHandler{
-		marshaler: nexusapi.DefaultMarshaler,
-		logger:    slog.New(newDefaultLogHandler()),
+		marshaler: json.Marshal,
+		logger:    slog.Default(),
 	}
 
 	writer := httptest.NewRecorder()

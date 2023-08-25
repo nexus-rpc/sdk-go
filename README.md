@@ -45,7 +45,7 @@ defer handle.Close()
 Getting a handle does not incur a trip to the server.
 
 ```go
-handle := client.GetHandle("operation name", "operation ID")
+handle := client.NewHandle("operation name", "operation ID")
 defer handle.Close()
 ```
 
@@ -62,11 +62,11 @@ Handles expose a few getters: `Operation()`, `ID()` and `State()`.
 #### ID
 
 `ID` is the operation ID as returned by a Nexus handler in the response to `StartOperation` or set by the client in the
-`GetHandle` method. ID may be empty in case the handle represents an operation that completed synchronously.
+`NewHandle` method. ID may be empty in case the handle represents an operation that completed synchronously.
 
 #### State
 
-`State()` the last known operation state. Empty for handles created with `client.GetHandle` before issuing a request to
+`State()` the last known operation state. Empty for handles created with `client.NewHandle` before issuing a request to
 get the result.
 
 #### Get the Result of an Operation
@@ -83,7 +83,7 @@ yet completed.
 Callers may set `GetResultOptions.Wait` to true to alter this behavior, causing the client to long poll for the result
 until the provided context deadline is exceeded. When the deadline exceeds, `GetResult` will return a `nil` response and
 `context.DeadlineExceeded` error. The client may issue multiple requests until the deadline exceeds with a max request
-timeout of `Options.GetResultMaxRequestTimeout`.
+timeout of `Options.GetResultMaxTimeout`.
 
 Custom HTTP headers may be provided via `GetResultOptions`.
 
@@ -261,8 +261,7 @@ an `OperationResponseAsync` to indicate that the operation is still running.
 The method may also return a `context.DeadlineExceeded` error to indicate that the operation is still running.
 
 `GetOperationResultRequest.Wait` indicates whether the caller is willing to wait for the operation to complete. When
-set, context deadline indicates how long the caller is willing to wait for, capped by
-`Options.GetResultMaxRequestTimeout`.
+set, context deadline indicates how long the caller is willing to wait for, capped by `Options.GetResultMaxTimeout`.
 
 `GetOperationResultRequest` contains the original `http.Request` for extraction of headers, URL, and other useful
 information.
@@ -315,9 +314,8 @@ func (h *myHandler) StartOperation(ctx context.Context, request *nexusserver.Sta
 
 ### Logging
 
-Both the client and server packages log internally and accept a `log/slog.Handler` to customize their log output.
-
-By default logs are emited in textual format to stderr at INFO level.
+Both the client and server packages log internally and accept a `log/slog.Logger` to customize their log output,
+defaults to `slog.Default()`.
 
 ## Failure Structs
 
