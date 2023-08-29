@@ -67,8 +67,7 @@ type CancelOperationRequest struct {
 // An OperationResponse is the return type from the handler StartOperation and GetResult methods. It has two
 // implementations: [OperationResponseSync] and [OperationResponseAsync].
 type OperationResponse interface {
-	applyToStartResponse(http.ResponseWriter, *httpHandler)
-	applyToGetResultResponse(http.ResponseWriter, *httpHandler)
+	applyToHTTPResponse(http.ResponseWriter, *httpHandler)
 }
 
 // Indicates that an operation completed successfully.
@@ -95,7 +94,7 @@ func NewOperationResponseSync(v any) (*OperationResponseSync, error) {
 	}, nil
 }
 
-func (r *OperationResponseSync) applyToStartResponse(writer http.ResponseWriter, handler *httpHandler) {
+func (r *OperationResponseSync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
 	header := writer.Header()
 	for k, v := range r.Header {
 		header[k] = v
@@ -108,17 +107,12 @@ func (r *OperationResponseSync) applyToStartResponse(writer http.ResponseWriter,
 	}
 }
 
-func (r *OperationResponseSync) applyToGetResultResponse(writer http.ResponseWriter, handler *httpHandler) {
-	writer.Header().Set(headerOperationState, string(OperationStateSucceeded))
-	r.applyToStartResponse(writer, handler)
-}
-
 // Indicates that an operation has been accepted and will complete asynchronously.
 type OperationResponseAsync struct {
 	OperationID string
 }
 
-func (r *OperationResponseAsync) applyToStartResponse(writer http.ResponseWriter, handler *httpHandler) {
+func (r *OperationResponseAsync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
 	info := OperationInfo{
 		ID:    r.OperationID,
 		State: OperationStateRunning,
@@ -138,11 +132,6 @@ func (r *OperationResponseAsync) applyToStartResponse(writer http.ResponseWriter
 	}
 }
 
-func (r *OperationResponseAsync) applyToGetResultResponse(writer http.ResponseWriter, handler *httpHandler) {
-	writer.Header().Set(headerOperationState, string(OperationStateRunning))
-	writer.WriteHeader(statusOperationRunning)
-}
-
 // A Handler must implement all of the Nexus service endpoints as defined in the [Nexus HTTP API].
 //
 // Handler implementations must embed the [UnimplementedHandler].
@@ -156,10 +145,13 @@ type Handler interface {
 	// Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or canceled.
 	StartOperation(context.Context, *StartOperationRequest) (OperationResponse, error)
 	// GetOperationResult handles requests to get the result of an asynchronous operation. Return
-	// [OperationResponseSync] to respond successfully - inline, or [OperationResponseAsync] to indicate that an
-	// asynchronous operation is still running.
+	// [OperationResponseSync] to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate
+	// that an asynchronous operation is still running.
 	// Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or canceled.
-	GetOperationResult(context.Context, *GetOperationResultRequest) (OperationResponse, error)
+	//
+	// [context.DeadlineExceeded] error is also accepted as an indicator that an operation is still running if Wait is
+	// set on the request to simplify handler implementations.
+	GetOperationResult(context.Context, *GetOperationResultRequest) (*OperationResponseSync, error)
 	// GetOperationInfo handles requests to get information about an asynchronous operation.
 	GetOperationInfo(context.Context, *GetOperationInfoRequest) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
@@ -296,7 +288,7 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
-		response.applyToStartResponse(writer, h)
+		response.applyToHTTPResponse(writer, h)
 	}
 }
 
@@ -328,15 +320,16 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 
 	response, err := h.options.Handler.GetOperationResult(ctx, handlerRequest)
 	if err != nil {
-		if handlerRequest.Wait && errors.Is(err, context.DeadlineExceeded) {
-			// Convert deadline exceeded to an async response to simplify handler implementation.
-			response = &OperationResponseAsync{OperationID: handlerRequest.OperationID}
+		// Accept deadline exceeded to simplify handler implementation.
+		if errors.Is(err, ErrOperationStillRunning) || (handlerRequest.Wait && errors.Is(err, context.DeadlineExceeded)) {
+			writer.Header().Set(headerOperationState, string(OperationStateRunning))
+			writer.WriteHeader(statusOperationRunning)
 		} else {
 			h.writeFailure(writer, err)
-			return
 		}
+		return
 	}
-	response.applyToGetResultResponse(writer, h)
+	response.applyToHTTPResponse(writer, h)
 }
 
 func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http.Request) {

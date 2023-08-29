@@ -49,9 +49,6 @@ var errInvalidOperationName = errors.New("invalid operation name")
 
 var errInvalidOperationID = errors.New("invalid operation ID")
 
-// ErrOperationStillRunning indicates that an operation is still running while trying to get its result.
-var ErrOperationStillRunning = errors.New("operation still running")
-
 // Error that indicates a client encountered something unexpected in the server's response.
 type UnexpectedResponseError struct {
 	// Error message.

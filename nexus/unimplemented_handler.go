@@ -17,7 +17,7 @@ func (h *UnimplementedHandler) StartOperation(ctx context.Context, request *Star
 }
 
 // GetOperationResult implements the Handler interface.
-func (h *UnimplementedHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (OperationResponse, error) {
+func (h *UnimplementedHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (*OperationResponseSync, error) {
 	panic("unimplemented")
 }
 

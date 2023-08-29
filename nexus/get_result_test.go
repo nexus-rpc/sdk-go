@@ -24,7 +24,7 @@ func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *St
 	}, nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (OperationResponse, error) {
+func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (*OperationResponseSync, error) {
 	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
@@ -52,9 +52,7 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request
 		return nil, ctx.Err()
 	}
 	if h.timesCalled < 2 {
-		return &OperationResponseAsync{
-			OperationID: "async",
-		}, nil
+		return nil, ErrOperationStillRunning
 	}
 	return &OperationResponseSync{
 		Header: request.HTTPRequest.Header,

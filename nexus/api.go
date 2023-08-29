@@ -5,6 +5,7 @@ package nexus
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -60,6 +61,9 @@ func (e *UnsuccessfulOperationError) Error() string {
 	}
 	return fmt.Sprintf("operation %s", e.State)
 }
+
+// ErrOperationStillRunning indicates that an operation is still running while trying to get its result.
+var ErrOperationStillRunning = errors.New("operation still running")
 
 // OperationInfo conveys information about an operation.
 type OperationInfo struct {

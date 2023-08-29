@@ -277,7 +277,7 @@ func (h *myHandler) GetOperationInfo(ctx context.Context, request *nexus.GetOper
 
 The `GetOperationResult` method is used to deliver an operation's result inline. Similarly to `StartOperation`, this
 method should return an `OperationResponseSync` or fail with an `UnsuccessfulOperationError` to indicate completion or
-an `OperationResponseAsync` to indicate that the operation is still running.
+an `ErrOperationStillRunning` error to indicate that the operation is still running.
 The method may also return a `context.DeadlineExceeded` error to indicate that the operation is still running.
 
 `GetOperationResultRequest.Wait` indicates whether the caller is willing to wait for the operation to complete. When
