@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
-	"github.com/nexus-rpc/sdk-go/nexusapi"
+	"time"
 )
 
 // An OperationHandle is used to cancel operations and get their result and status.
@@ -18,18 +17,14 @@ type OperationHandle struct {
 	client *Client
 }
 
-// Options for [nexusclient.OperationHandle.GetInfo].
+// GetInfoOptions are options for [OperationHandle.GetInfo].
 type GetInfoOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 }
 
-// GetInfo gets operation information issuing a network request to the service handler.
-func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (*nexusapi.OperationInfo, error) {
-	if h.ID == "" {
-		return nil, errHandleForSyncOperation
-	}
-
+// GetInfo gets operation information, issuing a network request to the service handler.
+func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (*OperationInfo, error) {
 	url, err := h.client.joinURL(h.Operation, h.ID)
 	if err != nil {
 		return nil, err
@@ -42,7 +37,7 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (
 		httpReq.Header = options.Header.Clone()
 	}
 
-	httpReq.Header.Set(headerUserAgent, UserAgent)
+	httpReq.Header.Set(headerUserAgent, userAgent)
 	response, err := h.client.Options.HTTPCaller(httpReq)
 	if err != nil {
 		return nil, err
@@ -61,23 +56,24 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (
 	return operationInfoFromResponse(response, body)
 }
 
-// GetResultOptions are Options for [nexusclient.OperationHandle.GetResult].
+// GetResultOptions are Options for [OperationHandle.GetResult].
 type GetResultOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
-	// Boolean indicating whether to wait for operation completion or return the current status immediately.
-	Wait bool
+	// Duration to wait for operation completion. Zero or negative value implies no wait.
+	Wait time.Duration
 }
 
 // GetResult gets the result of an operation, issuing a network request to the service handler.
 //
-// By default, GetResult returns a nil response immediately and no error after issuing a call if the operation has not
-// yet completed.
+// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
+// not yet completed.
 //
-// Callers may set [nexusclient.GetResultOptions.Wait] to true to alter this behavior, causing the client to long poll
-// for the result until the provided context deadline is exceeded. When the deadline exceeds, GetResult will return a
-// nil response and [context.DeadlineExceeded] error. The client may issue multiple requests until the deadline exceeds
-// with a max request timeout of [nexusclient.Options.GetResultMaxRequestTimeout].
+// Callers may set GetResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to long
+// poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
+// [ErrOperationStillRunning]) is returned.
+//
+// The wait time is capped to the deadline of the provided context.
 //
 // ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
 func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOptions) (*http.Response, error) {
@@ -92,16 +88,24 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 	if options.Header != nil {
 		httpReq.Header = options.Header.Clone()
 	}
-	httpReq.Header.Set(headerUserAgent, UserAgent)
+	httpReq.Header.Set(headerUserAgent, userAgent)
 
+	startTime := time.Now()
 	for {
-		response, err := h.client.sendGetOperationResultRequest(ctx, httpReq, options.Wait)
+		var wait time.Duration
+		if options.Wait > 0 {
+			wait = options.Wait - time.Since(startTime)
+			if wait < 0 {
+				return nil, ErrOperationStillRunning
+			}
+		}
+		response, err := h.client.sendGetOperationResultRequest(ctx, httpReq, wait)
 		if err != nil {
-			if errors.Is(err, errOperationStillRunning) {
-				if options.Wait {
+			if errors.Is(err, ErrOperationStillRunning) {
+				if options.Wait > 0 {
 					continue
 				} else {
-					return nil, nil
+					return nil, ErrOperationStillRunning
 				}
 			}
 			return nil, err
@@ -110,7 +114,7 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 	}
 }
 
-// Options for [nexusclient.OperationHandle.Cancel].
+// CancelOptions are options for [OperationHandle.Cancel].
 type CancelOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
@@ -120,10 +124,6 @@ type CancelOptions struct {
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
 func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) error {
-	if h.ID == "" {
-		return errHandleForSyncOperation
-	}
-
 	url, err := h.client.joinURL(h.Operation, h.ID, "cancel")
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) err
 		httpReq.Header = options.Header.Clone()
 	}
 
-	httpReq.Header.Set(headerUserAgent, UserAgent)
+	httpReq.Header.Set(headerUserAgent, userAgent)
 	response, err := h.client.Options.HTTPCaller(httpReq)
 	if err != nil {
 		return err

@@ -2,25 +2,31 @@ package nexus
 
 import (
 	"context"
-
-	"github.com/nexus-rpc/sdk-go/nexusapi"
-	"github.com/nexus-rpc/sdk-go/nexusserver"
 )
 
-type unimplementedHandler struct{}
+// UnimplementedHandler must be embedded into any [Handler] implementation for future compatibility.
+// It implements all methods on the [Handler] interface, panicking at runtime if they are not implemented by the
+// embedding type.
+type UnimplementedHandler struct{}
 
-func (h *unimplementedHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+func (h *UnimplementedHandler) mustEmbedUnimplementedHandler() {}
+
+// StartOperation implements the Handler interface.
+func (h *UnimplementedHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
 	panic("unimplemented")
 }
 
-func (h *unimplementedHandler) GetOperationResult(ctx context.Context, request *nexusserver.GetOperationResultRequest) (nexusserver.OperationResponse, error) {
+// GetOperationResult implements the Handler interface.
+func (h *UnimplementedHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (OperationResponse, error) {
 	panic("unimplemented")
 }
 
-func (h *unimplementedHandler) GetOperationInfo(ctx context.Context, request *nexusserver.GetOperationInfoRequest) (*nexusapi.OperationInfo, error) {
+// GetOperationInfo implements the Handler interface.
+func (h *UnimplementedHandler) GetOperationInfo(ctx context.Context, request *GetOperationInfoRequest) (*OperationInfo, error) {
 	panic("unimplemented")
 }
 
-func (h *unimplementedHandler) CancelOperation(ctx context.Context, request *nexusserver.CancelOperationRequest) error {
+// CancelOperation implements the Handler interface.
+func (h *UnimplementedHandler) CancelOperation(ctx context.Context, request *CancelOperationRequest) error {
 	panic("unimplemented")
 }

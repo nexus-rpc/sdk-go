@@ -8,23 +8,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexusclient"
-	"github.com/nexus-rpc/sdk-go/nexusserver"
 	"github.com/stretchr/testify/require"
 )
 
 const testTimeout = time.Second * 5
 
-func setup(t *testing.T, handler nexusserver.Handler) (ctx context.Context, client *nexusclient.Client, teardown func()) {
+func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
-	httpHandler := nexusserver.NewHTTPHandler(nexusserver.Options{
+	httpHandler := NewHTTPHandler(HandlerOptions{
 		Handler: handler,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	client, err = nexusclient.New(nexusclient.Options{
+	client, err = NewClient(ClientOptions{
 		GetResultMaxTimeout: time.Minute,
 		ServiceBaseURL:      fmt.Sprintf("http://%s/", listener.Addr().String()),
 	})
@@ -41,10 +39,10 @@ func setup(t *testing.T, handler nexusserver.Handler) (ctx context.Context, clie
 	}
 }
 
-func setupForCompletion(t *testing.T, handler nexusserver.CompletionHandler) (ctx context.Context, client *nexusclient.Client, callbackURL string, teardown func()) {
+func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Context, client *Client, callbackURL string, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
-	httpHandler := nexusserver.NewCompletionHTTPHandler(nexusserver.CompletionOptions{
+	httpHandler := NewCompletionHTTPHandler(CompletionHandlerOptions{
 		Handler: handler,
 	})
 
@@ -52,7 +50,7 @@ func setupForCompletion(t *testing.T, handler nexusserver.CompletionHandler) (ct
 	require.NoError(t, err)
 	callbackURL = fmt.Sprintf("http://%s/callback?a=b", listener.Addr().String())
 
-	client, err = nexusclient.New(nexusclient.Options{})
+	client, err = NewClient(ClientOptions{})
 	require.NoError(t, err)
 
 	go func() {

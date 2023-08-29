@@ -9,6 +9,8 @@ import (
 )
 
 func TestFailure_JSONMarshalling(t *testing.T) {
+	// This test isn't strictly required, it's left to demonstrate how to use Failures.
+
 	type testcase struct {
 		message    string
 		details    any
@@ -73,18 +75,8 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 	}
 }
 
-func TestOperationInfo_JSONMarshalling(t *testing.T) {
-	data, err := json.Marshal(OperationInfo{ID: "abc", State: OperationStateCanceled})
-	require.NoError(t, err)
-	require.Equal(t, `{"id":"abc","state":"canceled"}`, string(data))
-
-	var info OperationInfo
-
-	err = json.Unmarshal([]byte(`{"id":"def","state":"succeeded"}`), &info)
-	require.NoError(t, err)
-	require.Equal(t, OperationInfo{ID: "def", State: OperationStateSucceeded}, info)
-
-	err = json.Unmarshal([]byte(`{"id":"def","state":"unknown"}`), &info)
-	require.NoError(t, err)
-	require.Equal(t, OperationInfo{ID: "def", State: OperationState("unknown")}, info)
+func TestOperationNameRegexp(t *testing.T) {
+	require.True(t, isValidOperationName.MatchString("~a-VALID_url.part"))
+	require.False(t, isValidOperationName.MatchString(""))
+	require.False(t, isValidOperationName.MatchString("+"))
 }

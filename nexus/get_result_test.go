@@ -8,26 +8,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexusclient"
-	"github.com/nexus-rpc/sdk-go/nexusserver"
 	"github.com/stretchr/testify/require"
 )
 
 type asyncWithResultHandler struct {
 	expectWait time.Duration
-	unimplementedHandler
+	UnimplementedHandler
 	timesCalled int
 	block       bool
 }
 
-func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return &nexusserver.OperationResponseAsync{
+func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return &OperationResponseAsync{
 		OperationID: "async",
 	}, nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *nexusserver.GetOperationResultRequest) (nexusserver.OperationResponse, error) {
-	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (OperationResponse, error) {
+	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
 	h.timesCalled++
@@ -54,11 +52,11 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request
 		return nil, ctx.Err()
 	}
 	if h.timesCalled < 2 {
-		return &nexusserver.OperationResponseAsync{
+		return &OperationResponseAsync{
 			OperationID: "async",
 		}, nil
 	}
-	return &nexusserver.OperationResponseSync{
+	return &OperationResponseSync{
 		Header: request.HTTPRequest.Header,
 		Body:   bytes.NewReader([]byte("body")),
 	}, nil
@@ -68,7 +66,7 @@ func TestWaitResult(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: testTimeout})
 	defer teardown()
 
-	response, err := client.ExecuteOperation(ctx, nexusclient.ExecuteOperationRequest{
+	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
 		Operation:       "foo",
 		GetResultHeader: http.Header{"foo": []string{"bar"}},
 	})
@@ -84,12 +82,12 @@ func TestPeekResult(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: 0})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, StartOperationOptions{Operation: "foo"})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
-	require.NoError(t, err)
+	response, err := handle.GetResult(ctx, GetResultOptions{})
+	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 }
 
@@ -97,38 +95,39 @@ func TestPeekResult_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: 0})
 	defer teardown()
 
-	handle := client.NewHandle("foo", "async")
-	response, err := handle.GetResult(ctx, nexusclient.GetResultOptions{})
+	handle, err := client.NewHandle("foo", "async")
 	require.NoError(t, err)
+	response, err := handle.GetResult(ctx, GetResultOptions{})
+	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 }
 
-func TestWaitResult_NoDeadline(t *testing.T) {
+func TestWaitResult_NoContextDeadline_WaitCapped(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, StartOperationOptions{Operation: "foo"})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
 
 	ctx = context.Background()
-	_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{Wait: true})
+	_, err = handle.GetResult(ctx, GetResultOptions{Wait: time.Minute * 10})
 	require.NoError(t, err)
 }
 
-func TestWaitResult_CappedDeadline(t *testing.T) {
-	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Minute})
+func TestWaitResult_DeadlineCapsWaitTime(t *testing.T) {
+	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: time.Second * 30})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{Operation: "foo"})
+	result, err := client.StartOperation(ctx, StartOperationOptions{Operation: "foo"})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	_, err = handle.GetResult(ctx, nexusclient.GetResultOptions{Wait: true})
+	_, err = handle.GetResult(ctx, GetResultOptions{Wait: time.Hour})
 	require.NoError(t, err)
 }
 
@@ -137,12 +136,10 @@ func TestWaitResult_Timeout(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{expectWait: waitTimeout, block: true})
 	defer teardown()
 
-	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
-	defer cancel()
-
-	handle := client.NewHandle("foo", "async")
-	_, err := handle.GetResult(ctx, nexusclient.GetResultOptions{
-		Wait: true,
+	handle, err := client.NewHandle("foo", "async")
+	require.NoError(t, err)
+	_, err = handle.GetResult(ctx, GetResultOptions{
+		Wait: waitTimeout,
 	})
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, ErrOperationStillRunning)
 }

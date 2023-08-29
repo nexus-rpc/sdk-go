@@ -10,7 +10,7 @@ import (
 
 type asyncWithCancelHandler struct {
 	expectHeader bool
-	unimplementedHandler
+	UnimplementedHandler
 }
 
 func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
@@ -29,7 +29,7 @@ func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, request *C
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
 		return newBadRequestError("invalid 'foo' request header")
 	}
-	if request.HTTPRequest.Header.Get("User-Agent") != UserAgent {
+	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
 	return nil
@@ -39,7 +39,7 @@ func TestCancel_HandleFromStart(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithCancelHandler{expectHeader: true})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, StartOperationRequest{
+	result, err := client.StartOperation(ctx, StartOperationOptions{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
@@ -55,7 +55,8 @@ func TestCancel_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithCancelHandler{})
 	defer teardown()
 
-	handle := client.NewHandle("foo", "async")
-	err := handle.Cancel(ctx, CancelOptions{})
+	handle, err := client.NewHandle("foo", "async")
+	require.NoError(t, err)
+	err = handle.Cancel(ctx, CancelOptions{})
 	require.NoError(t, err)
 }

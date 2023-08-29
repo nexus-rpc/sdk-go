@@ -5,24 +5,21 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/nexus-rpc/sdk-go/nexusapi"
-	"github.com/nexus-rpc/sdk-go/nexusclient"
-	"github.com/nexus-rpc/sdk-go/nexusserver"
 	"github.com/stretchr/testify/require"
 )
 
 type asyncWithInfoHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 	expectHeader bool
 }
 
-func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return &nexusserver.OperationResponseAsync{
+func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return &OperationResponseAsync{
 		OperationID: "async",
 	}, nil
 }
 
-func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, request *nexusserver.GetOperationInfoRequest) (*nexusapi.OperationInfo, error) {
+func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, request *GetOperationInfoRequest) (*OperationInfo, error) {
 	if request.Operation != "foo" {
 		return nil, newBadRequestError("expected operation to be 'foo', got: %s", request.Operation)
 	}
@@ -32,12 +29,12 @@ func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, request *ne
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
 		return nil, newBadRequestError("invalid 'foo' request header")
 	}
-	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
-	return &nexusapi.OperationInfo{
+	return &OperationInfo{
 		ID:    request.OperationID,
-		State: nexusapi.OperationStateCanceled,
+		State: OperationStateCanceled,
 	}, nil
 }
 
@@ -45,27 +42,28 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{expectHeader: true})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, StartOperationOptions{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	info, err := handle.GetInfo(ctx, nexusclient.GetInfoOptions{
+	info, err := handle.GetInfo(ctx, GetInfoOptions{
 		Header: http.Header{"foo": []string{"bar"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
-	require.Equal(t, nexusapi.OperationStateCanceled, info.State)
+	require.Equal(t, OperationStateCanceled, info.State)
 }
 
 func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
-	handle := client.NewHandle("foo", "async")
-	info, err := handle.GetInfo(ctx, nexusclient.GetInfoOptions{})
+	handle, err := client.NewHandle("foo", "async")
+	require.NoError(t, err)
+	info, err := handle.GetInfo(ctx, GetInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
-	require.Equal(t, nexusapi.OperationStateCanceled, info.State)
+	require.Equal(t, OperationStateCanceled, info.State)
 }

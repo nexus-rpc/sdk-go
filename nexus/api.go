@@ -1,3 +1,6 @@
+// Package nexus provides client and server implementations of the Nexus [HTTP API]
+//
+// [HTTP API]: https://github.com/nexus-rpc/api
 package nexus
 
 import (
@@ -5,28 +8,33 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"regexp"
 )
 
-// Content-Type header.
-const headerContentType = "Content-Type"
+// Package version.
+const Version = "dev"
 
-// Nexus-Operation-State header.
-const HeaderOperationState = "Nexus-Operation-State"
+// TODO: ^^^ Actual version as part of the release tagging process.
 
-// Nexus-Request-Id header.
-const HeaderRequestID = "Nexus-Request-Id"
+const (
+	headerContentType    = "Content-Type"
+	headerOperationState = "Nexus-Operation-State"
+	headerOperationID    = "Nexus-Operation-Id"
+	headerRequestID      = "Nexus-Request-Id"
+)
 
-// media type for application/json.
 const contentTypeJSON = "application/json"
 
 // Query param for passing a callback URL.
-const QueryCallbackURL = "callback"
+const queryCallbackURL = "callback"
 
 // Query param for passing wait duration.
-const QueryWait = "wait"
+const queryWait = "wait"
+
+const statusOperationRunning = http.StatusPreconditionFailed
 
 // HTTP status code for failed operation responses.
-const StatusOperationFailed = 482
+const statusOperationFailed = http.StatusFailedDependency
 
 // Failure represents protocol level failures returned in non successful HTTP responses as well as `failed` or
 // `canceled` operation results.
@@ -84,3 +92,6 @@ func isContentTypeJSON(header http.Header) bool {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	return err == nil && mediaType == contentTypeJSON
 }
+
+var isValidOperationName = regexp.MustCompile(`^[\w\-.~]+$`)
+var isValidOperationID = isValidOperationName // same rules apply

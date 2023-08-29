@@ -8,28 +8,25 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/nexus-rpc/sdk-go/nexusapi"
-	"github.com/nexus-rpc/sdk-go/nexusclient"
-	"github.com/nexus-rpc/sdk-go/nexusserver"
 	"github.com/stretchr/testify/require"
 )
 
 type successHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 }
 
-func (h *successHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
+func (h *successHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
 	if request.Operation != "foo" {
 		return nil, newBadRequestError("unexpected operation: %s", request.Operation)
 	}
 	if request.CallbackURL != "http://test/callback" {
 		return nil, newBadRequestError("unexpected callback URL: %s", request.CallbackURL)
 	}
-	if request.HTTPRequest.Header.Get("User-Agent") != nexusclient.UserAgent {
+	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
 
-	return &nexusserver.OperationResponseSync{
+	return &OperationResponseSync{
 		Header: request.HTTPRequest.Header.Clone(),
 		Body:   request.HTTPRequest.Body,
 	}, nil
@@ -41,7 +38,7 @@ func TestSuccess(t *testing.T) {
 
 	requestBody := []byte{0x00, 0x01}
 
-	response, err := client.ExecuteOperation(ctx, nexusclient.ExecuteOperationRequest{
+	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
 		Operation:   "foo",
 		CallbackURL: "http://test/callback",
 		StartHeader: http.Header{"Echo": []string{"test"}},
@@ -56,11 +53,11 @@ func TestSuccess(t *testing.T) {
 }
 
 type requestIDEchoHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 }
 
-func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return &nexusserver.OperationResponseSync{Body: bytes.NewReader([]byte(request.RequestID))}, nil
+func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return &OperationResponseSync{Body: bytes.NewReader([]byte(request.RequestID))}, nil
 }
 
 func TestClientRequestID(t *testing.T) {
@@ -69,14 +66,14 @@ func TestClientRequestID(t *testing.T) {
 
 	type testcase struct {
 		name      string
-		request   nexusclient.StartOperationRequest
+		request   StartOperationOptions
 		validator func(*testing.T, []byte)
 	}
 
 	cases := []testcase{
 		{
 			name: "unspecified",
-			request: nexusclient.StartOperationRequest{
+			request: StartOperationOptions{
 				Operation: "foo",
 			},
 			validator: func(t *testing.T, body []byte) {
@@ -86,7 +83,7 @@ func TestClientRequestID(t *testing.T) {
 		},
 		{
 			name: "provided directly",
-			request: nexusclient.StartOperationRequest{
+			request: StartOperationOptions{
 				Operation: "foo",
 				RequestID: "direct",
 			},
@@ -96,9 +93,9 @@ func TestClientRequestID(t *testing.T) {
 		},
 		{
 			name: "provided via headers",
-			request: nexusclient.StartOperationRequest{
+			request: StartOperationOptions{
 				Operation: "foo",
-				Header:    http.Header{nexusapi.HeaderRequestID: []string{"via header"}},
+				Header:    http.Header{headerRequestID: []string{"via header"}},
 			},
 			validator: func(t *testing.T, body []byte) {
 				require.Equal(t, []byte("via header"), body)
@@ -106,10 +103,10 @@ func TestClientRequestID(t *testing.T) {
 		},
 		{
 			name: "direct overwrites headers",
-			request: nexusclient.StartOperationRequest{
+			request: StartOperationOptions{
 				Operation: "foo",
 				RequestID: "direct",
-				Header:    http.Header{nexusapi.HeaderRequestID: []string{"via header"}},
+				Header:    http.Header{headerRequestID: []string{"via header"}},
 			},
 			validator: func(t *testing.T, body []byte) {
 				require.Equal(t, []byte("direct"), body)
@@ -132,22 +129,24 @@ func TestClientRequestID(t *testing.T) {
 }
 
 type jsonHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 }
 
-func (h *jsonHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return nexusserver.NewJSONOperationResponseSync("success")
+func (h *jsonHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return NewOperationResponseSync("success")
 }
 
 func TestJSON(t *testing.T) {
 	ctx, client, teardown := setup(t, &jsonHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, StartOperationOptions{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
 	response := result.Successful
+	require.NotNil(t, response)
+	defer response.Body.Close()
 	require.Equal(t, "application/json", response.Header.Get("Content-Type"))
 	require.NoError(t, err)
 	responseBody, err := io.ReadAll(response.Body)
@@ -156,11 +155,11 @@ func TestJSON(t *testing.T) {
 }
 
 type asyncHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 }
 
-func (h *asyncHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return &nexusserver.OperationResponseAsync{
+func (h *asyncHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return &OperationResponseAsync{
 		OperationID: "async",
 	}, nil
 }
@@ -169,7 +168,7 @@ func TestAsync(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+	result, err := client.StartOperation(ctx, StartOperationOptions{
 		Operation: "foo",
 	})
 	require.NoError(t, err)
@@ -177,14 +176,14 @@ func TestAsync(t *testing.T) {
 }
 
 type unsuccessfulHandler struct {
-	unimplementedHandler
+	UnimplementedHandler
 }
 
-func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *nexusserver.StartOperationRequest) (nexusserver.OperationResponse, error) {
-	return nil, &nexusapi.UnsuccessfulOperationError{
+func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+	return nil, &UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
-		State: nexusapi.OperationState(request.RequestID),
-		Failure: &nexusapi.Failure{
+		State: OperationState(request.RequestID),
+		Failure: &Failure{
 			Message: "intentional",
 		},
 	}
@@ -196,12 +195,12 @@ func TestUnsuccessful(t *testing.T) {
 
 	cases := []string{"canceled", "failed"}
 	for _, c := range cases {
-		_, err := client.StartOperation(ctx, nexusclient.StartOperationRequest{
+		_, err := client.StartOperation(ctx, StartOperationOptions{
 			Operation: "foo",
 			RequestID: c,
 		})
-		var unsuccessfulError *nexusapi.UnsuccessfulOperationError
+		var unsuccessfulError *UnsuccessfulOperationError
 		require.ErrorAs(t, err, &unsuccessfulError)
-		require.Equal(t, nexusapi.OperationState(c), unsuccessfulError.State)
+		require.Equal(t, OperationState(c), unsuccessfulError.State)
 	}
 }
