@@ -13,9 +13,8 @@ import (
 )
 
 // Package version.
-const Version = "dev"
-
-// TODO: ^^^ Actual version as part of the release tagging process.
+// TODO: Actual version as part of the release tagging process.
+const version = "dev"
 
 const (
 	headerContentType    = "Content-Type"
@@ -56,7 +55,7 @@ type UnsuccessfulOperationError struct {
 
 // Error implements the error interface.
 func (e *UnsuccessfulOperationError) Error() string {
-	if e.Failure.Message != "" {
+	if e.Failure != nil && e.Failure.Message != "" {
 		return fmt.Sprintf("operation %s: %s", e.State, e.Failure.Message)
 	}
 	return fmt.Sprintf("operation %s", e.State)

@@ -7,12 +7,7 @@ import (
 )
 
 func TestNewHandleFailureConditions(t *testing.T) {
-	client, err := NewClient(ClientOptions{})
-	require.NoError(t, err)
-	_, err = client.NewHandle("name", "id")
-	require.ErrorIs(t, err, errEmptyServiceBaseURL)
-
-	client, err = NewClient(ClientOptions{ServiceBaseURL: "http://foo.com"})
+	client, err := NewClient(ClientOptions{ServiceBaseURL: "http://foo.com"})
 	require.NoError(t, err)
 	_, err = client.NewHandle("", "id")
 	require.ErrorIs(t, err, errInvalidOperationName)

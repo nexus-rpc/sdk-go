@@ -28,6 +28,9 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request
 	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
 	}
+	if request.HTTPRequest.Header.Get("Content-Type") != "" {
+		return nil, newBadRequestError("'Content-Type' header set on request")
+	}
 	h.timesCalled++
 	if h.expectWait == 0 {
 		if request.Wait {
@@ -65,8 +68,11 @@ func TestWaitResult(t *testing.T) {
 	defer teardown()
 
 	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
-		Operation:       "foo",
-		GetResultHeader: http.Header{"foo": []string{"bar"}},
+		Operation: "foo",
+		Header: http.Header{
+			"foo":          []string{"bar"},
+			"Content-Type": []string{"checking that this gets unset in the get-result request"},
+		},
 	})
 	require.NoError(t, err)
 	defer response.Body.Close()
@@ -84,7 +90,7 @@ func TestPeekResult(t *testing.T) {
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	response, err := handle.GetResult(ctx, GetResultOptions{})
+	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 }
@@ -95,7 +101,7 @@ func TestPeekResult_HandleFromClient(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "async")
 	require.NoError(t, err)
-	response, err := handle.GetResult(ctx, GetResultOptions{})
+	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 }
@@ -110,7 +116,7 @@ func TestWaitResult_NoContextDeadline_WaitCapped(t *testing.T) {
 	require.NotNil(t, handle)
 
 	ctx = context.Background()
-	_, err = handle.GetResult(ctx, GetResultOptions{Wait: time.Minute * 10})
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Minute * 10})
 	require.NoError(t, err)
 }
 
@@ -125,7 +131,7 @@ func TestWaitResult_DeadlineCapsWaitTime(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	_, err = handle.GetResult(ctx, GetResultOptions{Wait: time.Hour})
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Hour})
 	require.NoError(t, err)
 }
 
@@ -136,7 +142,7 @@ func TestWaitResult_Timeout(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "async")
 	require.NoError(t, err)
-	_, err = handle.GetResult(ctx, GetResultOptions{
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{
 		Wait: waitTimeout,
 	})
 	require.ErrorIs(t, err, ErrOperationStillRunning)

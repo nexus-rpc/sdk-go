@@ -48,7 +48,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	info, err := handle.GetInfo(ctx, GetInfoOptions{
+	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{
 		Header: http.Header{"foo": []string{"bar"}},
 	})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "async")
 	require.NoError(t, err)
-	info, err := handle.GetInfo(ctx, GetInfoOptions{})
+	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, OperationStateCanceled, info.State)

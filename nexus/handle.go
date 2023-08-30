@@ -17,18 +17,15 @@ type OperationHandle struct {
 	client *Client
 }
 
-// GetInfoOptions are options for [OperationHandle.GetInfo].
-type GetInfoOptions struct {
+// GetOperationInfoOptions are options for [OperationHandle.GetInfo].
+type GetOperationInfoOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 }
 
 // GetInfo gets operation information, issuing a network request to the service handler.
-func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (*OperationInfo, error) {
-	url, err := h.client.joinURL(h.Operation, h.ID)
-	if err != nil {
-		return nil, err
-	}
+func (h *OperationHandle) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
+	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID)
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
@@ -38,7 +35,7 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (
 	}
 
 	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := h.client.Options.HTTPCaller(httpReq)
+	response, err := h.client.options.HTTPCaller(httpReq)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +53,8 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetInfoOptions) (
 	return operationInfoFromResponse(response, body)
 }
 
-// GetResultOptions are Options for [OperationHandle.GetResult].
-type GetResultOptions struct {
+// GetOperationResultOptions are Options for [OperationHandle.GetResult].
+type GetOperationResultOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 	// Duration to wait for operation completion. Zero or negative value implies no wait.
@@ -69,18 +66,15 @@ type GetResultOptions struct {
 // By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
 // not yet completed.
 //
-// Callers may set GetResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to long
-// poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
+// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client
+// to long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
 // [ErrOperationStillRunning]) is returned.
 //
 // The wait time is capped to the deadline of the provided context.
 //
 // ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
-func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOptions) (*http.Response, error) {
-	url, err := h.client.joinURL(h.Operation, h.ID, "result")
-	if err != nil {
-		return nil, err
-	}
+func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationResultOptions) (*http.Response, error) {
+	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID, "result")
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
@@ -101,12 +95,8 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 		}
 		response, err := h.client.sendGetOperationResultRequest(ctx, httpReq, wait)
 		if err != nil {
-			if errors.Is(err, ErrOperationStillRunning) {
-				if options.Wait > 0 {
-					continue
-				} else {
-					return nil, ErrOperationStillRunning
-				}
+			if errors.Is(err, ErrOperationStillRunning) && options.Wait > 0 {
+				continue
 			}
 			return nil, err
 		}
@@ -114,8 +104,8 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetResultOption
 	}
 }
 
-// CancelOptions are options for [OperationHandle.Cancel].
-type CancelOptions struct {
+// CancelOperationOptions are options for [OperationHandle.Cancel].
+type CancelOperationOptions struct {
 	// Header to attach to the HTTP request. Optional.
 	Header http.Header
 }
@@ -123,11 +113,8 @@ type CancelOptions struct {
 // Cancel requests to cancel an asynchronous operation.
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
-func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) error {
-	url, err := h.client.joinURL(h.Operation, h.ID, "cancel")
-	if err != nil {
-		return err
-	}
+func (h *OperationHandle) Cancel(ctx context.Context, options CancelOperationOptions) error {
+	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID, "cancel")
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
 	if err != nil {
 		return err
@@ -137,7 +124,7 @@ func (h *OperationHandle) Cancel(ctx context.Context, options CancelOptions) err
 	}
 
 	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := h.client.Options.HTTPCaller(httpReq)
+	response, err := h.client.options.HTTPCaller(httpReq)
 	if err != nil {
 		return err
 	}

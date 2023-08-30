@@ -39,21 +39,20 @@ client, err := nexus.NewClient(nexus.ClientOptions{
 // request is a StartOperationRequest that can also be constructed directly.
 // See the StartOperationRequest definition for advanced options, such as setting a request ID, and arbitrary HTTP
 // headers.
-options, _ := nexus.NewStartOperationOptions("operation name", MyStruct{Field: "value"})
+options, _ := NewStartOperationOptions("example", MyStruct{Field: "value"})
 result, err := client.StartOperation(ctx, options)
 if err != nil {
-	var unsuccessfulOperationError *UnsuccessfulOperationError
+	var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
 	if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", err.State, err.Failure.Message)
+		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
 	}
 	return err
 }
-if result.Successful { // operation successful
+if result.Successful != nil { // operation successful
 	response := result.Successful
-	// must close the returned response body and read it until EOF to free up the underlying connection
 	defer response.Body.Close()
-	fmt.Printf("Got response with content type: %s\n", response.Header.Get("Content-Type"))
 	body, _ := io.ReadAll(response.Body)
+	fmt.Printf("Got response with content type: %s, body first bytes: %v\n", response.Header.Get("Content-Type"), body[:5])
 } else { // operation started asynchronously
 	handle := result.Pending
 	fmt.Printf("Started asynchronous operation with ID: %s\n", handle.ID)
@@ -108,8 +107,8 @@ configured endpoint.
 By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
 not yet completed.
 
-Callers may set GetResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to long
-poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
+Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to
+long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
 [ErrOperationStillRunning]) is returned.
 
 The wait time is capped to the deadline of the provided context.
@@ -118,10 +117,10 @@ When an operation completes unsuccessfuly, the returned error type is `Unsuccess
 
 ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
 
-Custom HTTP headers may be provided via `GetResultOptions`.
+Custom HTTP headers may be provided via `GetOperationResultOptions`.
 
 ```go
-response, err := handle.GetResult(ctx, nexus.GetResultOptions{})
+response, err := handle.GetResult(ctx, nexus.GetOperationResultOptions{})
 defer response.Body.Close()
 if err != nil {
 	// handle similarly to StartOperation errors above
@@ -134,10 +133,10 @@ if err != nil {
 The `GetInfo` method is used to get operation information (currently only the operation's state) issuing a network
 request to the service handler.
 
-Custom HTTP headers may be provided via `GetInfoOptions`.
+Custom HTTP headers may be provided via `GetOperationInfoOptions`.
 
 ```go
-info, _ := handle.GetInfo(ctx, nexus.GetInfoOptions{})
+info, _ := handle.GetInfo(ctx, nexus.GetOperationInfoOptions{})
 ```
 
 #### Cancel an Operation
@@ -146,10 +145,10 @@ The `Cancel` method requests cancelation of an asynchronous operation.
 
 Cancelation in Nexus is asynchronous and may be not be respected by the operation's implementation.
 
-Custom HTTP headers may be provided via `CancelOptions`.
+Custom HTTP headers may be provided via `CancelOperationOptions`.
 
 ```go
-_ := handle.Cancel(ctx, nexus.CancelOptions{})
+_ := handle.Cancel(ctx, nexus.CancelOperationOptions{})
 ```
 
 #### Complete an Operation
@@ -165,7 +164,8 @@ with the `NewOperationCompletionSuccessful` helper.
 Custom HTTP headers may be provided via `OperationCompletionSuccessful.Header`.
 
 ```go
-completion, _ := NewOperationCompletionSuccessful(MyStruct{Field: "value"})
+client, _ := nexus.NewCompletionClient(nexus.CompletionClientOptions{})
+completion, _ := nexus.NewOperationCompletionSuccessful(MyStruct{Field: "value"})
 _ = client.DeliverCompletion(ctx, completion)
 ```
 
@@ -362,5 +362,5 @@ go test -v ./...
 ### Lint
 
 ```shell
-golangci-lint run --verbose --timeout 10m --fix=false
+golangci-lint run --verbose --timeout 1m --fix=false
 ```

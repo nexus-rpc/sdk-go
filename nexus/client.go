@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -17,7 +18,6 @@ import (
 // ClientOptions are options for creating a Client.
 type ClientOptions struct {
 	// Base URL of the service.
-	// Optional. If not provided, created clients can only be used to deliver operation completions.
 	ServiceBaseURL string
 	// A function for making HTTP requests.
 	// Defaults to [http.DefaultClient.Do].
@@ -27,17 +27,12 @@ type ClientOptions struct {
 	//
 	// Defaults to one minute.
 	GetResultMaxTimeout time.Duration
-	// Optional marshaler for marshaling objects to JSON.
-	// Defaults to json.Marshal.
-	Marshaler func(any) ([]byte, error)
 }
 
 // User-Agent header set on HTTP requests.
-const userAgent = "Nexus-go-sdk/" + Version
+const userAgent = "Nexus-go-sdk/" + version
 
 const headerUserAgent = "User-Agent"
-
-const infiniteDuration time.Duration = 9223372036854775807
 
 // Error indicating an empty ServiceBaseURL option was used to create a client when making a Nexus service request.
 var errEmptyServiceBaseURL = errors.New("empty serviceBaseURL")
@@ -81,7 +76,7 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 
 // A Client is makes Nexus service requests  as defined in the [Nexus HTTP API].
 //
-// It can start an operation, get an [OperationHandle] to an existing operation, and deliver operation completions.
+// It can start an operation, get an [OperationHandle] to an existing operation.
 //
 // Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
 //
@@ -91,37 +86,34 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 // [Nexus HTTP API]: https://github.com/nexus-rpc/api
 type Client struct {
 	// The options this client was created with after applying defaults.
-	Options        ClientOptions
+	options        ClientOptions
 	serviceBaseURL *url.URL
 }
 
 // NewClient creates a new [Client] from provided [ClientOptions].
-// None of the options are required. Provide BaseServiceURL if you intend to use this client to make Nexus service calls
-// or leave empty when using this client only to deliver completions.
+// Only BaseServiceURL is required.
 func NewClient(options ClientOptions) (*Client, error) {
 	if options.HTTPCaller == nil {
 		options.HTTPCaller = http.DefaultClient.Do
 	}
+	if options.ServiceBaseURL == "" {
+		return nil, errEmptyServiceBaseURL
+	}
 	var serviceBaseURL *url.URL
-	if options.ServiceBaseURL != "" {
-		var err error
-		serviceBaseURL, err = url.Parse(options.ServiceBaseURL)
-		if err != nil {
-			return nil, err
-		}
-		if serviceBaseURL.Scheme != "http" && serviceBaseURL.Scheme != "https" {
-			return nil, errInvalidURLScheme
-		}
+	var err error
+	serviceBaseURL, err = url.Parse(options.ServiceBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if serviceBaseURL.Scheme != "http" && serviceBaseURL.Scheme != "https" {
+		return nil, errInvalidURLScheme
 	}
 	if options.GetResultMaxTimeout == 0 {
 		options.GetResultMaxTimeout = time.Minute
 	}
-	if options.Marshaler == nil {
-		options.Marshaler = json.Marshal
-	}
 
 	return &Client{
-		Options:        options,
+		options:        options,
 		serviceBaseURL: serviceBaseURL,
 	}, nil
 }
@@ -162,7 +154,7 @@ func NewStartOperationOptions(operation string, v any) (options StartOperationOp
 }
 
 // StartOperationResult is the return value of [Client.StartOperation].
-// It represents the mutually exclusive Successful and Pending outcomes of that method.
+// One and only one of Successful or Pending will be non-nil.
 type StartOperationResult struct {
 	// Set when start completes synchronously and successfully.
 	//
@@ -189,27 +181,6 @@ type StartOperationResult struct {
 //     [UnsuccessfulOperationError].
 //
 //  4. Any other failure.
-//
-// Example:
-//
-//	options, _ := NewStartOperationOptions("example", MyStruct{Field: "value"})
-//	result, err := client.StartOperation(ctx, options)
-//	if err != nil {
-//		var unsuccessfulOperationError *UnsuccessfulOperationError
-//		if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-//			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", err.State, err.Failure.Message)
-//		}
-//		return err
-//	}
-//	if result.Successful { // operation successful
-//		response := result.Successful
-//		defer response.Body.Close()
-//		fmt.Printf("Got response with content type: %s\n", response.Header.Get("Content-Type"))
-//		body, _ := io.ReadAll(response.Body)
-//	} else { // operation started asynchronously
-//		handle := result.Pending
-//		fmt.Printf("Started asynchronous operation with ID: %s\n", handle.ID)
-//	}
 func (c *Client) StartOperation(ctx context.Context, request StartOperationOptions) (*StartOperationResult, error) {
 	if closer, ok := request.Body.(io.Closer); ok {
 		// Close the request body in case we error before sending the HTTP request (which may double close but that's fine since we ignore the error).
@@ -218,10 +189,8 @@ func (c *Client) StartOperation(ctx context.Context, request StartOperationOptio
 	if !isValidOperationName.MatchString(request.Operation) {
 		return nil, errInvalidOperationName
 	}
-	url, err := c.joinURL(request.Operation)
-	if err != nil {
-		return nil, err
-	}
+	url := c.serviceBaseURL.JoinPath(request.Operation)
+
 	if request.CallbackURL != "" {
 		q := url.Query()
 		q.Set(queryCallbackURL, request.CallbackURL)
@@ -246,7 +215,7 @@ func (c *Client) StartOperation(ctx context.Context, request StartOperationOptio
 	httpReq.Header.Set(headerRequestID, request.RequestID)
 	httpReq.Header.Set(headerUserAgent, userAgent)
 
-	response, err := c.Options.HTTPCaller(httpReq)
+	response, err := c.options.HTTPCaller(httpReq)
 	if err != nil {
 		return nil, err
 	}
@@ -310,16 +279,15 @@ type ExecuteOperationOptions struct {
 	// Request ID that may be used by the server handler to dedupe this start request.
 	// By default a v4 UUID will be generated by the client.
 	RequestID string
-	// Header to attach to the start HTTP request. Optional.
-	StartHeader http.Header
 	// Body of the operation request.
 	// If it is an [io.Closer], the body is guaranteed to be closed in Client.ExecuteOperation.
 	Body io.Reader
-	// Header to attach to the get-result HTTP request. Optional.
-	GetResultHeader http.Header
+	// Header to attach to start and get-result HTTP requests. Optional.
+	// Content-Type will be deleted in the get-result request.
+	Header http.Header
 	// Duration to wait for operation completion.
 	//
-	// ⚠ NOTE: unlike GetResultOptions.Wait, zero and negative values imply infinite wait.
+	// ⚠ NOTE: unlike GetOperationResultOptions.Wait, zero and negative values imply infinite wait.
 	Wait time.Duration
 }
 
@@ -336,7 +304,7 @@ func NewExecuteOperationOptions(operation string, v any) (options ExecuteOperati
 		return
 	}
 	options.Operation = operation
-	options.StartHeader = http.Header{headerContentType: []string{contentTypeJSON}}
+	options.Header = http.Header{headerContentType: []string{contentTypeJSON}}
 	options.Body = bytes.NewReader(b)
 	return
 }
@@ -346,15 +314,18 @@ func (r *ExecuteOperationOptions) intoStartOptions() StartOperationOptions {
 		Operation:   r.Operation,
 		CallbackURL: r.CallbackURL,
 		RequestID:   r.RequestID,
-		Header:      r.StartHeader,
+		Header:      r.Header,
 		Body:        r.Body,
 	}
 }
 
-func (r *ExecuteOperationOptions) intoGetResultOptions() (options GetResultOptions) {
-	options.Header = r.GetResultHeader
+func (r *ExecuteOperationOptions) intoGetResultOptions() (options GetOperationResultOptions) {
+	options.Header = r.Header.Clone()
+	if options.Header != nil {
+		options.Header.Del(headerContentType)
+	}
 	if r.Wait <= 0 {
-		options.Wait = infiniteDuration
+		options.Wait = time.Duration(math.MaxInt64)
 	} else {
 		options.Wait = r.Wait
 	}
@@ -385,12 +356,9 @@ func (c *Client) ExecuteOperation(ctx context.Context, request ExecuteOperationO
 
 // NewHandle gets a handle to an asynchronous operation by name and ID.
 // Does not incur a trip to the server.
-// Fails if provided any empty operation or ID, or the client has no associated ServiceBaseURL.
+// Fails if provided an invalid operation or ID.
 func (c *Client) NewHandle(operation string, operationID string) (*OperationHandle, error) {
 	var es []error
-	if c.serviceBaseURL == nil {
-		es = append(es, errEmptyServiceBaseURL)
-	}
 	if !isValidOperationName.MatchString(operation) {
 		es = append(es, errInvalidOperationName)
 	}
@@ -409,7 +377,7 @@ func (c *Client) NewHandle(operation string, operationID string) (*OperationHand
 
 func (c *Client) sendGetOperationResultRequest(ctx context.Context, httpReq *http.Request, wait time.Duration) (*http.Response, error) {
 	if wait > 0 {
-		timeout := min(wait, c.Options.GetResultMaxTimeout)
+		timeout := min(wait, c.options.GetResultMaxTimeout)
 		if deadline, set := ctx.Deadline(); set {
 			timeout = min(timeout, time.Until(deadline))
 		}
@@ -420,7 +388,7 @@ func (c *Client) sendGetOperationResultRequest(ctx context.Context, httpReq *htt
 		url.RawQuery = q.Encode()
 	}
 
-	response, err := c.Options.HTTPCaller(httpReq)
+	response, err := c.options.HTTPCaller(httpReq)
 	if err != nil {
 		return nil, err
 	}
@@ -456,9 +424,41 @@ func (c *Client) sendGetOperationResultRequest(ctx context.Context, httpReq *htt
 	}
 }
 
+// CompletionClientOptions are options for creating a CompletionClient.
+type CompletionClientOptions struct {
+	// A function for making HTTP requests.
+	// Defaults to [http.DefaultClient.Do].
+	HTTPCaller func(*http.Request) (*http.Response, error)
+	// Optional marshaler for marshaling objects to JSON.
+	// Defaults to json.Marshal.
+	Marshaler func(any) ([]byte, error)
+}
+
+// A CompletionClient can be used to deliver completions of asynchronous operations for operations started with a caller
+// provided callback URL.
+type CompletionClient struct {
+	options CompletionClientOptions
+}
+
+// NewCompletionClient creates a new [CompletionClient] from provided [CompletionClientOptions].
+// Does not currently error but is part of the signature to allow it to error on future changes.
+func NewCompletionClient(options CompletionClientOptions) (*CompletionClient, error) {
+	if options.HTTPCaller == nil {
+		options.HTTPCaller = http.DefaultClient.Do
+	}
+	if options.Marshaler == nil {
+		options.Marshaler = json.Marshal
+	}
+
+	return &CompletionClient{
+		options: options,
+	}, nil
+
+}
+
 // DeliverCompletion delivers the result of a completed asynchronous operation to the provided URL.
 // If completion is an [OperationCompletionSuccessful] its body will be automatically closed.
-func (c *Client) DeliverCompletion(ctx context.Context, url string, completion OperationCompletion) error {
+func (c *CompletionClient) DeliverCompletion(ctx context.Context, url string, completion OperationCompletion) error {
 	// while the http client is expected to close the body, we close in case request creation fails (which may double close but that's fine since we ignore the error).
 	defer completion.Close()
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -470,7 +470,7 @@ func (c *Client) DeliverCompletion(ctx context.Context, url string, completion O
 	}
 
 	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := c.Options.HTTPCaller(httpReq)
+	response, err := c.options.HTTPCaller(httpReq)
 	if err != nil {
 		return err
 	}
@@ -488,18 +488,11 @@ func (c *Client) DeliverCompletion(ctx context.Context, url string, completion O
 	return nil
 }
 
-func (c *Client) joinURL(parts ...string) (*url.URL, error) {
-	if c.serviceBaseURL == nil {
-		return nil, errEmptyServiceBaseURL
-	}
-	return c.serviceBaseURL.JoinPath(parts...), nil
-}
-
 // OperationCompletion is input for [Client.DeliverCompletion].
 // It has two implementations: [OperationCompletionSuccessful] and [OperationCompletionUnsuccessful].
 type OperationCompletion interface {
 	io.Closer
-	applyToHTTPRequest(*http.Request, *Client) error
+	applyToHTTPRequest(*http.Request, *CompletionClient) error
 }
 
 // OperationCompletionSuccessful is input for [Client.DeliverCompletion], used to deliver successful operation results.
@@ -511,9 +504,9 @@ type OperationCompletionSuccessful struct {
 	Body io.Reader
 }
 
-// NewSuccessfulOperationCompletion constructs an [OperationCompletionSuccessful] from a JSONable value.
+// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a JSONable value.
 // Marshals the provided value to JSON using [json.Marshal] and sets the proper Content-Type header.
-func NewSuccessfulOperationCompletion(v any) (*OperationCompletionSuccessful, error) {
+func NewOperationCompletionSuccessful(v any) (*OperationCompletionSuccessful, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
@@ -524,7 +517,7 @@ func NewSuccessfulOperationCompletion(v any) (*OperationCompletionSuccessful, er
 
 	return &OperationCompletionSuccessful{
 		Header: header,
-		Body:   io.NopCloser(bytes.NewReader(b)),
+		Body:   bytes.NewReader(b),
 	}, nil
 }
 
@@ -539,7 +532,7 @@ type OperationCompletionUnsuccessful struct {
 	Failure *Failure
 }
 
-func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request, client *Client) error {
+func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request, client *CompletionClient) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
@@ -560,14 +553,14 @@ func (c *OperationCompletionSuccessful) Close() error {
 	return nil
 }
 
-func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request, client *Client) error {
+func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request, client *CompletionClient) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set(headerContentType, contentTypeJSON)
 
-	b, err := client.Options.Marshaler(c.Failure)
+	b, err := client.options.Marshaler(c.Failure)
 	if err != nil {
 		return err
 	}

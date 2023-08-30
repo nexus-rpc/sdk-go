@@ -45,7 +45,7 @@ func TestCancel_HandleFromStart(t *testing.T) {
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	err = handle.Cancel(ctx, CancelOptions{
+	err = handle.Cancel(ctx, CancelOperationOptions{
 		Header: http.Header{"foo": []string{"bar"}},
 	})
 	require.NoError(t, err)
@@ -57,6 +57,6 @@ func TestCancel_HandleFromClient(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "async")
 	require.NoError(t, err)
-	err = handle.Cancel(ctx, CancelOptions{})
+	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.NoError(t, err)
 }

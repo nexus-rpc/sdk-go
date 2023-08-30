@@ -41,7 +41,7 @@ func TestSuccess(t *testing.T) {
 	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
 		Operation:   "foo",
 		CallbackURL: "http://test/callback",
-		StartHeader: http.Header{"Echo": []string{"test"}},
+		Header:      http.Header{"Echo": []string{"test"}},
 		Body:        bytes.NewReader(requestBody),
 	})
 	require.NoError(t, err)
