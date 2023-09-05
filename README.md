@@ -157,8 +157,8 @@ _ := handle.Cancel(ctx, nexus.CancelOperationOptions{})
 
 Handlers starting asynchronous operations may need to deliver responses via a caller specified callback URL.
 
-`DeliverCompletion` is used to deliver operation completions - successful or unsuccessful - to the provided callback
-URL.
+`NewCompletionHTTPRequest` is used to construct an HTTP request to deliver operation completions - successful or
+unsuccessful - to the provided callback URL.
 
 To deliver successful completions, pass a `OperationCompletionSuccessful` struct pointer, which may also be constructed
 with the `NewOperationCompletionSuccessful` helper.
@@ -166,9 +166,12 @@ with the `NewOperationCompletionSuccessful` helper.
 Custom HTTP headers may be provided via `OperationCompletionSuccessful.Header`.
 
 ```go
-client, _ := nexus.NewCompletionClient(nexus.CompletionClientOptions{})
 completion, _ := nexus.NewOperationCompletionSuccessful(MyStruct{Field: "value"})
-_ = client.DeliverCompletion(ctx, completion)
+request, _ := nexus.NewCompletionHTTPRequest(ctx, callbackURL, completion)
+response, _ := http.DefaultClient.Do(request)
+defer response.Body.Close()
+_, err = io.ReadAll(response.Body)
+fmt.Println("delivered completion with status code", response.StatusCode)
 ```
 
 To deliver failed and canceled completions, pass a `OperationCompletionUnsuccessful` struct pointer with the failure and
@@ -181,7 +184,8 @@ completion := &OperationCompletionUnsuccessful{
 	State: nexus.OperationStateCanceled,
 	Failure: &nexus.Failure{Message: "canceled as requested"},
 }
-_ = client.DeliverCompletion(ctx, completion)
+request, _ := nexus.NewCompletionHTTPRequest(ctx, callbackURL, completion)
+// ...
 ```
 
 ### Server

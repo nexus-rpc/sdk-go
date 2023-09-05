@@ -40,7 +40,7 @@ func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, 
 	}
 }
 
-func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Context, client *CompletionClient, callbackURL string, teardown func()) {
+func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Context, callbackURL string, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewCompletionHTTPHandler(CompletionHandlerOptions{
@@ -51,15 +51,12 @@ func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Co
 	require.NoError(t, err)
 	callbackURL = fmt.Sprintf("http://%s/callback?a=b", listener.Addr().String())
 
-	client, err = NewCompletionClient(CompletionClientOptions{})
-	require.NoError(t, err)
-
 	go func() {
 		// Ignore for test purposes
 		_ = http.Serve(listener, httpHandler)
 	}()
 
-	return ctx, client, callbackURL, func() {
+	return ctx, callbackURL, func() {
 		cancel()
 		listener.Close()
 	}

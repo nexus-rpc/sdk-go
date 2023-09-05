@@ -413,72 +413,27 @@ func (c *Client) sendGetOperationRequest(ctx context.Context, request *http.Requ
 	}
 }
 
-// CompletionClientOptions are options for creating a CompletionClient.
-type CompletionClientOptions struct {
-	// A function for making HTTP requests.
-	// Defaults to [http.DefaultClient.Do].
-	HTTPCaller func(*http.Request) (*http.Response, error)
-}
-
-// A CompletionClient can be used to deliver completions of asynchronous operations for operations started with a caller
-// provided callback URL.
-type CompletionClient struct {
-	options CompletionClientOptions
-}
-
-// NewCompletionClient creates a new [CompletionClient] from provided [CompletionClientOptions].
-// Does not currently error but is part of the signature to allow it to error on future changes.
-func NewCompletionClient(options CompletionClientOptions) (*CompletionClient, error) {
-	if options.HTTPCaller == nil {
-		options.HTTPCaller = http.DefaultClient.Do
-	}
-
-	return &CompletionClient{
-		options: options,
-	}, nil
-
-}
-
-// DeliverCompletion delivers the result of a completed asynchronous operation to the provided URL.
-// If completion is an [OperationCompletionSuccessful] its body will be automatically closed.
-func (c *CompletionClient) DeliverCompletion(ctx context.Context, url string, completion OperationCompletion) error {
-	// while the http client is expected to close the body, we close in case request creation fails (which may double close but that's fine since we ignore the error).
-	defer completion.close()
+// NewCompletionHTTPRequest creates an HTTP request deliver an operation completion to a given URL.
+func NewCompletionHTTPRequest(ctx context.Context, url string, completion OperationCompletion) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := completion.applyToHTTPRequest(httpReq); err != nil {
-		return err
+		return nil, err
 	}
 
 	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := c.options.HTTPCaller(httpReq)
-	if err != nil {
-		return err
-	}
-
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return err
-	}
-
-	if response.StatusCode != http.StatusOK {
-		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
-	}
-
-	return nil
+	return httpReq, nil
 }
 
-// OperationCompletion is input for [CompletionClient.DeliverCompletion].
+// OperationCompletion is input for [NewCompletionHTTPRequest].
 // It has two implementations: [OperationCompletionSuccessful] and [OperationCompletionUnsuccessful].
 type OperationCompletion interface {
-	close() error
 	applyToHTTPRequest(*http.Request) error
 }
 
-// OperationCompletionSuccessful is input for [CompletionClient.DeliverCompletion], used to deliver successful operation results.
+// OperationCompletionSuccessful is input for [NewCompletionHTTPRequest], used to deliver successful operation results.
 type OperationCompletionSuccessful struct {
 	// Header to send in the completion request.
 	Header http.Header
@@ -504,17 +459,6 @@ func NewOperationCompletionSuccessful(v any) (*OperationCompletionSuccessful, er
 	}, nil
 }
 
-// OperationCompletionUnsuccessful is input for [Client.DeliverCompletion], used to deliver unsuccessful operation
-// results.
-type OperationCompletionUnsuccessful struct {
-	// Header to send in the completion request.
-	Header http.Header
-	// State of the operation, should be failed or canceled.
-	State OperationState
-	// Failure object to send with the completion.
-	Failure *Failure
-}
-
 func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request) error {
 	if c.Header != nil {
 		request.Header = c.Header.Clone()
@@ -528,11 +472,15 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 	return nil
 }
 
-func (c *OperationCompletionSuccessful) close() error {
-	if closer, ok := c.Body.(io.Closer); ok {
-		return closer.Close()
-	}
-	return nil
+// OperationCompletionUnsuccessful is input for [NewCompletionHTTPRequest], used to deliver unsuccessful operation
+// results.
+type OperationCompletionUnsuccessful struct {
+	// Header to send in the completion request.
+	Header http.Header
+	// State of the operation, should be failed or canceled.
+	State OperationState
+	// Failure object to send with the completion.
+	Failure *Failure
 }
 
 func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request) error {
@@ -548,10 +496,6 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 
 	request.Body = io.NopCloser(bytes.NewReader(b))
-	return nil
-}
-
-func (c *OperationCompletionUnsuccessful) close() error {
 	return nil
 }
 
