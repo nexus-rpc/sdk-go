@@ -12,19 +12,20 @@ import (
 )
 
 const testTimeout = time.Second * 5
+const getResultMaxTimeout = time.Millisecond * 300
 
 func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
-		Handler: handler,
+		GetResultTimeout: getResultMaxTimeout,
+		Handler:          handler,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	client, err = NewClient(ClientOptions{
-		GetResultMaxTimeout: time.Minute,
-		ServiceBaseURL:      fmt.Sprintf("http://%s/", listener.Addr().String()),
+		ServiceBaseURL: fmt.Sprintf("http://%s/", listener.Addr().String()),
 	})
 	require.NoError(t, err)
 

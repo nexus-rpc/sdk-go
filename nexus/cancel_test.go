@@ -15,15 +15,15 @@ type asyncWithCancelHandler struct {
 
 func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
 	return &OperationResponseAsync{
-		OperationID: "async",
+		OperationID: "a/sync",
 	}, nil
 }
 
 func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, request *CancelOperationRequest) error {
-	if request.Operation != "foo" {
+	if request.Operation != "f/o/o" {
 		return newBadRequestError("expected operation to be 'foo', got: %s", request.Operation)
 	}
-	if request.OperationID != "async" {
+	if request.OperationID != "a/sync" {
 		return newBadRequestError("expected operation ID to be 'async', got: %s", request.OperationID)
 	}
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
@@ -40,7 +40,7 @@ func TestCancel_HandleFromStart(t *testing.T) {
 	defer teardown()
 
 	result, err := client.StartOperation(ctx, StartOperationOptions{
-		Operation: "foo",
+		Operation: "f/o/o",
 	})
 	require.NoError(t, err)
 	handle := result.Pending
@@ -55,7 +55,7 @@ func TestCancel_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithCancelHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "async")
+	handle, err := client.NewHandle("f/o/o", "a/sync")
 	require.NoError(t, err)
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.NoError(t, err)

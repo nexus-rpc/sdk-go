@@ -15,16 +15,16 @@ type asyncWithInfoHandler struct {
 
 func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
 	return &OperationResponseAsync{
-		OperationID: "async",
+		OperationID: "needs /URL/ escaping",
 	}, nil
 }
 
 func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, request *GetOperationInfoRequest) (*OperationInfo, error) {
-	if request.Operation != "foo" {
-		return nil, newBadRequestError("expected operation to be 'foo', got: %s", request.Operation)
+	if request.Operation != "escape/me" {
+		return nil, newBadRequestError("expected operation to be 'escape me', got: %s", request.Operation)
 	}
-	if request.OperationID != "async" {
-		return nil, newBadRequestError("expected operation ID to be 'async', got: %s", request.OperationID)
+	if request.OperationID != "needs /URL/ escaping" {
+		return nil, newBadRequestError("expected operation ID to be 'needs URL escaping', got: %s", request.OperationID)
 	}
 	if h.expectHeader && request.HTTPRequest.Header.Get("foo") != "bar" {
 		return nil, newBadRequestError("invalid 'foo' request header")
@@ -43,7 +43,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	defer teardown()
 
 	result, err := client.StartOperation(ctx, StartOperationOptions{
-		Operation: "foo",
+		Operation: "escape/me",
 	})
 	require.NoError(t, err)
 	handle := result.Pending
@@ -60,7 +60,7 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "async")
+	handle, err := client.NewHandle("escape/me", "needs /URL/ escaping")
 	require.NoError(t, err)
 	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)

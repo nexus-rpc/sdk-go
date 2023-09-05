@@ -24,4 +24,4 @@ jobs:
           version: v1.54
           args: --verbose --timeout 1m --fix=false
       - name: Test
-        run: go test -v  $(go list -f '{{.Dir}}/...' -m | xargs)
+        run: go test -v  ./...

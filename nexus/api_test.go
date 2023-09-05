@@ -74,9 +74,3 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 		})
 	}
 }
-
-func TestOperationNameRegexp(t *testing.T) {
-	require.True(t, isValidOperationName.MatchString("~a-VALID_url.part"))
-	require.False(t, isValidOperationName.MatchString(""))
-	require.False(t, isValidOperationName.MatchString("+"))
-}

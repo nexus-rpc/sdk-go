@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
+
+const getResultContextPadding = time.Second * 5
 
 // An OperationHandle is used to cancel operations and get their result and status.
 type OperationHandle struct {
@@ -25,17 +28,17 @@ type GetOperationInfoOptions struct {
 
 // GetInfo gets operation information, issuing a network request to the service handler.
 func (h *OperationHandle) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
-	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID)
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
+	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID))
+	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 	if options.Header != nil {
-		httpReq.Header = options.Header.Clone()
+		request.Header = options.Header.Clone()
 	}
 
-	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := h.client.options.HTTPCaller(httpReq)
+	request.Header.Set(headerUserAgent, userAgent)
+	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err
 	}
@@ -70,37 +73,51 @@ type GetOperationResultOptions struct {
 // to long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
 // [ErrOperationStillRunning]) is returned.
 //
-// The wait time is capped to the deadline of the provided context.
+// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline errors and
+// [ErrOperationStillRunning].
+//
+// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
+// context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
 // ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
 func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationResultOptions) (*http.Response, error) {
-	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID, "result")
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
+	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID), "result")
+	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 	if options.Header != nil {
-		httpReq.Header = options.Header.Clone()
+		request.Header = options.Header.Clone()
 	}
-	httpReq.Header.Set(headerUserAgent, userAgent)
+	request.Header.Set(headerUserAgent, userAgent)
 
 	startTime := time.Now()
+	wait := options.Wait
 	for {
-		var wait time.Duration
-		if options.Wait > 0 {
-			wait = options.Wait - time.Since(startTime)
-			if wait < 0 {
-				return nil, ErrOperationStillRunning
+		if wait > 0 {
+			if deadline, set := ctx.Deadline(); set {
+				// Ensure we don't wait longer than the deadline but give some buffer prevent racing between wait and
+				// context deadline.
+				wait = min(wait, time.Until(deadline)+getResultContextPadding)
 			}
+
+			q := request.URL.Query()
+			q.Set(queryWait, fmt.Sprintf("%dms", wait.Milliseconds()))
+			request.URL.RawQuery = q.Encode()
+		} else {
+			// We're may reuse the request objects mutliple time and will need to reset the query when wait becomes 0 or
+			// negative.
+			request.URL.RawQuery = ""
 		}
-		response, err := h.client.sendGetOperationResultRequest(ctx, httpReq, wait)
+
+		response, err := h.client.sendGetOperationRequest(ctx, request)
 		if err != nil {
-			if errors.Is(err, ErrOperationStillRunning) && options.Wait > 0 {
+			if errors.Is(err, errOperationWaitTimeout) {
+				wait = options.Wait - time.Since(startTime)
 				continue
 			}
-			return nil, err
 		}
-		return response, nil
+		return response, err
 	}
 }
 
@@ -114,17 +131,17 @@ type CancelOperationOptions struct {
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
 func (h *OperationHandle) Cancel(ctx context.Context, options CancelOperationOptions) error {
-	url := h.client.serviceBaseURL.JoinPath(h.Operation, h.ID, "cancel")
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
+	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID), "cancel")
+	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
 	if err != nil {
 		return err
 	}
 	if options.Header != nil {
-		httpReq.Header = options.Header.Clone()
+		request.Header = options.Header.Clone()
 	}
 
-	httpReq.Header.Set(headerUserAgent, userAgent)
-	response, err := h.client.options.HTTPCaller(httpReq)
+	request.Header.Set(headerUserAgent, userAgent)
+	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {
 		return err
 	}

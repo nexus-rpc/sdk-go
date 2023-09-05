@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
-	"regexp"
 )
 
 // Package version.
@@ -50,12 +49,12 @@ type Failure struct {
 // UnsuccessfulOperationError represents "failed" and "canceled" operation results.
 type UnsuccessfulOperationError struct {
 	State   OperationState
-	Failure *Failure
+	Failure Failure
 }
 
 // Error implements the error interface.
 func (e *UnsuccessfulOperationError) Error() string {
-	if e.Failure != nil && e.Failure.Message != "" {
+	if e.Failure.Message != "" {
 		return fmt.Sprintf("operation %s: %s", e.State, e.Failure.Message)
 	}
 	return fmt.Sprintf("operation %s", e.State)
@@ -95,6 +94,3 @@ func isContentTypeJSON(header http.Header) bool {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	return err == nil && mediaType == contentTypeJSON
 }
-
-var isValidOperationName = regexp.MustCompile(`^[\w\-.~]+$`)
-var isValidOperationID = isValidOperationName // same rules apply

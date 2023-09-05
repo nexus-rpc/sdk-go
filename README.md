@@ -22,8 +22,7 @@ import (
 
 ### Client
 
-The Nexus Client is used to start operations, get [handles](#operationhandle) to existing operations, and deliver operation
-completions.
+The Nexus Client is used to start operations and get [handles](#operationhandle) to existing, asynchronous operations.
 
 #### Create a Client
 
@@ -36,20 +35,21 @@ client, err := nexus.NewClient(nexus.ClientOptions{
 #### Start an Operation
 
 ```go
-// request is a StartOperationRequest that can also be constructed directly.
+// options is a StartOperationOptions struct that can also be constructed directly.
 // See the StartOperationRequest definition for advanced options, such as setting a request ID, and arbitrary HTTP
 // headers.
-options, _ := NewStartOperationOptions("example", MyStruct{Field: "value"})
+options, _ := nexus.NewStartOperationOptions("example", MyStruct{Field: "value"})
 result, err := client.StartOperation(ctx, options)
 if err != nil {
 	var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
 	if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
 		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
 	}
-	return err
+	// handle error here
 }
 if result.Successful != nil { // operation successful
 	response := result.Successful
+	// must close the returned response body and read it until EOF to free up the underlying connection
 	defer response.Body.Close()
 	body, _ := io.ReadAll(response.Body)
 	fmt.Printf("Got response with content type: %s, body first bytes: %v\n", response.Header.Get("Content-Type"), body[:5])
@@ -68,12 +68,12 @@ in case the operation is asynchronous.
 options, _ := nexus.NewExecuteOperationOptions("operation name", MyStruct{Field: "value"})
 response, err := client.ExecuteOperation(ctx, options)
 if err != nil {
-	// handle similarly to StartOperation errors above
+	// handle nexus.UnsuccessfulOperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
 }
 // must close the returned response body and read it until EOF to free up the underlying connection
 defer response.Body.Close()
-fmt.Printf("Got response with content type: %s\n", response.Header.Get("Content-Type"))
 body, _ := io.ReadAll(response.Body)
+fmt.Printf("Got response with content type: %s, body first bytes: %v\n", response.Header.Get("Content-Type"), body[:5])
 ```
 
 #### Get a Handle to an Existing Operation
@@ -81,14 +81,14 @@ body, _ := io.ReadAll(response.Body)
 Getting a handle does not incur a trip to the server.
 
 ```go
-handle, err := client.NewHandle("operation name", "operation ID")
+handle, _ := client.NewHandle("operation name", "operation ID")
 ```
 
 ### OperationHandle
 
 `OperationHandle`s are used to cancel and get the result and status of an operation.
 
-Handles expose a couple of readonly attributes: `Operation`, `ID`.
+Handles expose a couple of readonly attributes: `Operation` and `ID`.
 
 #### Operation
 
@@ -104,16 +104,18 @@ Handles expose a couple of readonly attributes: `Operation`, `ID`.
 The `GetResult` method is used to get the result of an operation, issuing a network request to the handle's client's
 configured endpoint.
 
-By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
+By default, GetResult returns (nil, `ErrOperationStillRunning`) immediately after issuing a call if the operation has
 not yet completed.
 
 Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to
 long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
-[ErrOperationStillRunning]) is returned.
+`ErrOperationStillRunning`) is returned.
 
-The wait time is capped to the deadline of the provided context.
+The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline errors and
+`ErrOperationStillRunning`.
 
-When an operation completes unsuccessfuly, the returned error type is `UnsuccessfulOperationError`.
+Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
+context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 
 ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
 
@@ -121,10 +123,10 @@ Custom HTTP headers may be provided via `GetOperationResultOptions`.
 
 ```go
 response, err := handle.GetResult(ctx, nexus.GetOperationResultOptions{})
-defer response.Body.Close()
 if err != nil {
-	// handle similarly to StartOperation errors above
+	// handle nexus.UnsuccessfulOperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
 }
+defer response.Body.Close()
 // response type is an *http.Response
 ```
 
@@ -205,7 +207,7 @@ httpHandler := nexus.NewHTTPHandler(nexus.HandlerOptions{
 })
 
 listener, _ := net.Listen("tcp", "localhost:0")
-// Handler URLs can be prefixed by using a router.
+// Handler URLs can be prefixed by using a request multiplexer (e.g. https://pkg.go.dev/net/http#ServeMux).
 _ = http.Serve(listener, httpHandler)
 ```
 
@@ -286,14 +288,47 @@ set, context deadline indicates how long the caller is willing to wait for, capp
 `GetOperationResultRequest` contains the original `http.Request` for extraction of headers, URL, and other useful
 information.
 
+The `GetOperationResult` method is used to get the result of an asynchronous operation. Return `OperationResponseSync`
+to respond successfully - inline, or error with `ErrOperationStillRunning` to indicate that an asynchronous operation is
+still running. Return an `UnsuccessfulOperationError` to indicate that an operation completed as failed or canceled.
+
+When `GetOperationResultRequest.Wait` is greater than zero, this request should be treated as a long poll. Long poll
+requests have a server side timeout, configurable via `HandlerOptions.GetResultTimeout`, and exposed via context
+deadline. The context deadline is decoupled from the application level Wait duration.
+
+It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
+Consider using a derived context that enforces the wait timeout when implementing this method and return
+`ErrOperationStillRunning` when that context expires as shown in the example.
+
 ```go
-func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOperationResultRequest) (nexus.OperationResponse, error) {
-	someResult, err := getResultOfMyOperation(ctx, request.Operation, request.OperationID)
-	if err != nil {
-		// returning context.DeadlineExceeded is equivalent to OperationResponseAsync
-		return nil, err
+func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOperationResultRequest) (*nexus.OperationResponseSync, error) {
+	if request.Wait > 0 { // request is a long poll
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, request.Wait)
+		defer cancel()
+
+		result, err := h.pollOperation(ctx, request.Wait)
+		if err != nil {
+			// Translate deadline exceeded to "OperationStillRunning", this may or may not be semantically correct for
+			// your application.
+			// Some applications may want to "peek" the current status instead of performing this blind conversion if
+			// the wait time is exceeded and the request's context deadline has not yet exceeded.
+			if ctx.Err() != nil {
+				return nil, nexus.ErrOperationStillRunning
+			}
+			// Optionally translate to operation failure (could also result in canceled state).
+			// Optionally expose the error details to the caller.
+			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+		}
+		return nexus.NewOperationResponseSync(result)
+	} else {
+		result, err := h.peekOperation(ctx)
+		if err != nil {
+			// Optionally translate to operation failure (could also result in canceled state).
+			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+		}
+		return nexus.NewOperationResponseSync(result)
 	}
-	return nexus.NewOperationResponseSync(someResult), nil
 }
 ```
 
@@ -302,6 +337,8 @@ func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOp
 Implement `CompletionHandler.CompleteOperation` to get async operation completions.
 
 ```go
+type myCompletionHandler struct {}
+
 httpHandler := nexus.NewCompletionHTTPHandler(nexus.CompletionHandlerOptions{
 	Handler: &myCompletionHandler{},
 })

@@ -16,7 +16,7 @@ type successHandler struct {
 }
 
 func (h *successHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	if request.Operation != "foo" {
+	if request.Operation != "i need to/be escaped" {
 		return nil, newBadRequestError("unexpected operation: %s", request.Operation)
 	}
 	if request.CallbackURL != "http://test/callback" {
@@ -39,7 +39,7 @@ func TestSuccess(t *testing.T) {
 	requestBody := []byte{0x00, 0x01}
 
 	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
-		Operation:   "foo",
+		Operation:   "i need to/be escaped",
 		CallbackURL: "http://test/callback",
 		Header:      http.Header{"Echo": []string{"test"}},
 		Body:        bytes.NewReader(requestBody),
@@ -183,7 +183,7 @@ func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *Start
 	return nil, &UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
 		State: OperationState(request.RequestID),
-		Failure: &Failure{
+		Failure: Failure{
 			Message: "intentional",
 		},
 	}
