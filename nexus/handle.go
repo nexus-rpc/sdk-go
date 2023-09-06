@@ -105,19 +105,60 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationRes
 			q.Set(queryWait, fmt.Sprintf("%dms", wait.Milliseconds()))
 			request.URL.RawQuery = q.Encode()
 		} else {
-			// We're may reuse the request objects mutliple time and will need to reset the query when wait becomes 0 or
+			// We may reuse the request object multiple times and will need to reset the query when wait becomes 0 or
 			// negative.
 			request.URL.RawQuery = ""
 		}
 
-		response, err := h.client.sendGetOperationRequest(ctx, request)
+		response, err := h.sendGetOperationRequest(ctx, request)
 		if err != nil {
 			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
+				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
+				// issue to avoid blowing it up with repeated calls.
 				wait = options.Wait - time.Since(startTime)
 				continue
 			}
 		}
 		return response, err
+	}
+}
+
+func (h *OperationHandle) sendGetOperationRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
+	response, err := h.client.options.HTTPCaller(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode == http.StatusOK {
+		return response, nil
+	}
+
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return nil, err
+	}
+
+	switch response.StatusCode {
+	case http.StatusRequestTimeout:
+		return nil, errOperationWaitTimeout
+	case statusOperationRunning:
+		return nil, ErrOperationStillRunning
+	case statusOperationFailed:
+		state, err := getUnsuccessfulStateFromHeader(response, body)
+		if err != nil {
+			return nil, err
+		}
+		failure, err := failureFromResponse(response, body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, &UnsuccessfulOperationError{
+			State:   state,
+			Failure: failure,
+		}
+	default:
+		return nil, newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
 	}
 }
 

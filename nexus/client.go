@@ -374,45 +374,6 @@ func (c *Client) NewHandle(operation string, operationID string) (*OperationHand
 	}, nil
 }
 
-func (c *Client) sendGetOperationRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
-	response, err := c.options.HTTPCaller(request)
-	if err != nil {
-		return nil, err
-	}
-
-	if response.StatusCode == http.StatusOK {
-		return response, nil
-	}
-
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return nil, err
-	}
-
-	switch response.StatusCode {
-	case http.StatusRequestTimeout:
-		return nil, errOperationWaitTimeout
-	case statusOperationRunning:
-		return nil, ErrOperationStillRunning
-	case statusOperationFailed:
-		state, err := getUnsuccessfulStateFromHeader(response, body)
-		if err != nil {
-			return nil, err
-		}
-		failure, err := failureFromResponse(response, body)
-		if err != nil {
-			return nil, err
-		}
-		return nil, &UnsuccessfulOperationError{
-			State:   state,
-			Failure: failure,
-		}
-	default:
-		return nil, newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
-	}
-}
-
 // readAndReplaceBody reads the response body in its entirety and closes it, and then replaces the original response
 // body with an in-memory buffer.
 // The body is replaced even when there was an error reading the entire body.
