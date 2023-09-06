@@ -204,39 +204,6 @@ type httpHandler struct {
 	options HandlerOptions
 }
 
-// CompletionRequest is input for CompletionHandler.CompleteOperation.
-type CompletionRequest struct {
-	// The original HTTP request.
-	HTTPRequest *http.Request
-	// State of the operation.
-	State OperationState
-	// Parsed from request and set if State is failed or canceled.
-	Failure *Failure
-}
-
-// A CompletionHandler can receive operation completion requests as delivered via the callback URL provided in
-// start-operation requests.
-type CompletionHandler interface {
-	CompleteOperation(context.Context, *CompletionRequest) error
-}
-
-// CompletionHandlerOptions are options for [NewCompletionHTTPHandler].
-type CompletionHandlerOptions struct {
-	// Handler for completion requests.
-	Handler CompletionHandler
-	// A stuctured logging handler.
-	// Defaults to slog.Default().
-	Logger *slog.Logger
-	// Optional marshaler for marshaling objects to JSON.
-	// Defaults to json.Marshal.
-	Marshaler func(any) ([]byte, error)
-}
-
-type completionHTTPHandler struct {
-	baseHTTPHandler
-	handler CompletionHandler
-}
-
 func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	var failure *Failure
 	var unsuccessfulError *UnsuccessfulOperationError
@@ -381,7 +348,6 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 
 func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.Request) {
 	// strip /cancel
-	// strip /result
 	prefix, operationIDEscaped := path.Split(path.Dir(request.URL.RawPath))
 	operationID, err := url.PathUnescape(operationIDEscaped)
 	if err != nil {
@@ -444,54 +410,4 @@ func NewHTTPHandler(options HandlerOptions) http.Handler {
 	router.HandleFunc("/{operation}/{operation_id}/result", handler.getOperationResult).Methods("GET")
 	router.HandleFunc("/{operation}/{operation_id}/cancel", handler.cancelOperation).Methods("POST")
 	return router
-}
-
-func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	ctx := request.Context()
-	completion := CompletionRequest{
-		State:       OperationState(request.Header.Get(headerOperationState)),
-		HTTPRequest: request,
-	}
-	switch completion.State {
-	case OperationStateFailed, OperationStateCanceled:
-		if !isContentTypeJSON(request.Header) {
-			h.writeFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(headerContentType)))
-			return
-		}
-		var failure Failure
-		b, err := io.ReadAll(request.Body)
-		if err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
-			return
-		}
-		if err := json.Unmarshal(b, &failure); err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
-			return
-		}
-		completion.Failure = &failure
-	case OperationStateSucceeded:
-		// Nothing to do here.
-	default:
-		h.writeFailure(writer, newBadRequestError("invalid request operation state: %q", completion.State))
-		return
-	}
-	if err := h.handler.CompleteOperation(ctx, &completion); err != nil {
-		h.writeFailure(writer, err)
-	}
-}
-
-// NewCompletionHTTPHandler constructs an [http.Handler] from given options for handling operation completion requests.
-func NewCompletionHTTPHandler(options CompletionHandlerOptions) http.Handler {
-	if options.Marshaler == nil {
-		options.Marshaler = json.Marshal
-	}
-	if options.Logger == nil {
-		options.Logger = slog.Default()
-	}
-	return &completionHTTPHandler{
-		baseHTTPHandler: baseHTTPHandler{
-			logger: options.Logger,
-		},
-		handler: options.Handler,
-	}
 }

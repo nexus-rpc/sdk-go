@@ -112,7 +112,7 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationRes
 
 		response, err := h.client.sendGetOperationRequest(ctx, request)
 		if err != nil {
-			if errors.Is(err, errOperationWaitTimeout) {
+			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
 				wait = options.Wait - time.Since(startTime)
 				continue
 			}

@@ -102,6 +102,7 @@ func TestBadRequestCompletion(t *testing.T) {
 	defer teardown()
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionSuccessful{Body: bytes.NewReader([]byte("success"))})
+	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
 	defer response.Body.Close()
