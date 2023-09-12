@@ -335,7 +335,7 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 		return
 	}
 
-	bytes, err := h.options.Marshaler(info)
+	bytes, err := json.Marshal(info)
 	if err != nil {
 		h.writeFailure(writer, fmt.Errorf("failed to marshal operation info: %w", err))
 		return
@@ -376,9 +376,6 @@ type HandlerOptions struct {
 	// A stuctured logger.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
-	// Optional marshaler for marshaling objects to JSON.
-	// Defaults to json.Marshal.
-	Marshaler func(any) ([]byte, error)
 	// Max duration to allow waiting for a single get result request.
 	// Enforced if provided for requests with the wait query parameter set.
 	//
@@ -388,9 +385,6 @@ type HandlerOptions struct {
 
 // NewHTTPHandler constructs an [http.Handler] from given options for handling Nexus service requests.
 func NewHTTPHandler(options HandlerOptions) http.Handler {
-	if options.Marshaler == nil {
-		options.Marshaler = json.Marshal
-	}
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
