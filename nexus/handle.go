@@ -12,7 +12,7 @@ import (
 const getResultContextPadding = time.Second * 5
 
 // An OperationHandle is used to cancel operations and get their result and status.
-type OperationHandle struct {
+type OperationHandle[T any] struct {
 	// Name of the Operation this handle represents.
 	Operation string
 	// Handler generated ID for this handle's operation.
@@ -20,22 +20,14 @@ type OperationHandle struct {
 	client *Client
 }
 
-// GetOperationInfoOptions are options for [OperationHandle.GetInfo].
-type GetOperationInfoOptions struct {
-	// Header to attach to the HTTP request. Optional.
-	Header http.Header
-}
-
 // GetInfo gets operation information, issuing a network request to the service handler.
-func (h *OperationHandle) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID))
 	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	if options.Header != nil {
-		request.Header = options.Header.Clone()
-	}
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 
 	request.Header.Set(headerUserAgent, userAgent)
 	response, err := h.client.options.HTTPCaller(request)
@@ -56,14 +48,6 @@ func (h *OperationHandle) GetInfo(ctx context.Context, options GetOperationInfoO
 	return operationInfoFromResponse(response, body)
 }
 
-// GetOperationResultOptions are Options for [OperationHandle.GetResult].
-type GetOperationResultOptions struct {
-	// Header to attach to the HTTP request. Optional.
-	Header http.Header
-	// Duration to wait for operation completion. Zero or negative value implies no wait.
-	Wait time.Duration
-}
-
 // GetResult gets the result of an operation, issuing a network request to the service handler.
 //
 // By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
@@ -80,15 +64,14 @@ type GetOperationResultOptions struct {
 // context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
 // ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
-func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationResultOptions) (*http.Response, error) {
+func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
+	var result T
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID), "result")
 	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	if options.Header != nil {
-		request.Header = options.Header.Clone()
-	}
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
 
 	startTime := time.Now()
@@ -118,12 +101,24 @@ func (h *OperationHandle) GetResult(ctx context.Context, options GetOperationRes
 				wait = options.Wait - time.Since(startTime)
 				continue
 			}
+			return result, err
 		}
-		return response, err
+		s := &LazyValue{
+			serializer: h.client.options.Serializer,
+			Content: &Content{
+				Header: httpHeaderToContentHeader(response.Header),
+				Reader: response.Body,
+			},
+		}
+		if _, ok := any(result).(*LazyValue); ok {
+			return any(s).(T), nil
+		} else {
+			return result, s.Consume(&result)
+		}
 	}
 }
 
-func (h *OperationHandle) sendGetOperationRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
+func (h *OperationHandle[T]) sendGetOperationRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
 	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err
@@ -162,25 +157,16 @@ func (h *OperationHandle) sendGetOperationRequest(ctx context.Context, request *
 	}
 }
 
-// CancelOperationOptions are options for [OperationHandle.Cancel].
-type CancelOperationOptions struct {
-	// Header to attach to the HTTP request. Optional.
-	Header http.Header
-}
-
 // Cancel requests to cancel an asynchronous operation.
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
-func (h *OperationHandle) Cancel(ctx context.Context, options CancelOperationOptions) error {
+func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperationOptions) error {
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID), "cancel")
 	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), nil)
 	if err != nil {
 		return err
 	}
-	if options.Header != nil {
-		request.Header = options.Header.Clone()
-	}
-
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
 	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {

@@ -14,18 +14,20 @@ import (
 const testTimeout = time.Second * 5
 const getResultMaxTimeout = time.Millisecond * 300
 
-func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
+func setupSerializer(t *testing.T, handler ServiceHandler, serializer Serializer) (ctx context.Context, client *Client, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
 		GetResultTimeout: getResultMaxTimeout,
 		Handler:          handler,
+		Serializer:       serializer,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	client, err = NewClient(ClientOptions{
 		ServiceBaseURL: fmt.Sprintf("http://%s/", listener.Addr().String()),
+		Serializer:     serializer,
 	})
 	require.NoError(t, err)
 
@@ -38,6 +40,10 @@ func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, 
 		cancel()
 		listener.Close()
 	}
+}
+
+func setup(t *testing.T, handler ServiceHandler) (ctx context.Context, client *Client, teardown func()) {
+	return setupSerializer(t, handler, nil)
 }
 
 func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Context, callbackURL string, teardown func()) {

@@ -1,10 +1,7 @@
 package nexus
 
 import (
-	"bytes"
 	"context"
-	"io"
-	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,24 +9,28 @@ import (
 )
 
 type successHandler struct {
-	UnimplementedHandler
+	UnimplementedServiceHandler
 }
 
-func (h *successHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	if request.Operation != "i need to/be escaped" {
-		return nil, newBadRequestError("unexpected operation: %s", request.Operation)
+func (h *successHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	var body []byte
+	if err := input.Consume(&body); err != nil {
+		return nil, err
 	}
-	if request.CallbackURL != "http://test/callback" {
-		return nil, newBadRequestError("unexpected callback URL: %s", request.CallbackURL)
+	if operation != "i need to/be escaped" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected operation: %s", operation)
 	}
-	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
-		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	if options.CallbackURL != "http://test/callback" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected callback URL: %s", options.CallbackURL)
+	}
+	if options.Header.Get("test") != "ok" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
+	}
+	if options.Header.Get("User-Agent") != userAgent {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
 	}
 
-	return &OperationResponseSync{
-		Header: request.HTTPRequest.Header.Clone(),
-		Body:   request.HTTPRequest.Body,
-	}, nil
+	return &HandlerStartOperationResultSync[any]{body}, nil
 }
 
 func TestSuccess(t *testing.T) {
@@ -38,26 +39,25 @@ func TestSuccess(t *testing.T) {
 
 	requestBody := []byte{0x00, 0x01}
 
-	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
-		Operation:   "i need to/be escaped",
+	response, err := client.ExecuteOperation(ctx, "i need to/be escaped", requestBody, ExecuteOperationOptions{
 		CallbackURL: "http://test/callback",
-		Header:      http.Header{"Echo": []string{"test"}},
-		Body:        bytes.NewReader(requestBody),
+		Header:      Header{"test": "ok"},
 	})
 	require.NoError(t, err)
-	defer response.Body.Close()
-	require.Equal(t, "test", response.Header.Get("Echo"))
-	responseBody, err := io.ReadAll(response.Body)
+	var responseBody []byte
+	err = response.Consume(&responseBody)
 	require.NoError(t, err)
 	require.Equal(t, requestBody, responseBody)
 }
 
 type requestIDEchoHandler struct {
-	UnimplementedHandler
+	UnimplementedServiceHandler
 }
 
-func (h *requestIDEchoHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	return &OperationResponseSync{Body: bytes.NewReader([]byte(request.RequestID))}, nil
+func (h *requestIDEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return &HandlerStartOperationResultSync[any]{
+		Value: []byte(options.RequestID),
+	}, nil
 }
 
 func TestClientRequestID(t *testing.T) {
@@ -72,42 +72,16 @@ func TestClientRequestID(t *testing.T) {
 
 	cases := []testcase{
 		{
-			name: "unspecified",
-			request: StartOperationOptions{
-				Operation: "foo",
-			},
+			name:    "unspecified",
+			request: StartOperationOptions{},
 			validator: func(t *testing.T, body []byte) {
 				_, err := uuid.ParseBytes(body)
 				require.NoError(t, err)
 			},
 		},
 		{
-			name: "provided directly",
-			request: StartOperationOptions{
-				Operation: "foo",
-				RequestID: "direct",
-			},
-			validator: func(t *testing.T, body []byte) {
-				require.Equal(t, []byte("direct"), body)
-			},
-		},
-		{
-			name: "provided via headers",
-			request: StartOperationOptions{
-				Operation: "foo",
-				Header:    http.Header{headerRequestID: []string{"via header"}},
-			},
-			validator: func(t *testing.T, body []byte) {
-				require.Equal(t, []byte("via header"), body)
-			},
-		},
-		{
-			name: "direct overwrites headers",
-			request: StartOperationOptions{
-				Operation: "foo",
-				RequestID: "direct",
-				Header:    http.Header{headerRequestID: []string{"via header"}},
-			},
+			name:    "provided directly",
+			request: StartOperationOptions{RequestID: "direct"},
 			validator: func(t *testing.T, body []byte) {
 				require.Equal(t, []byte("direct"), body)
 			},
@@ -116,12 +90,12 @@ func TestClientRequestID(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			result, err := client.StartOperation(ctx, c.request)
+			result, err := client.StartOperation(ctx, "foo", nil, c.request)
 			require.NoError(t, err)
 			response := result.Successful
 			require.NotNil(t, response)
-			defer response.Body.Close()
-			responseBody, err := io.ReadAll(response.Body)
+			var responseBody []byte
+			err = response.Consume(&responseBody)
 			require.NoError(t, err)
 			c.validator(t, responseBody)
 		})
@@ -129,37 +103,61 @@ func TestClientRequestID(t *testing.T) {
 }
 
 type jsonHandler struct {
-	UnimplementedHandler
+	UnimplementedServiceHandler
 }
 
-func (h *jsonHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	return NewOperationResponseSync("success")
+func (h *jsonHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	var s string
+	if err := input.Consume(&s); err != nil {
+		return nil, err
+	}
+	return &HandlerStartOperationResultSync[any]{Value: s}, nil
 }
 
 func TestJSON(t *testing.T) {
 	ctx, client, teardown := setup(t, &jsonHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, StartOperationOptions{
-		Operation: "foo",
-	})
+	result, err := client.StartOperation(ctx, "foo", "success", StartOperationOptions{})
 	require.NoError(t, err)
 	response := result.Successful
 	require.NotNil(t, response)
-	defer response.Body.Close()
-	require.Equal(t, "application/json", response.Header.Get("Content-Type"))
+	var operationResult string
+	err = response.Consume(&operationResult)
 	require.NoError(t, err)
-	responseBody, err := io.ReadAll(response.Body)
+	require.Equal(t, "success", operationResult)
+}
+
+type echoHandler struct {
+	UnimplementedServiceHandler
+}
+
+func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return &HandlerStartOperationResultSync[any]{Value: &input.Content}, nil
+}
+
+func TestContentValues(t *testing.T) {
+	ctx, client, teardown := setup(t, &jsonHandler{})
+	defer teardown()
+
+	content, err := jsonSerializer{}.Serialize("success")
 	require.NoError(t, err)
-	require.Equal(t, []byte(`"success"`), responseBody)
+	result, err := client.StartOperation(ctx, "foo", content, StartOperationOptions{})
+	require.NoError(t, err)
+	response := result.Successful
+	require.NotNil(t, response)
+	var operationResult string
+	err = response.Consume(&operationResult)
+	require.NoError(t, err)
+	require.Equal(t, "success", operationResult)
 }
 
 type asyncHandler struct {
-	UnimplementedHandler
+	UnimplementedServiceHandler
 }
 
-func (h *asyncHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	return &OperationResponseAsync{
+func (h *asyncHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return &HandlerStartOperationResultAsync{
 		OperationID: "async",
 	}, nil
 }
@@ -168,21 +166,19 @@ func TestAsync(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, StartOperationOptions{
-		Operation: "foo",
-	})
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, result.Pending)
 }
 
 type unsuccessfulHandler struct {
-	UnimplementedHandler
+	UnimplementedServiceHandler
 }
 
-func (h *unsuccessfulHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
+func (h *unsuccessfulHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return nil, &UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
-		State: OperationState(request.RequestID),
+		State: OperationState(options.RequestID),
 		Failure: Failure{
 			Message: "intentional",
 		},
@@ -195,10 +191,7 @@ func TestUnsuccessful(t *testing.T) {
 
 	cases := []string{"canceled", "failed"}
 	for _, c := range cases {
-		_, err := client.StartOperation(ctx, StartOperationOptions{
-			Operation: "foo",
-			RequestID: c,
-		})
+		_, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{RequestID: c})
 		var unsuccessfulError *UnsuccessfulOperationError
 		require.ErrorAs(t, err, &unsuccessfulError)
 		require.Equal(t, OperationState(c), unsuccessfulError.State)

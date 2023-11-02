@@ -136,25 +136,25 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	}
 	switch completion.State {
 	case OperationStateFailed, OperationStateCanceled:
-		if !isContentTypeJSON(request.Header) {
-			h.writeFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(headerContentType)))
+		if !isMediaTypeJSON(request.Header.Get("Content-Type")) {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request content type: %q", request.Header.Get(headerContentType)))
 			return
 		}
 		var failure Failure
 		b, err := io.ReadAll(request.Body)
 		if err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
 		if err := json.Unmarshal(b, &failure); err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
 		completion.Failure = &failure
 	case OperationStateSucceeded:
 		// Nothing to do here.
 	default:
-		h.writeFailure(writer, newBadRequestError("invalid request operation state: %q", completion.State))
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request operation state: %q", completion.State))
 		return
 	}
 	if err := h.handler.CompleteOperation(ctx, &completion); err != nil {

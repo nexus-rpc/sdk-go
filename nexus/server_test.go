@@ -33,7 +33,7 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 	}
 
 	writer := httptest.NewRecorder()
-	h.writeFailure(writer, newBadRequestError("foo"))
+	h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "foo"))
 
 	require.Equal(t, http.StatusBadRequest, writer.Code)
 	require.Equal(t, contentTypeJSON, writer.Header().Get(headerContentType))

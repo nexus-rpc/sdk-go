@@ -10,7 +10,7 @@ import (
 )
 
 type myHandler struct {
-	nexus.UnimplementedHandler
+	nexus.UnimplementedServiceHandler
 }
 
 type MyResult struct {
@@ -18,26 +18,26 @@ type MyResult struct {
 }
 
 // StartOperation implements the Handler interface.
-func (h *myHandler) StartOperation(ctx context.Context, request *nexus.StartOperationRequest) (nexus.OperationResponse, error) {
-	if err := h.authorize(ctx, request.HTTPRequest); err != nil {
+func (h *myHandler) StartOperation(ctx context.Context, operation string, input *nexus.LazyValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
+	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
-	return &nexus.OperationResponseAsync{
+	return &nexus.HandlerStartOperationResultAsync{
 		OperationID: "TODO",
 	}, nil
 }
 
 // GetOperationResult implements the Handler interface.
-func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOperationResultRequest) (*nexus.OperationResponseSync, error) {
-	if err := h.authorize(ctx, request.HTTPRequest); err != nil {
+func (h *myHandler) GetOperationResult(ctx context.Context, operation, operationID string, options nexus.GetOperationResultOptions) (any, error) {
+	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
-	if request.Wait > 0 { // request is a long poll
+	if options.Wait > 0 { // request is a long poll
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, request.Wait)
+		ctx, cancel = context.WithTimeout(ctx, options.Wait)
 		defer cancel()
 
-		result, err := h.pollOperation(ctx, request.Wait)
+		result, err := h.pollOperation(ctx, options.Wait)
 		if err != nil {
 			// Translate deadline exceeded to "OperationStillRunning", this may or may not be semantically correct for
 			// your application.
@@ -50,23 +50,23 @@ func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOp
 			// Optionally expose the error details to the caller.
 			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
 		}
-		return nexus.NewOperationResponseSync(result)
+		return result, nil
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
 			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
 		}
-		return nexus.NewOperationResponseSync(result)
+		return result, nil
 	}
 }
 
-func (h *myHandler) CancelOperation(ctx context.Context, request *nexus.CancelOperationRequest) error {
+func (h *myHandler) CancelOperation(ctx context.Context, operation, operationID string, options nexus.CancelOperationOptions) error {
 	// Handlers must implement this.
 	panic("unimplemented")
 }
 
-func (h *myHandler) GetOperationInfo(ctx context.Context, request *nexus.GetOperationInfoRequest) (*nexus.OperationInfo, error) {
+func (h *myHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
 	// Handlers must implement this.
 	panic("unimplemented")
 }
@@ -79,10 +79,10 @@ func (h *myHandler) peekOperation(ctx context.Context) (*MyResult, error) {
 	panic("unimplemented")
 }
 
-func (h *myHandler) authorize(ctx context.Context, request *http.Request) error {
+func (h *myHandler) authorize(ctx context.Context, header nexus.Header) error {
 	// Authorization for demo purposes
-	if request.Header.Get("Authorization") != "Bearer top-secret" {
-		return &nexus.HandlerError{StatusCode: http.StatusUnauthorized, Failure: &nexus.Failure{Message: "Unauthorized"}}
+	if header.Get("Authorization") != "Bearer top-secret" {
+		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeForbidden, Failure: &nexus.Failure{Message: "Unauthorized"}}
 	}
 	return nil
 }
