@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"strings"
 )
 
 // Package version.
@@ -106,4 +107,13 @@ func isMediaTypeOctetStream(contentType string) bool {
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	return err == nil && mediaType == "application/octet-stream"
+}
+
+// Header is a mapping of string to string.
+// It is used throughout the framework to transmit metadata.
+type Header map[string]string
+
+// Get is a case-insensitive key lookup from the header map.
+func (h Header) Get(k string) string {
+	return h[strings.ToLower(k)]
 }
