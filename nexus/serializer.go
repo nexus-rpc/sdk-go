@@ -1,7 +1,6 @@
 package nexus
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,9 +8,9 @@ import (
 	"reflect"
 )
 
-// A Content is a container for a header and a reader.
+// A Reader is a container for a [Header] and an [io.Reader].
 // It is used to stream inputs and outputs in the various client and server APIs.
-type Content struct {
+type Reader struct {
 	// Header that should include information on how to deserialize this content.
 	// Headers constructed by the framework always have lower case keys.
 	// User provided keys are considered case-insensitive by the framework.
@@ -20,7 +19,18 @@ type Content struct {
 	Reader io.ReadCloser
 }
 
-// A LazyValue holds a value encoded in an underlying [Content].
+// A Content is a container for a [Header] and a byte slice.
+// It is used by the SDK's [Serializer] interface implementations.
+type Content struct {
+	// Header that should include information on how to deserialize this content.
+	// Headers constructed by the framework always have lower case keys.
+	// User provided keys are considered case-insensitive by the framework.
+	Header Header
+	// Data contains request or response data. May be nil for empty data.
+	Data []byte
+}
+
+// A LazyValue holds a value encoded in an underlying [Reader].
 //
 // ⚠️ When a LazyValue is returned from a client - if directly accessing the content - it must be read it in its entirety
 // and closed to free up the associated HTTP connection. Otherwise the [LazyValue.Consume] method must be called.
@@ -28,7 +38,7 @@ type Content struct {
 // ⚠️ When a LazyValue is passed to a server handler, it must not be used after the returning from the handler method.
 type LazyValue struct {
 	serializer Serializer
-	Content    *Content
+	Reader     *Reader
 }
 
 // Consume consumes the lazy value, decodes it from the underlying content, and stores the result in the value pointed to by v.
@@ -36,8 +46,15 @@ type LazyValue struct {
 //	var v int
 //	err := lazyValue.Consume(&v)
 func (l *LazyValue) Consume(v any) error {
-	defer l.Content.Reader.Close()
-	return l.serializer.Deserialize(l.Content, v)
+	defer l.Reader.Reader.Close()
+	data, err := io.ReadAll(l.Reader.Reader)
+	if err != nil {
+		return err
+	}
+	return l.serializer.Deserialize(&Content{
+		Header: l.Reader.Header,
+		Data:   data,
+	}, v)
 }
 
 // Serializer is used by the framework to serialize/deserialize input and output.
@@ -94,24 +111,20 @@ func (jsonSerializer) Deserialize(c *Content, v any) error {
 	if !isMediaTypeJSON(c.Header["type"]) {
 		return errSerializerIncompatible
 	}
-	body, err := io.ReadAll(c.Reader)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(body, &v)
+	return json.Unmarshal(c.Data, &v)
 }
 
 func (jsonSerializer) Serialize(v any) (*Content, error) {
-	body, err := json.Marshal(v)
+	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
 	return &Content{
 		Header: Header{
 			"type":   "application/json",
-			"length": fmt.Sprintf("%d", len(body)),
+			"length": fmt.Sprintf("%d", len(data)),
 		},
-		Reader: io.NopCloser(bytes.NewReader(body)),
+		Data: data,
 	}, nil
 }
 
@@ -120,7 +133,7 @@ var _ Serializer = jsonSerializer{}
 type nilSerializer struct{}
 
 func (nilSerializer) Deserialize(c *Content, v any) error {
-	if c.Header["length"] != "0" {
+	if len(c.Data) > 0 {
 		return errSerializerIncompatible
 	}
 	rv := reflect.ValueOf(v)
@@ -149,7 +162,7 @@ func (nilSerializer) Serialize(v any) (*Content, error) {
 	}
 	return &Content{
 		Header: Header{"length": "0"},
-		Reader: nil,
+		Data:   nil,
 	}, nil
 }
 
@@ -165,11 +178,7 @@ func (byteSliceSerializer) Deserialize(c *Content, v any) error {
 		if bPtr == nil {
 			return fmt.Errorf("cannot deserialize into nil pointer: %v", v)
 		}
-		b, err := io.ReadAll(c.Reader)
-		if err != nil {
-			return err
-		}
-		*bPtr = b
+		*bPtr = c.Data
 		return nil
 	}
 	// v is *any
@@ -183,11 +192,7 @@ func (byteSliceSerializer) Deserialize(c *Content, v any) error {
 	if rv.Elem().Type() != anyType {
 		return fmt.Errorf("unsupported value type for content: %v", v)
 	}
-	b, err := io.ReadAll(c.Reader)
-	if err != nil {
-		return err
-	}
-	rv.Elem().Set(reflect.ValueOf(b))
+	rv.Elem().Set(reflect.ValueOf(c.Data))
 	return nil
 }
 
@@ -198,7 +203,7 @@ func (byteSliceSerializer) Serialize(v any) (*Content, error) {
 				"type":   "application/octet-stream",
 				"length": fmt.Sprintf("%d", len(b)),
 			},
-			Reader: io.NopCloser(bytes.NewReader(b)),
+			Data: b,
 		}, nil
 	}
 	return nil, errSerializerIncompatible

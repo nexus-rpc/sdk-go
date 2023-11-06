@@ -105,7 +105,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 		}
 		s := &LazyValue{
 			serializer: h.client.options.Serializer,
-			Content: &Content{
+			Reader: &Reader{
 				Header: httpHeaderToContentHeader(response.Header),
 				Reader: response.Body,
 			},

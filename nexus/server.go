@@ -1,6 +1,7 @@
 package nexus
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -152,28 +153,35 @@ type httpHandler struct {
 }
 
 func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
-	var content *Content
-	if c, ok := result.(*Content); ok {
-		if closer, ok := content.Reader.(io.Closer); ok {
-			// Close the request body in case we error before sending the HTTP request (which may double close but
-			// that's fine since we ignore the error).
-			defer closer.Close()
+	var reader *Reader
+	if r, ok := result.(*Reader); ok {
+		// Close the request body in case we error before sending the HTTP request (which may double close but
+		// that's fine since we ignore the error).
+		defer r.Reader.Close()
+		reader = r
+	} else if content, ok := result.(*Content); ok {
+		reader = &Reader{
+			Header: content.Header,
+			Reader: io.NopCloser(bytes.NewReader(content.Data)),
 		}
-		content = c
 	} else {
-		var err error
-		if content, err = h.options.Serializer.Serialize(result); err != nil {
+		content, err := h.options.Serializer.Serialize(result)
+		if err != nil {
 			h.writeFailure(writer, fmt.Errorf("failed to serialize handler result: %w", err))
 			return
+		}
+		reader = &Reader{
+			Header: content.Header,
+			Reader: io.NopCloser(bytes.NewReader(content.Data)),
 		}
 	}
 
 	header := writer.Header()
-	addContentHeaderToHTTPHeader(content.Header, header)
-	if content.Reader == nil {
+	addContentHeaderToHTTPHeader(reader.Header, header)
+	if reader.Reader == nil {
 		return
 	}
-	if _, err := io.Copy(writer, content.Reader); err != nil {
+	if _, err := io.Copy(writer, reader.Reader); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}
 }
@@ -257,7 +265,7 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	}
 	value := &LazyValue{
 		serializer: h.options.Serializer,
-		Content: &Content{
+		Reader: &Reader{
 			Header: httpHeaderToContentHeader(request.Header),
 			Reader: request.Body,
 		},

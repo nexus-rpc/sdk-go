@@ -1,7 +1,9 @@
 package nexus
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/google/uuid"
@@ -133,16 +135,20 @@ type echoHandler struct {
 }
 
 func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	return &HandlerStartOperationResultSync[any]{Value: &input.Content}, nil
+	return &HandlerStartOperationResultSync[any]{Value: &input.Reader}, nil
 }
 
-func TestContentValues(t *testing.T) {
+func TestReaderIO(t *testing.T) {
 	ctx, client, teardown := setup(t, &jsonHandler{})
 	defer teardown()
 
 	content, err := jsonSerializer{}.Serialize("success")
+	reader := &Reader{
+		Header: content.Header,
+		Reader: io.NopCloser(bytes.NewReader(content.Data)),
+	}
 	require.NoError(t, err)
-	result, err := client.StartOperation(ctx, "foo", content, StartOperationOptions{})
+	result, err := client.StartOperation(ctx, "foo", reader, StartOperationOptions{})
 	require.NoError(t, err)
 	response := result.Successful
 	require.NotNil(t, response)

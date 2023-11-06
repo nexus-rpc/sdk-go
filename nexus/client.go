@@ -148,18 +148,26 @@ type ClientStartOperationResult[T any] struct {
 //
 //  4. Any other failure.
 func (c *Client) StartOperation(ctx context.Context, operation string, input any, options StartOperationOptions) (*ClientStartOperationResult[*LazyValue], error) {
-	var content *Content
-	if ct, ok := input.(*Content); ok {
-		if closer, ok := ct.Reader.(io.Closer); ok {
-			// Close the input reader in case we error before sending the HTTP request (which may double close but
-			// that's fine since we ignore the error).
-			defer closer.Close()
+	var reader *Reader
+	if r, ok := input.(*Reader); ok {
+		// Close the input reader in case we error before sending the HTTP request (which may double close but
+		// that's fine since we ignore the error).
+		defer r.Reader.Close()
+		reader = r
+	} else if content, ok := input.(*Content); ok {
+		reader = &Reader{
+			Header: content.Header,
+			Reader: io.NopCloser(bytes.NewReader(content.Data)),
 		}
-		content = ct
 	} else {
-		var err error
-		if content, err = c.options.Serializer.Serialize(input); err != nil {
+		content, err := c.options.Serializer.Serialize(input)
+		if err != nil {
 			return nil, err
+		}
+
+		reader = &Reader{
+			Header: content.Header,
+			Reader: io.NopCloser(bytes.NewReader(content.Data)),
 		}
 	}
 
@@ -170,7 +178,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		q.Set(queryCallbackURL, options.CallbackURL)
 		url.RawQuery = q.Encode()
 	}
-	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), content.Reader)
+	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), reader.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +190,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 	}
 	request.Header.Set(headerRequestID, options.RequestID)
 	request.Header.Set(headerUserAgent, userAgent)
-	addContentHeaderToHTTPHeader(content.Header, request.Header)
+	addContentHeaderToHTTPHeader(reader.Header, request.Header)
 
 	response, err := c.options.HTTPCaller(request)
 	if err != nil {
@@ -193,7 +201,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		return &ClientStartOperationResult[*LazyValue]{
 			Successful: &LazyValue{
 				serializer: c.options.Serializer,
-				Content: &Content{
+				Reader: &Reader{
 					Header: httpHeaderToContentHeader(response.Header),
 					Reader: response.Body,
 				},
