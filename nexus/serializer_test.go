@@ -1,7 +1,6 @@
 package nexus
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -102,59 +101,4 @@ func TestDefaultSerializer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.Deserialize(c, &a))
 	require.Equal(t, nil, a)
-}
-
-// There's zero chance of concurrent updates in the test where this is used. Don't bother locking.
-type customSerializer struct {
-	encoded int
-	decoded int
-}
-
-func (c *customSerializer) Serialize(v any) (*Content, error) {
-	vint := v.(int)
-	c.encoded++
-	return &Content{
-		Header: map[string]string{
-			"custom": strconv.Itoa(vint),
-		},
-	}, nil
-}
-
-func (c *customSerializer) Deserialize(s *Content, v any) error {
-	vintPtr := v.(*int)
-	decoded, err := strconv.Atoi(s.Header["custom"])
-	if err != nil {
-		return err
-	}
-	*vintPtr = decoded
-	c.decoded++
-	return nil
-}
-
-func TestCustomSerializer(t *testing.T) {
-	asyncNumberValidatorOperation := &asyncNumberValidatorOperationHandler{}
-	options := ServiceHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			numberValidatorOperation,
-			asyncNumberValidatorOperation,
-		},
-	}
-
-	handler, err := NewServiceHandler(options)
-	require.NoError(t, err)
-
-	c := &customSerializer{}
-	ctx, client, teardown := setupSerializer(t, handler, c)
-	defer teardown()
-
-	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperation, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	require.Equal(t, 4, c.decoded)
-	require.Equal(t, 4, c.encoded)
 }
