@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"strings"
 )
 
 // Package version.
@@ -87,10 +88,32 @@ const (
 
 // isContentTypeJSON returns true if header contains a parsable Content-Type header with media type of application/json.
 func isContentTypeJSON(header http.Header) bool {
-	contentType := header.Get(headerContentType)
+	return isMediaTypeJSON(header.Get(headerContentType))
+}
+
+// isMediaTypeJSON returns true if the given content type's media type is application/json.
+func isMediaTypeJSON(contentType string) bool {
 	if contentType == "" {
 		return false
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	return err == nil && mediaType == contentTypeJSON
+	return err == nil && mediaType == "application/json"
+}
+
+// isMediaTypeOctetStream returns true if the given content type's media type is application/octet-stream.
+func isMediaTypeOctetStream(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == "application/octet-stream"
+}
+
+// Header is a mapping of string to string.
+// It is used throughout the framework to transmit metadata.
+type Header map[string]string
+
+// Get is a case-insensitive key lookup from the header map.
+func (h Header) Get(k string) string {
+	return h[strings.ToLower(k)]
 }
