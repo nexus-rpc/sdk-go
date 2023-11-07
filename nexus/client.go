@@ -154,15 +154,14 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		// that's fine since we ignore the error).
 		defer r.Reader.Close()
 		reader = r
-	} else if content, ok := input.(*Content); ok {
-		reader = &Reader{
-			Header: content.Header,
-			Reader: io.NopCloser(bytes.NewReader(content.Data)),
-		}
 	} else {
-		content, err := c.options.Serializer.Serialize(input)
-		if err != nil {
-			return nil, err
+		content, ok := input.(*Content)
+		if !ok {
+			var err error
+			content, err = c.options.Serializer.Serialize(input)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		reader = &Reader{
@@ -341,7 +340,7 @@ func readAndReplaceBody(response *http.Response) ([]byte, error) {
 
 func operationInfoFromResponse(response *http.Response, body []byte) (*OperationInfo, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return nil, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get(headerContentType)), response, body)
+		return nil, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var info OperationInfo
 	if err := json.Unmarshal(body, &info); err != nil {
@@ -352,7 +351,7 @@ func operationInfoFromResponse(response *http.Response, body []byte) (*Operation
 
 func failureFromResponse(response *http.Response, body []byte) (Failure, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return Failure{}, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get(headerContentType)), response, body)
+		return Failure{}, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var failure Failure
 	err := json.Unmarshal(body, &failure)

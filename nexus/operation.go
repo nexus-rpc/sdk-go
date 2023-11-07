@@ -87,7 +87,7 @@ type OperationDirectoryHandler struct {
 func NewOperationDirectoryHandler(options OperationDirectoryHandlerOptions) (*OperationDirectoryHandler, error) {
 	mapped := make(map[string]UntypedOperationHandler, len(options.Operations))
 	if len(options.Operations) == 0 {
-		return nil, errors.New("must provide at least one operation")
+		return nil, errors.New("must register at least one operation")
 	}
 	dups := []string{}
 
@@ -110,6 +110,8 @@ func (d *OperationDirectoryHandler) CancelOperation(ctx context.Context, operati
 		return HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
+	// NOTE: We could avoid reflection here if we put the Cancel method on UntypedOperationHandler but it doesn't seem
+	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("Cancel")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
 	if values[0].IsNil() {
@@ -125,6 +127,8 @@ func (d *OperationDirectoryHandler) GetOperationInfo(ctx context.Context, operat
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
+	// NOTE: We could avoid reflection here if we put the Cancel method on UntypedOperationHandler but it doesn't seem
+	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("GetInfo")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
@@ -161,7 +165,7 @@ func (d *OperationDirectoryHandler) StartOperation(ctx context.Context, operatio
 	inputType := m.Type.In(2)
 	iptr := reflect.New(inputType).Interface()
 	if err := input.Consume(iptr); err != nil {
-		// TODO: log the error?
+		// TODO: log the error? Do we need to accept a logger for this single line?
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid input")
 	}
 	i := reflect.ValueOf(iptr).Elem()

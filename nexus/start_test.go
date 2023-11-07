@@ -135,7 +135,21 @@ type echoHandler struct {
 }
 
 func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	return &HandlerStartOperationResultSync[any]{Value: input.Reader}, nil
+	var output any
+	switch options.Header.Get("input-type") {
+	case "reader":
+		output = input.Reader
+	case "content":
+		data, err := io.ReadAll(input.Reader.Reader)
+		if err != nil {
+			return nil, err
+		}
+		output = &Content{
+			Header: input.Reader.Header,
+			Data:   data,
+		}
+	}
+	return &HandlerStartOperationResultSync[any]{Value: output}, nil
 }
 
 func TestReaderIO(t *testing.T) {
@@ -143,19 +157,41 @@ func TestReaderIO(t *testing.T) {
 	defer teardown()
 
 	content, err := jsonSerializer{}.Serialize("success")
+	require.NoError(t, err)
 	reader := &Reader{
 		Header: content.Header,
 		Reader: io.NopCloser(bytes.NewReader(content.Data)),
 	}
-	require.NoError(t, err)
-	result, err := client.StartOperation(ctx, "foo", reader, StartOperationOptions{})
-	require.NoError(t, err)
-	response := result.Successful
-	require.NotNil(t, response)
-	var operationResult string
-	err = response.Consume(&operationResult)
-	require.NoError(t, err)
-	require.Equal(t, "success", operationResult)
+	testCases := []struct {
+		name   string
+		input  any
+		header Header
+	}{
+		{
+			name:   "content",
+			input:  content,
+			header: Header{"input-type": "content"},
+		},
+		{
+			name:   "reader",
+			input:  reader,
+			header: Header{"input-type": "reader"},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header})
+			require.NoError(t, err)
+			response := result.Successful
+			require.NotNil(t, response)
+			var operationResult string
+			err = response.Consume(&operationResult)
+			require.NoError(t, err)
+			require.Equal(t, "success", operationResult)
+		})
+	}
 }
 
 type asyncHandler struct {

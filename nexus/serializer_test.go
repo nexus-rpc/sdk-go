@@ -151,6 +151,7 @@ func TestCustomSerializer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, result)
 
+	// Async triggers GetResult, test this too.
 	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperation, 3, ExecuteOperationOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, result)

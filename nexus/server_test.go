@@ -20,7 +20,7 @@ func TestWriteFailure_GenericError(t *testing.T) {
 	h.writeFailure(writer, fmt.Errorf("foo"))
 
 	require.Equal(t, http.StatusInternalServerError, writer.Code)
-	require.Equal(t, contentTypeJSON, writer.Header().Get(headerContentType))
+	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))
 
 	var failure *Failure
 	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &failure))
@@ -36,7 +36,7 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 	h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "foo"))
 
 	require.Equal(t, http.StatusBadRequest, writer.Code)
-	require.Equal(t, contentTypeJSON, writer.Header().Get(headerContentType))
+	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))
 
 	var failure *Failure
 	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &failure))
@@ -55,7 +55,7 @@ func TestWriteFailure_UnsuccessfulOperationError(t *testing.T) {
 	})
 
 	require.Equal(t, statusOperationFailed, writer.Code)
-	require.Equal(t, contentTypeJSON, writer.Header().Get(headerContentType))
+	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))
 	require.Equal(t, string(OperationStateCanceled), writer.Header().Get(headerOperationState))
 
 	var failure *Failure

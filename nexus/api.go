@@ -17,7 +17,6 @@ import (
 const version = "dev"
 
 const (
-	headerContentType    = "Content-Type"
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
@@ -26,15 +25,19 @@ const (
 const contentTypeJSON = "application/json"
 
 // Query param for passing a callback URL.
-const queryCallbackURL = "callback"
+const (
+	queryCallbackURL = "callback"
+	// Query param for passing wait duration.
+	queryWait = "wait"
+)
 
-// Query param for passing wait duration.
-const queryWait = "wait"
-
-const statusOperationRunning = http.StatusPreconditionFailed
-
-// HTTP status code for failed operation responses.
-const statusOperationFailed = http.StatusFailedDependency
+const (
+	statusOperationRunning = http.StatusPreconditionFailed
+	// HTTP status code for failed operation responses.
+	statusOperationFailed    = http.StatusFailedDependency
+	statusApplicationError   = 520
+	statusApplicationTimeout = 521
+)
 
 // Failure represents protocol level failures returned in non successful HTTP responses as well as `failed` or
 // `canceled` operation results.
@@ -126,7 +129,6 @@ func httpHeaderToContentHeader(httpHeader http.Header) Header {
 
 func addContentHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) {
 	for k, v := range nexusHeader {
-		// Nexus headers can only have single values, ignore multiple values.
 		httpHeader.Set("Content-"+k, v)
 	}
 }

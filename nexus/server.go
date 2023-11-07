@@ -48,7 +48,7 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 		return
 	}
 
-	writer.Header().Set(headerContentType, contentTypeJSON)
+	writer.Header().Set("Content-Type", contentTypeJSON)
 	writer.WriteHeader(http.StatusCreated)
 
 	if _, err := writer.Write(bytes); err != nil {
@@ -95,6 +95,7 @@ type ServiceHandler interface {
 type HandlerErrorType string
 
 const (
+	// An internal error occured.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
 	// Used by gateways to report that an upstream server has responded with an error.
 	HandlerErrorTypeApplicationError HandlerErrorType = "APPLICATION_ERROR"
@@ -159,16 +160,15 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 		// that's fine since we ignore the error).
 		defer r.Reader.Close()
 		reader = r
-	} else if content, ok := result.(*Content); ok {
-		reader = &Reader{
-			Header: content.Header,
-			Reader: io.NopCloser(bytes.NewReader(content.Data)),
-		}
 	} else {
-		content, err := h.options.Serializer.Serialize(result)
-		if err != nil {
-			h.writeFailure(writer, fmt.Errorf("failed to serialize handler result: %w", err))
-			return
+		content, ok := result.(*Content)
+		if !ok {
+			var err error
+			content, err = h.options.Serializer.Serialize(result)
+			if err != nil {
+				h.writeFailure(writer, fmt.Errorf("failed to serialize handler result: %w", err))
+				return
+			}
 		}
 		reader = &Reader{
 			Header: content.Header,
@@ -209,9 +209,9 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		failure = handlerError.Failure
 		switch handlerError.Type {
 		case HandlerErrorTypeApplicationTimeout:
-			statusCode = 521 // TODO: const
+			statusCode = statusApplicationTimeout
 		case HandlerErrorTypeApplicationError:
-			statusCode = 520 // TODO: const
+			statusCode = statusApplicationError
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
 		case HandlerErrorTypeForbidden:
@@ -242,7 +242,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		writer.Header().Set(headerContentType, contentTypeJSON)
+		writer.Header().Set("Content-Type", contentTypeJSON)
 	}
 
 	writer.WriteHeader(statusCode)
@@ -347,7 +347,7 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 		h.writeFailure(writer, fmt.Errorf("failed to marshal operation info: %w", err))
 		return
 	}
-	writer.Header().Set(headerContentType, contentTypeJSON)
+	writer.Header().Set("Content-Type", contentTypeJSON)
 	if _, err := writer.Write(bytes); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}

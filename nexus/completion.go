@@ -47,7 +47,7 @@ func NewOperationCompletionSuccessful(v any) (*OperationCompletionSuccessful, er
 	}
 
 	header := make(http.Header, 1)
-	header.Set(headerContentType, contentTypeJSON)
+	header.Set("Content-Type", contentTypeJSON)
 
 	return &OperationCompletionSuccessful{
 		Header: header,
@@ -84,7 +84,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(c.State))
-	request.Header.Set(headerContentType, contentTypeJSON)
+	request.Header.Set("Content-Type", contentTypeJSON)
 
 	b, err := json.Marshal(c.Failure)
 	if err != nil {
@@ -137,7 +137,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	switch completion.State {
 	case OperationStateFailed, OperationStateCanceled:
 		if !isMediaTypeJSON(request.Header.Get("Content-Type")) {
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request content type: %q", request.Header.Get(headerContentType)))
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request content type: %q", request.Header.Get("Content-Type")))
 			return
 		}
 		var failure Failure

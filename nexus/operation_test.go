@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var bytesIOOperation = NewSyncOperation("bytes-io", func(ctx context.Context, input []byte, options StartOperationOptions) ([]byte, error) {
+	return append(input, []byte(", world")...), nil
+})
+
+var noValueOperation = NewSyncOperation("no-value", func(ctx context.Context, input NoValue, options StartOperationOptions) (NoValue, error) {
+	return nil, nil
+})
+
 var numberValidatorOperation = NewSyncOperation("number-validator", func(ctx context.Context, input int, options StartOperationOptions) (int, error) {
 	if input == 0 {
 		return 0, &UnsuccessfulOperationError{State: OperationStateFailed, Failure: Failure{Message: "cannot process 0"}}
@@ -47,10 +55,27 @@ func (h *asyncNumberValidatorOperationHandler) GetInfo(ctx context.Context, id s
 
 var asyncNumberValidatorOperation = &asyncNumberValidatorOperationHandler{}
 
+func TestOperationDirectory(t *testing.T) {
+	options := OperationDirectoryHandlerOptions{
+		Operations: []UntypedOperationHandler{
+			numberValidatorOperation,
+			numberValidatorOperation,
+		},
+	}
+
+	_, err := NewOperationDirectoryHandler(options)
+	require.ErrorContains(t, err, "duplicate operations: "+numberValidatorOperation.Name())
+	options.Operations = nil
+	_, err = NewOperationDirectoryHandler(options)
+	require.ErrorContains(t, err, "must register at least one operation")
+}
+
 func TestExecuteOperation(t *testing.T) {
 	options := OperationDirectoryHandlerOptions{
 		Operations: []UntypedOperationHandler{
 			numberValidatorOperation,
+			bytesIOOperation,
+			noValueOperation,
 		},
 	}
 
@@ -67,6 +92,14 @@ func TestExecuteOperation(t *testing.T) {
 	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
 	var unsuccessfulError *UnsuccessfulOperationError
 	require.ErrorAs(t, err, &unsuccessfulError)
+
+	bResult, err := ExecuteOperation(ctx, client, bytesIOOperation, []byte("hello"), ExecuteOperationOptions{})
+	require.NoError(t, err)
+	require.Equal(t, []byte("hello, world"), bResult)
+
+	nResult, err := ExecuteOperation(ctx, client, noValueOperation, nil, ExecuteOperationOptions{})
+	require.NoError(t, err)
+	require.Nil(t, nResult)
 }
 
 func TestStartOperation(t *testing.T) {
