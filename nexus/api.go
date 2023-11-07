@@ -86,11 +86,6 @@ const (
 	OperationStateCanceled OperationState = "canceled"
 )
 
-// isContentTypeJSON returns true if header contains a parsable Content-Type header with media type of application/json.
-func isContentTypeJSON(header http.Header) bool {
-	return isMediaTypeJSON(header.Get(headerContentType))
-}
-
 // isMediaTypeJSON returns true if the given content type's media type is application/json.
 func isMediaTypeJSON(contentType string) bool {
 	if contentType == "" {

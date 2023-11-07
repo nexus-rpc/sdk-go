@@ -36,7 +36,7 @@ func (h UnimplementedServiceHandler) CancelOperation(ctx context.Context, operat
 // implemented by the embedding type.
 type UnimplementedOperationHandler[I, O any] struct{}
 
-func (*UnimplementedOperationHandler[I, O]) inferType(I, O) {}
+func (*UnimplementedOperationHandler[I, O]) inferType(I, O) {} //nolint:unused
 
 func (*UnimplementedOperationHandler[I, O]) mustEmbedUnimplementedOperationHandler() {}
 

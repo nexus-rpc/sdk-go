@@ -135,11 +135,11 @@ type echoHandler struct {
 }
 
 func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	return &HandlerStartOperationResultSync[any]{Value: &input.Reader}, nil
+	return &HandlerStartOperationResultSync[any]{Value: input.Reader}, nil
 }
 
 func TestReaderIO(t *testing.T) {
-	ctx, client, teardown := setup(t, &jsonHandler{})
+	ctx, client, teardown := setup(t, &echoHandler{})
 	defer teardown()
 
 	content, err := jsonSerializer{}.Serialize("success")

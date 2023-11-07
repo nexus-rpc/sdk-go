@@ -25,7 +25,7 @@ func (d OperationDefinition[I, O]) Name() string {
 }
 
 // inferType implements Operation.
-func (OperationDefinition[I, O]) inferType(I, O) {}
+func (OperationDefinition[I, O]) inferType(I, O) {} //nolint:unused
 
 var _ Operation[any, any] = OperationDefinition[any, any]("")
 
