@@ -140,7 +140,7 @@ func (h *echoHandler) StartOperation(ctx context.Context, operation string, inpu
 	case "reader":
 		output = input.Reader
 	case "content":
-		data, err := io.ReadAll(input.Reader.Reader)
+		data, err := io.ReadAll(input.Reader)
 		if err != nil {
 			return nil, err
 		}
@@ -159,8 +159,8 @@ func TestReaderIO(t *testing.T) {
 	content, err := jsonSerializer{}.Serialize("success")
 	require.NoError(t, err)
 	reader := &Reader{
-		Header: content.Header,
-		Reader: io.NopCloser(bytes.NewReader(content.Data)),
+		io.NopCloser(bytes.NewReader(content.Data)),
+		content.Header,
 	}
 	testCases := []struct {
 		name   string

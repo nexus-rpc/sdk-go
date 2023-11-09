@@ -11,12 +11,12 @@ import (
 // A Reader is a container for a [Header] and an [io.Reader].
 // It is used to stream inputs and outputs in the various client and server APIs.
 type Reader struct {
+	// ReaderCloser contains request or response data. May be nil for empty data.
+	io.ReadCloser
 	// Header that should include information on how to deserialize this content.
 	// Headers constructed by the framework always have lower case keys.
 	// User provided keys are considered case-insensitive by the framework.
 	Header Header
-	// Reader contains request or response data. May be nil for empty data.
-	Reader io.ReadCloser
 }
 
 // A Content is a container for a [Header] and a byte slice.
@@ -46,8 +46,8 @@ type LazyValue struct {
 //	var v int
 //	err := lazyValue.Consume(&v)
 func (l *LazyValue) Consume(v any) error {
-	defer l.Reader.Reader.Close()
-	data, err := io.ReadAll(l.Reader.Reader)
+	defer l.Reader.Close()
+	data, err := io.ReadAll(l.Reader)
 	if err != nil {
 		return err
 	}

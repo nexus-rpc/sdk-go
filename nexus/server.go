@@ -161,7 +161,7 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 	if r, ok := result.(*Reader); ok {
 		// Close the request body in case we error before sending the HTTP request (which may double close but
 		// that's fine since we ignore the error).
-		defer r.Reader.Close()
+		defer r.Close()
 		reader = r
 	} else {
 		content, ok := result.(*Content)
@@ -174,17 +174,17 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 			}
 		}
 		reader = &Reader{
-			Header: content.Header,
-			Reader: io.NopCloser(bytes.NewReader(content.Data)),
+			io.NopCloser(bytes.NewReader(content.Data)),
+			content.Header,
 		}
 	}
 
 	header := writer.Header()
 	addContentHeaderToHTTPHeader(reader.Header, header)
-	if reader.Reader == nil {
+	if reader.ReadCloser == nil {
 		return
 	}
-	if _, err := io.Copy(writer, reader.Reader); err != nil {
+	if _, err := io.Copy(writer, reader); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}
 }
@@ -269,8 +269,8 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	value := &LazyValue{
 		serializer: h.options.Serializer,
 		Reader: &Reader{
-			Header: httpHeaderToContentHeader(request.Header),
-			Reader: request.Body,
+			request.Body,
+			httpHeaderToContentHeader(request.Header),
 		},
 	}
 	response, err := h.options.Handler.StartOperation(request.Context(), operation, value, options)

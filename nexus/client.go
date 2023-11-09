@@ -151,7 +151,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 	if r, ok := input.(*Reader); ok {
 		// Close the input reader in case we error before sending the HTTP request (which may double close but
 		// that's fine since we ignore the error).
-		defer r.Reader.Close()
+		defer r.Close()
 		reader = r
 	} else {
 		content, ok := input.(*Content)
@@ -164,8 +164,8 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		}
 
 		reader = &Reader{
-			Header: content.Header,
-			Reader: io.NopCloser(bytes.NewReader(content.Data)),
+			io.NopCloser(bytes.NewReader(content.Data)),
+			content.Header,
 		}
 	}
 
@@ -176,7 +176,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		q.Set(queryCallbackURL, options.CallbackURL)
 		url.RawQuery = q.Encode()
 	}
-	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), reader.Reader)
+	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), reader)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +200,8 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 			Successful: &LazyValue{
 				serializer: c.options.Serializer,
 				Reader: &Reader{
-					Header: httpHeaderToContentHeader(response.Header),
-					Reader: response.Body,
+					response.Body,
+					httpHeaderToContentHeader(response.Header),
 				},
 			},
 		}, nil
