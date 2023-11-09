@@ -122,6 +122,11 @@ func TestStartOperation(t *testing.T) {
 	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
+	handle, err := NewHandle(client, asyncNumberValidatorOperationInstance, result.Pending.ID)
+	require.NoError(t, err)
+	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 3, value)
 }
 
 func TestCancelOperation(t *testing.T) {
