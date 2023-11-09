@@ -10,7 +10,7 @@ import (
 )
 
 type myHandler struct {
-	nexus.UnimplementedServiceHandler
+	nexus.UnimplementedHandler
 }
 
 type MyResult struct {
@@ -22,9 +22,7 @@ func (h *myHandler) StartOperation(ctx context.Context, operation string, input 
 	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
-	return &nexus.HandlerStartOperationResultAsync{
-		OperationID: "TODO",
-	}, nil
+	return &nexus.HandlerStartOperationResultAsync{OperationID: "meaningful-id"}, nil
 }
 
 // GetOperationResult implements the Handler interface.

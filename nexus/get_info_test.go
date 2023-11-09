@@ -8,7 +8,7 @@ import (
 )
 
 type asyncWithInfoHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 	expectHeader bool
 }
 

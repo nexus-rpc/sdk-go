@@ -23,69 +23,67 @@ var numberValidatorOperation = NewSyncOperation("number-validator", func(ctx con
 	return input, nil
 })
 
-type asyncNumberValidatorOperationHandler struct {
-	UnimplementedOperationHandler[int, int]
+type asyncNumberValidatorOperation struct {
+	UnimplementedOperation[int, int]
 }
 
-func (h *asyncNumberValidatorOperationHandler) Name() string {
+func (h *asyncNumberValidatorOperation) Name() string {
 	return "async-number-validator"
 }
 
-func (h *asyncNumberValidatorOperationHandler) Start(ctx context.Context, input int, options StartOperationOptions) (HandlerStartOperationResult[int], error) {
+func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, options StartOperationOptions) (HandlerStartOperationResult[int], error) {
 	return &HandlerStartOperationResultAsync{OperationID: "foo"}, nil
 }
 
-func (h *asyncNumberValidatorOperationHandler) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (int, error) {
+func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (int, error) {
 	return 3, nil
 }
 
-func (h *asyncNumberValidatorOperationHandler) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
+func (h *asyncNumberValidatorOperation) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
 	if options.Header.Get("fail") != "" {
 		return fmt.Errorf("intentionally failed")
 	}
 	return nil
 }
 
-func (h *asyncNumberValidatorOperationHandler) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncNumberValidatorOperation) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	if options.Header.Get("fail") != "" {
 		return nil, fmt.Errorf("intentionally failed")
 	}
 	return &OperationInfo{ID: id, State: OperationStateRunning}, nil
 }
 
-var asyncNumberValidatorOperation = &asyncNumberValidatorOperationHandler{}
+var asyncNumberValidatorOperationInstance = &asyncNumberValidatorOperation{}
 
-func TestOperationDirectory(t *testing.T) {
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			numberValidatorOperation,
-			numberValidatorOperation,
-		},
-	}
-
-	_, err := NewOperationDirectoryHandler(options)
+func TestOperationRegistryErrors(t *testing.T) {
+	reg := OperationRegistry{}
+	err := reg.Register(numberValidatorOperation, numberValidatorOperation)
 	require.ErrorContains(t, err, "duplicate operations: "+numberValidatorOperation.Name())
-	options.Operations = nil
-	_, err = NewOperationDirectoryHandler(options)
+	reg.operations = nil
+	_, err = reg.NewHandler()
 	require.ErrorContains(t, err, "must register at least one operation")
 }
 
 func TestExecuteOperation(t *testing.T) {
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			numberValidatorOperation,
-			bytesIOOperation,
-			noValueOperation,
-		},
-	}
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		numberValidatorOperation,
+		bytesIOOperation,
+		noValueOperation,
+	))
 
-	handler, err := NewOperationDirectoryHandler(options)
+	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
 	ctx, client, teardown := setup(t, handler)
 	defer teardown()
 
 	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 3, result)
+
+	ref := NewOperationReference[int, int](numberValidatorOperation.Name())
+	result, err = ExecuteOperation(ctx, client, ref, 3, ExecuteOperationOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, result)
 
@@ -103,15 +101,13 @@ func TestExecuteOperation(t *testing.T) {
 }
 
 func TestStartOperation(t *testing.T) {
-	asyncNumberValidatorOperation := &asyncNumberValidatorOperationHandler{}
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			numberValidatorOperation,
-			asyncNumberValidatorOperation,
-		},
-	}
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		numberValidatorOperation,
+		asyncNumberValidatorOperationInstance,
+	))
 
-	handler, err := NewOperationDirectoryHandler(options)
+	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
 	ctx, client, teardown := setup(t, handler)
@@ -121,7 +117,7 @@ func TestStartOperation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, result.Successful)
 
-	result, err = StartOperation(ctx, client, asyncNumberValidatorOperation, 3, StartOperationOptions{})
+	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
 	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
@@ -129,19 +125,18 @@ func TestStartOperation(t *testing.T) {
 }
 
 func TestCancelOperation(t *testing.T) {
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			asyncNumberValidatorOperation,
-		},
-	}
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		asyncNumberValidatorOperationInstance,
+	))
 
-	handler, err := NewOperationDirectoryHandler(options)
+	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
 	ctx, client, teardown := setup(t, handler)
 	defer teardown()
 
-	result, err := StartOperation(ctx, client, asyncNumberValidatorOperation, 3, StartOperationOptions{})
+	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{}))
 	var unexpectedError *UnexpectedResponseError
@@ -149,19 +144,18 @@ func TestCancelOperation(t *testing.T) {
 }
 
 func TestGetOperationInfo(t *testing.T) {
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			asyncNumberValidatorOperation,
-		},
-	}
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		asyncNumberValidatorOperationInstance,
+	))
 
-	handler, err := NewOperationDirectoryHandler(options)
+	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
 	ctx, client, teardown := setup(t, handler)
 	defer teardown()
 
-	result, err := StartOperation(ctx, client, asyncNumberValidatorOperation, 3, StartOperationOptions{})
+	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
 	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)

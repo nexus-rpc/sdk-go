@@ -11,7 +11,7 @@ import (
 )
 
 type successHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *successHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
@@ -53,7 +53,7 @@ func TestSuccess(t *testing.T) {
 }
 
 type requestIDEchoHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *requestIDEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
@@ -105,7 +105,7 @@ func TestClientRequestID(t *testing.T) {
 }
 
 type jsonHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *jsonHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
@@ -131,7 +131,7 @@ func TestJSON(t *testing.T) {
 }
 
 type echoHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
@@ -195,7 +195,7 @@ func TestReaderIO(t *testing.T) {
 }
 
 type asyncHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *asyncHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
@@ -214,7 +214,7 @@ func TestAsync(t *testing.T) {
 }
 
 type unsuccessfulHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *unsuccessfulHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {

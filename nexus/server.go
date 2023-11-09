@@ -17,7 +17,7 @@ import (
 )
 
 // An HandlerStartOperationResult is the return type from the handler StartOperation and GetResult methods. It has two
-// implementations: [OperationResponseSync] and [OperationResponseAsync].
+// implementations: [HandlerStartOperationResultSync] and [HandlerStartOperationResultAsync].
 type HandlerStartOperationResult[T any] interface {
 	applyToHTTPResponse(http.ResponseWriter, *httpHandler)
 }
@@ -56,24 +56,27 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 	}
 }
 
-// A ServiceHandler must implement all of the Nexus service endpoints as defined in the [Nexus HTTP API].
+// A Handler must implement all of the Nexus service endpoints as defined in the [Nexus HTTP API].
 //
-// ServiceHandler implementations must embed the [UnimplementedHandler].
+// Handler implementations must embed the [UnimplementedHandler].
 //
-// All ServiceHandler methods can return a [HandlerError] to fail requests with a custom status code and structured [Failure].
+// All Handler methods can return a [HandlerError] to fail requests with a custom [HandlerErrorType] and structured [Failure].
+// Arbitrary errors from handler methods are turned into [HandlerErrorTypeInternal],their details are logged and hidden
+// from the caller.
 //
 // [Nexus HTTP API]: https://github.com/nexus-rpc/api
-type ServiceHandler interface {
-	// StartOperation handles requests for starting an operation. Return [OperationResponseSync] to respond successfully
-	// - inline, or [OperationResponseAsync] to indicate that an asynchronous operation was started.
-	// Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or canceled.
+type Handler interface {
+	// StartOperation handles requests for starting an operation. Return [HandlerStartOperationResultSync] to
+	// respond successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous
+	// operation was started. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
+	// failed or canceled.
 	StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error)
-	// GetOperationResult handles requests to get the result of an asynchronous operation. Return
-	// [OperationResponseSync] to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate
-	// that an asynchronous operation is still running.
-	// Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or canceled.
+	// GetOperationResult handles requests to get the result of an asynchronous operation. Return non error result
+	// to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous
+	// operation is still running. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
+	// failed or canceled.
 	//
-	// When [GetOperationResultRequest.Wait] is greater than zero, this request should be treated as a long poll.
+	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
 	// Long poll requests have a server side timeout, configurable via [HandlerOptions.GetResultTimeout], and exposed
 	// via context deadline. The context deadline is decoupled from the application level Wait duration.
 	//
@@ -85,8 +88,8 @@ type ServiceHandler interface {
 	GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
-	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be ignored
-	//  by the underlying operation implemention.
+	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
+	//  ignored by the underlying operation implemention.
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
 	CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error
 	mustEmbedUnimplementedHandler()
@@ -379,7 +382,7 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 // HandlerOptions are options for [NewHTTPHandler].
 type HandlerOptions struct {
 	// Handler for handling service requests.
-	Handler ServiceHandler
+	Handler Handler
 	// A stuctured logger.
 	// Defaults to slog.Default().
 	Logger *slog.Logger

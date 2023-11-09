@@ -9,7 +9,7 @@ import (
 
 type asyncWithCancelHandler struct {
 	expectHeader bool
-	UnimplementedServiceHandler
+	UnimplementedHandler
 }
 
 func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {

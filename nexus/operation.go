@@ -8,63 +8,105 @@ import (
 	"strings"
 )
 
+// NoValue is a marker type for an operations that do not accept any input or return a value (nil).
+//
+//	nexus.NewSyncOperation("my-empty-operation", func(context.Context, nexus.NoValue, options, nexus.StartOperationOptions) (nexus.NoValue, error) {
+//		return nil, nil
+//	)}
 type NoValue *struct{}
 
-type Operation[I, O any] interface {
+// OperationReference provides a typed interface for invoking operations. Every [Operation] is also an
+// [OperationReference]. Callers may create references using [NewOperationReference] when the implementation is not
+// available.
+type OperationReference[I, O any] interface {
 	Name() string
-	// A type inference helper for implementions of this interface.
+	// A type inference helper for implementations of this interface.
 	inferType(I, O)
 }
 
-// TODO: document me
-type OperationDefinition[I, O any] string
+type operationReference[I, O any] string
 
-// Name implements Operation.
-func (d OperationDefinition[I, O]) Name() string {
-	return string(d)
+// NewOperationReference creates an [OperationReference] with the provided type parameters and name.
+// It provides typed interface for invoking operations when the implementation is not available to the caller.
+func NewOperationReference[I, O any](name string) OperationReference[I, O] {
+	return operationReference[I, O](name)
 }
 
-// inferType implements Operation.
-func (OperationDefinition[I, O]) inferType(I, O) {} //nolint:unused
+func (r operationReference[I, O]) Name() string {
+	return string(r)
+}
 
-var _ Operation[any, any] = OperationDefinition[any, any]("")
+func (operationReference[I, O]) inferType(I, O) {} //nolint:unused
 
-type UntypedOperationHandler interface {
+// A RegisterableOperation is accepted in [OperationRegistry.Register].
+// Embed [UnimplementedOperation] to implement it.
+type RegisterableOperation interface {
+	// Name of the operation. Used for invocation and registration.
 	Name() string
-	mustEmbedUnimplementedOperationHandler()
+	mustEmbedUnimplementedOperation()
 }
 
-// OperationHandler is a handler for a single operation.
-type OperationHandler[I, O any] interface {
-	Operation[I, O]
-	UntypedOperationHandler
+// Operation is a handler for a single operation.
+//
+// Operation implementations must embed the [UnimplementedOperation].
+//
+// All Operation methods can return a [HandlerError] to fail requests with a custom [HandlerErrorType] and structured [Failure].
+// Arbitrary errors from handler methods are turned into [HandlerErrorTypeInternal],their details are logged and hidden
+// from the caller.
+type Operation[I, O any] interface {
+	RegisterableOperation
+	OperationReference[I, O]
+
+	// Start handles requests for starting an operation. Return [HandlerStartOperationResultSync] to respond
+	// successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous operation was
+	// started. Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or
+	// canceled.
 	Start(context.Context, I, StartOperationOptions) (HandlerStartOperationResult[O], error)
-	Cancel(context.Context, string, CancelOperationOptions) error
+	// GetResult handles requests to get the result of an asynchronous operation. Return non error result to respond
+	// successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous operation is
+	// still running. Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or
+	// canceled.
+	//
+	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
+	// Long poll requests have a server side timeout, configurable via [HandlerOptions.GetResultTimeout], and exposed
+	// via context deadline. The context deadline is decoupled from the application level Wait duration.
+	//
+	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
+	// Consider using a derived context that enforces the wait timeout when implementing this method and return
+	// [ErrOperationStillRunning] when that context expires as shown in the [Handler] example.
 	GetResult(context.Context, string, GetOperationResultOptions) (O, error)
+	// GetInfo handles requests to get information about an asynchronous operation.
 	GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error)
+	// Cancel handles requests to cancel an asynchronous operation.
+	// Cancelation in Nexus is:
+	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
+	//  ignored by the underlying operation implemention.
+	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
+	Cancel(context.Context, string, CancelOperationOptions) error
 }
 
-type syncOperationHandler[I, O any] struct {
-	UnimplementedOperationHandler[I, O]
+type syncOperation[I, O any] struct {
+	UnimplementedOperation[I, O]
 
 	Handler func(context.Context, I, StartOperationOptions) (O, error)
 	name    string
 }
 
-func NewSyncOperation[I, O any](name string, handler func(context.Context, I, StartOperationOptions) (O, error)) OperationHandler[I, O] {
-	return &syncOperationHandler[I, O]{
+// NewSyncOperation is a helper for creating a synchronous-only [Operation] from a given name and handler function.
+func NewSyncOperation[I, O any](name string, handler func(context.Context, I, StartOperationOptions) (O, error)) Operation[I, O] {
+	return &syncOperation[I, O]{
 		name:    name,
 		Handler: handler,
 	}
 }
 
-// Name implements OperationHandler.
-func (h *syncOperationHandler[I, O]) Name() string {
+// Name implements Operation.
+func (h *syncOperation[I, O]) Name() string {
 	return h.name
 }
 
-// StartOperation implements OperationHandler.
-func (h *syncOperationHandler[I, O]) Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error) {
+// Start implements Operation.
+func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error) {
 	o, err := h.Handler(ctx, input, options)
 	if err != nil {
 		return nil, err
@@ -72,45 +114,54 @@ func (h *syncOperationHandler[I, O]) Start(ctx context.Context, input I, options
 	return &HandlerStartOperationResultSync[O]{o}, err
 }
 
-var _ OperationHandler[any, any] = &syncOperationHandler[any, any]{}
-
-type OperationDirectoryHandlerOptions struct {
-	Operations []UntypedOperationHandler
+// An OperationRegistry registers operations and constructs a [Handler] that dispatches requests to those operations.
+type OperationRegistry struct {
+	operations map[string]RegisterableOperation
 }
 
-type OperationDirectoryHandler struct {
-	UnimplementedServiceHandler
-
-	operations map[string]UntypedOperationHandler
-}
-
-func NewOperationDirectoryHandler(options OperationDirectoryHandlerOptions) (*OperationDirectoryHandler, error) {
-	mapped := make(map[string]UntypedOperationHandler, len(options.Operations))
-	if len(options.Operations) == 0 {
-		return nil, errors.New("must register at least one operation")
+// Register one or more operations.
+// Returns an error if duplicate operations were registered with the same name.
+//
+// Can be called multiple times and is not thread safe.
+func (r *OperationRegistry) Register(operations ...RegisterableOperation) error {
+	if r.operations == nil {
+		r.operations = make(map[string]RegisterableOperation)
 	}
-	dups := []string{}
-
-	for _, op := range options.Operations {
-		if _, found := mapped[op.Name()]; found {
+	var dups []string
+	for _, op := range operations {
+		if _, found := r.operations[op.Name()]; found {
 			dups = append(dups, op.Name())
 		}
-		mapped[op.Name()] = op
+		r.operations[op.Name()] = op
 	}
 	if len(dups) > 0 {
-		return nil, fmt.Errorf("duplicate operations: %s", strings.Join(dups, ", "))
+		return fmt.Errorf("duplicate operations: %s", strings.Join(dups, ", "))
 	}
-	return &OperationDirectoryHandler{operations: mapped}, nil
+	return nil
+}
+
+// NewHandler creates a [Handler] that dispatches requests to registered operations based on their name.
+func (r OperationRegistry) NewHandler() (Handler, error) {
+	if len(r.operations) == 0 {
+		return nil, errors.New("must register at least one operation")
+	}
+	return &registryHandler{operations: r.operations}, nil
+}
+
+type registryHandler struct {
+	UnimplementedHandler
+
+	operations map[string]RegisterableOperation
 }
 
 // CancelOperation implements Handler.
-func (d *OperationDirectoryHandler) CancelOperation(ctx context.Context, operation string, operationID string, options CancelOperationOptions) error {
-	h, ok := d.operations[operation]
+func (r *registryHandler) CancelOperation(ctx context.Context, operation string, operationID string, options CancelOperationOptions) error {
+	h, ok := r.operations[operation]
 	if !ok {
 		return HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
-	// NOTE: We could avoid reflection here if we put the Cancel method on UntypedOperationHandler but it doesn't seem
+	// NOTE: We could avoid reflection here if we put the Cancel method on RegisterableOperation but it doesn't seem
 	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("Cancel")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
@@ -121,13 +172,13 @@ func (d *OperationDirectoryHandler) CancelOperation(ctx context.Context, operati
 }
 
 // GetOperationInfo implements Handler.
-func (d *OperationDirectoryHandler) GetOperationInfo(ctx context.Context, operation string, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	h, ok := d.operations[operation]
+func (r *registryHandler) GetOperationInfo(ctx context.Context, operation string, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	h, ok := r.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
-	// NOTE: We could avoid reflection here if we put the Cancel method on UntypedOperationHandler but it doesn't seem
+	// NOTE: We could avoid reflection here if we put the Cancel method on RegisterableOperation but it doesn't seem
 	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("GetInfo")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
@@ -139,8 +190,8 @@ func (d *OperationDirectoryHandler) GetOperationInfo(ctx context.Context, operat
 }
 
 // GetOperationResult implements Handler.
-func (d *OperationDirectoryHandler) GetOperationResult(ctx context.Context, operation string, operationID string, options GetOperationResultOptions) (any, error) {
-	h, ok := d.operations[operation]
+func (r *registryHandler) GetOperationResult(ctx context.Context, operation string, operationID string, options GetOperationResultOptions) (any, error) {
+	h, ok := r.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
@@ -155,8 +206,8 @@ func (d *OperationDirectoryHandler) GetOperationResult(ctx context.Context, oper
 }
 
 // StartOperation implements Handler.
-func (d *OperationDirectoryHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	h, ok := d.operations[operation]
+func (r *registryHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	h, ok := r.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
@@ -178,9 +229,15 @@ func (d *OperationDirectoryHandler) StartOperation(ctx context.Context, operatio
 	return ret.(HandlerStartOperationResult[any]), nil
 }
 
-var _ ServiceHandler = &OperationDirectoryHandler{}
+var _ Handler = &registryHandler{}
 
-func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation Operation[I, O], input I, request ExecuteOperationOptions) (O, error) {
+// ExecuteOperation is the type safe version of [Client.ExecuteOperation].
+// It accepts input of type I and returns output of type O, removing the need to consume the [LazyValue] returned by the
+// client method.
+//
+//	ref := NewOperationReference[MyInput, MyOutput]("my-operation")
+//	out, err := ExecuteOperation(ctx, client, ref, MyInput{}, options) // returns MyOutput, error
+func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
 	var o O
 	value, err := client.ExecuteOperation(ctx, operation.Name(), input, request)
 	if err != nil {
@@ -189,7 +246,10 @@ func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation O
 	return o, value.Consume(&o)
 }
 
-func StartOperation[I, O any](ctx context.Context, client *Client, operation Operation[I, O], input I, request StartOperationOptions) (*ClientStartOperationResult[O], error) {
+// StartOperation is the type safe version of [Client.StartOperation].
+// It accepts input of type I and returns a [ClientStartOperationResult] of type O, removing the need to consume the
+// [LazyValue] returned by the client method.
+func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResult[O], error) {
 	result, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
@@ -205,16 +265,11 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 	return &ClientStartOperationResult[O]{Pending: &handle}, nil
 }
 
-func NewHandle[T any](client *Client, operation, operationID string) (*OperationHandle[T], error) {
-	var es []error
-	if operation == "" {
-		es = append(es, errEmptyOperationName)
-	}
+// NewHandle is the type safe version of [Client.NewHandle].
+// The [Handle.GetResult] method will return an output of type O.
+func NewHandle[I, O any](client *Client, operation OperationReference[I, O], operationID string) (*OperationHandle[O], error) {
 	if operationID == "" {
-		es = append(es, errEmptyOperationID)
+		return nil, errEmptyOperationID
 	}
-	if len(es) > 0 {
-		return nil, errors.Join(es...)
-	}
-	return &OperationHandle[T]{client: client, Operation: operation, ID: operationID}, nil
+	return &OperationHandle[O]{client: client, Operation: operation.Name(), ID: operationID}, nil
 }

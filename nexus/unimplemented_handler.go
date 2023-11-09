@@ -4,59 +4,59 @@ import (
 	"context"
 )
 
-// UnimplementedServiceHandler must be embedded into any [ServiceHandler] implementation for future compatibility.
-// It implements all methods on the [ServiceHandler] interface, panicking at runtime if they are not implemented by the
+// UnimplementedHandler must be embedded into any [Handler] implementation for future compatibility.
+// It implements all methods on the [Handler] interface, panicking at runtime if they are not implemented by the
 // embedding type.
-type UnimplementedServiceHandler struct{}
+type UnimplementedHandler struct{}
 
-func (h UnimplementedServiceHandler) mustEmbedUnimplementedHandler() {}
+func (h UnimplementedHandler) mustEmbedUnimplementedHandler() {}
 
-// StartOperation implements the ServiceHandler interface.
-func (h UnimplementedServiceHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+// StartOperation implements the Handler interface.
+func (h UnimplementedHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
-// GetOperationResult implements the ServiceHandler interface.
-func (h UnimplementedServiceHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
+// GetOperationResult implements the Handler interface.
+func (h UnimplementedHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
-// GetOperationInfo implements the ServiceHandler interface.
-func (h UnimplementedServiceHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+// GetOperationInfo implements the Handler interface.
+func (h UnimplementedHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
-// CancelOperation implements the ServiceHandler interface.
-func (h UnimplementedServiceHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
+// CancelOperation implements the Handler interface.
+func (h UnimplementedHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
 	return &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
-// UnimplementedOperationHandler must be embedded into any [OperationHandler] implementation for future compatibility.
-// It implements all methods on the [OperationHandler] interface except for `Name`, panicking at runtime if they are not
+// UnimplementedOperation must be embedded into any [Operation] implementation for future compatibility.
+// It implements all methods on the [Operation] interface except for `Name`, panicking at runtime if they are not
 // implemented by the embedding type.
-type UnimplementedOperationHandler[I, O any] struct{}
+type UnimplementedOperation[I, O any] struct{}
 
-func (*UnimplementedOperationHandler[I, O]) inferType(I, O) {} //nolint:unused
+func (*UnimplementedOperation[I, O]) inferType(I, O) {} //nolint:unused
 
-func (*UnimplementedOperationHandler[I, O]) mustEmbedUnimplementedOperationHandler() {}
+func (*UnimplementedOperation[I, O]) mustEmbedUnimplementedOperation() {}
 
-// Cancel implements OperationHandler.
-func (*UnimplementedOperationHandler[I, O]) Cancel(context.Context, string, CancelOperationOptions) error {
+// Cancel implements Operation.
+func (*UnimplementedOperation[I, O]) Cancel(context.Context, string, CancelOperationOptions) error {
 	return HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetInfo implements OperationHandler.
-func (*UnimplementedOperationHandler[I, O]) GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error) {
+// GetInfo implements Operation.
+func (*UnimplementedOperation[I, O]) GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetResult implements OperationHandler.
-func (*UnimplementedOperationHandler[I, O]) GetResult(context.Context, string, GetOperationResultOptions) (O, error) {
+// GetResult implements Operation.
+func (*UnimplementedOperation[I, O]) GetResult(context.Context, string, GetOperationResultOptions) (O, error) {
 	var empty O
 	return empty, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// Start implements OperationHandler.
-func (h *UnimplementedOperationHandler[I, O]) Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error) {
+// Start implements Operation.
+func (h *UnimplementedOperation[I, O]) Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }

@@ -219,17 +219,17 @@ _ = http.Serve(listener, httpHandler)
 
 ##### Respond Synchronously
 
-Return an `OperationResponseSync` from `StartOperation`, delivering the operation result.
+Return an `HandlerStartOperationResultSync` from `StartOperation`, delivering the operation result.
 
-Use the `NewOperationResponseSync` helper for JSON responses.
+Use the `NewHandlerStartOperationResultSync` helper for JSON responses.
 
 `StartOperationRequest` contains the original `http.Request` for extraction of headers, URL, and request body.
 
-Custom response headers may be provided via `OperationResponseSync.Header`.
+Custom response headers may be provided via `HandlerStartOperationResultSync.Header`.
 
 ```go
 func (h *myHandler) StartOperation(ctx context.Context, request *nexus.StartOperationRequest) (nexus.OperationResponse, error) {
-	return nexus.NewOperationResponseSync(MyStruct{Field: "value"}), nil
+	return nexus.NewHandlerStartOperationResultSync(MyStruct{Field: "value"}), nil
 }
 ```
 
@@ -237,7 +237,7 @@ func (h *myHandler) StartOperation(ctx context.Context, request *nexus.StartOper
 
 ```go
 func (h *myHandler) StartOperation(ctx context.Context, request *nexus.StartOperationRequest) (nexus.OperationResponse, error) {
-	return &nexus.OperationResponseAsync{OperationID: "async"}, nil
+	return &nexus.HandlerStartOperationResultAsync{OperationID: "async"}, nil
 }
 ```
 
@@ -282,7 +282,7 @@ func (h *myHandler) GetOperationInfo(ctx context.Context, request *nexus.GetOper
 #### Get Operation Result
 
 The `GetOperationResult` method is used to deliver an operation's result inline. Similarly to `StartOperation`, this
-method should return an `OperationResponseSync` or fail with an `UnsuccessfulOperationError` to indicate completion or
+method should return an `HandlerStartOperationResultSync` or fail with an `UnsuccessfulOperationError` to indicate completion or
 an `ErrOperationStillRunning` error to indicate that the operation is still running.
 The method may also return a `context.DeadlineExceeded` error to indicate that the operation is still running.
 
@@ -292,7 +292,7 @@ set, context deadline indicates how long the caller is willing to wait for, capp
 `GetOperationResultRequest` contains the original `http.Request` for extraction of headers, URL, and other useful
 information.
 
-The `GetOperationResult` method is used to get the result of an asynchronous operation. Return `OperationResponseSync`
+The `GetOperationResult` method is used to get the result of an asynchronous operation. Return `HandlerStartOperationResultSync`
 to respond successfully - inline, or error with `ErrOperationStillRunning` to indicate that an asynchronous operation is
 still running. Return an `UnsuccessfulOperationError` to indicate that an operation completed as failed or canceled.
 
@@ -305,7 +305,7 @@ Consider using a derived context that enforces the wait timeout when implementin
 `ErrOperationStillRunning` when that context expires as shown in the example.
 
 ```go
-func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOperationResultRequest) (*nexus.OperationResponseSync, error) {
+func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOperationResultRequest) (*nexus.HandlerStartOperationResultSync, error) {
 	if request.Wait > 0 { // request is a long poll
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, request.Wait)
@@ -324,14 +324,14 @@ func (h *myHandler) GetOperationResult(ctx context.Context, request *nexus.GetOp
 			// Optionally expose the error details to the caller.
 			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
 		}
-		return nexus.NewOperationResponseSync(result)
+		return nexus.NewHandlerStartOperationResultSync(result)
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
 			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
 		}
-		return nexus.NewOperationResponseSync(result)
+		return nexus.NewHandlerStartOperationResultSync(result)
 	}
 }
 ```

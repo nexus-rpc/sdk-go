@@ -132,15 +132,13 @@ func (c *customSerializer) Deserialize(s *Content, v any) error {
 }
 
 func TestCustomSerializer(t *testing.T) {
-	asyncNumberValidatorOperation := &asyncNumberValidatorOperationHandler{}
-	options := OperationDirectoryHandlerOptions{
-		Operations: []UntypedOperationHandler{
-			numberValidatorOperation,
-			asyncNumberValidatorOperation,
-		},
-	}
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		numberValidatorOperation,
+		asyncNumberValidatorOperationInstance,
+	))
 
-	handler, err := NewOperationDirectoryHandler(options)
+	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
 	c := &customSerializer{}
@@ -152,7 +150,7 @@ func TestCustomSerializer(t *testing.T) {
 	require.Equal(t, 3, result)
 
 	// Async triggers GetResult, test this too.
-	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperation, 3, ExecuteOperationOptions{})
+	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, ExecuteOperationOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, result)
 

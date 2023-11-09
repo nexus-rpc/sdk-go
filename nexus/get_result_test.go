@@ -15,7 +15,7 @@ type request struct {
 }
 
 type asyncWithResultHandler struct {
-	UnimplementedServiceHandler
+	UnimplementedHandler
 	timesToBlock     int
 	resultError      error
 	expectTestHeader bool

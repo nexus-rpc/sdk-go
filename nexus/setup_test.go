@@ -14,7 +14,7 @@ import (
 const testTimeout = time.Second * 5
 const getResultMaxTimeout = time.Millisecond * 300
 
-func setupSerializer(t *testing.T, handler ServiceHandler, serializer Serializer) (ctx context.Context, client *Client, teardown func()) {
+func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx context.Context, client *Client, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
@@ -42,7 +42,7 @@ func setupSerializer(t *testing.T, handler ServiceHandler, serializer Serializer
 	}
 }
 
-func setup(t *testing.T, handler ServiceHandler) (ctx context.Context, client *Client, teardown func()) {
+func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
 	return setupSerializer(t, handler, nil)
 }
 
