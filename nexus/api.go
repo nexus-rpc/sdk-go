@@ -39,8 +39,7 @@ const (
 	statusApplicationTimeout = 521
 )
 
-// Failure represents protocol level failures returned in non successful HTTP responses as well as `failed` or
-// `canceled` operation results.
+// A Failure represents failed handler invocations as well as `failed` or `canceled` operation results.
 type Failure struct {
 	// A simple text message.
 	Message string `json:"message"`
@@ -127,10 +126,11 @@ func httpHeaderToContentHeader(httpHeader http.Header) Header {
 	return header
 }
 
-func addContentHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) {
+func addContentHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) http.Header {
 	for k, v := range nexusHeader {
 		httpHeader.Set("Content-"+k, v)
 	}
+	return httpHeader
 }
 
 func httpHeaderToNexusHeader(httpHeader http.Header) Header {
@@ -144,8 +144,9 @@ func httpHeaderToNexusHeader(httpHeader http.Header) Header {
 	return header
 }
 
-func addNexusHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) {
+func addNexusHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) http.Header {
 	for k, v := range nexusHeader {
 		httpHeader.Set(k, v)
 	}
+	return httpHeader
 }

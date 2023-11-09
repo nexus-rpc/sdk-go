@@ -5,8 +5,8 @@ import (
 )
 
 // UnimplementedHandler must be embedded into any [Handler] implementation for future compatibility.
-// It implements all methods on the [Handler] interface, panicking at runtime if they are not implemented by the
-// embedding type.
+// It implements all methods on the [Handler] interface, returning unimplemented errors if they are not implemented by
+// the embedding type.
 type UnimplementedHandler struct{}
 
 func (h UnimplementedHandler) mustEmbedUnimplementedHandler() {}
@@ -32,8 +32,8 @@ func (h UnimplementedHandler) CancelOperation(ctx context.Context, operation, op
 }
 
 // UnimplementedOperation must be embedded into any [Operation] implementation for future compatibility.
-// It implements all methods on the [Operation] interface except for `Name`, panicking at runtime if they are not
-// implemented by the embedding type.
+// It implements all methods on the [Operation] interface except for `Name`, returning unimplemented errors if they are
+// not implemented by the embedding type.
 type UnimplementedOperation[I, O any] struct{}
 
 func (*UnimplementedOperation[I, O]) inferType(I, O) {} //nolint:unused

@@ -252,7 +252,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 // ExecuteOperationOptions are options for [Client.ExecuteOperation].
 type ExecuteOperationOptions struct {
 	// Callback URL to provide to the handle for receiving async operation completions. Optional.
-	// Even though Client.ExecuteOperation waits for operation completion, some application may want to set this
+	// Even though Client.ExecuteOperation waits for operation completion, some applications may want to set this
 	// callback as a fallback mechanism.
 	CallbackURL string
 	// Request ID that may be used by the server handler to dedupe this start request.

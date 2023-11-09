@@ -63,7 +63,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 // Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
 // context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
-// ⚠️ If a response is returned, its body must be read in its entirety and closed to free up the underlying connection.
+// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
 	var result T
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.Operation), url.PathEscape(h.ID), "result")

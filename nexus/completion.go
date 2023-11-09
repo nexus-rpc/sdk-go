@@ -38,20 +38,17 @@ type OperationCompletionSuccessful struct {
 	Body io.Reader
 }
 
-// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a JSONable value.
-// Marshals the provided value to JSON using [json.Marshal] and sets the proper Content-Type header.
-func NewOperationCompletionSuccessful(v any) (*OperationCompletionSuccessful, error) {
-	b, err := json.Marshal(v)
+// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
+// Serializes the provided result using the SDK's default [Serializer], which handles JSONables, byte slices and nils.
+func NewOperationCompletionSuccessful(result any) (*OperationCompletionSuccessful, error) {
+	content, err := defaultSerializer.Serialize(result)
 	if err != nil {
 		return nil, err
 	}
 
-	header := make(http.Header, 1)
-	header.Set("Content-Type", contentTypeJSON)
-
 	return &OperationCompletionSuccessful{
-		Header: header,
-		Body:   bytes.NewReader(b),
+		Header: addContentHeaderToHTTPHeader(content.Header, make(http.Header)),
+		Body:   bytes.NewReader(content.Data),
 	}, nil
 }
 
@@ -118,9 +115,6 @@ type CompletionHandlerOptions struct {
 	// A stuctured logging handler.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
-	// Optional marshaler for marshaling objects to JSON.
-	// Defaults to json.Marshal.
-	Marshaler func(any) ([]byte, error)
 }
 
 type completionHTTPHandler struct {
@@ -164,9 +158,6 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 
 // NewCompletionHTTPHandler constructs an [http.Handler] from given options for handling operation completion requests.
 func NewCompletionHTTPHandler(options CompletionHandlerOptions) http.Handler {
-	if options.Marshaler == nil {
-		options.Marshaler = json.Marshal
-	}
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}

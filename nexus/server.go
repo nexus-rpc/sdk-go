@@ -16,8 +16,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// An HandlerStartOperationResult is the return type from the handler StartOperation and GetResult methods. It has two
-// implementations: [HandlerStartOperationResultSync] and [HandlerStartOperationResultAsync].
+// An HandlerStartOperationResult is the return type from the [Handler] StartOperation and [Operation] Start methods. It
+// has two implementations: [HandlerStartOperationResultSync] and [HandlerStartOperationResultAsync].
 type HandlerStartOperationResult[T any] interface {
 	applyToHTTPResponse(http.ResponseWriter, *httpHandler)
 }
@@ -100,10 +100,10 @@ type HandlerErrorType string
 const (
 	// An internal error occured.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
-	// Used by gateways to report that an upstream server has responded with an error.
-	HandlerErrorTypeApplicationError HandlerErrorType = "APPLICATION_ERROR"
-	// Used by gateways to report that a request to an upstream server has timed out.
-	HandlerErrorTypeApplicationTimeout HandlerErrorType = "APPLICATION_TIMEOUT"
+	// Used by gateways to report that a downstream server has responded with an error.
+	HandlerErrorTypeUpstreamError HandlerErrorType = "DOWNSTREAM_ERROR"
+	// Used by gateways to report that a request to a downstream server has timed out.
+	HandlerErrorTypeDownstreamTimeout HandlerErrorType = "DOWNSTREAM_TIMEOUT"
 	// The client did not supply valid authentication credentials for this request.
 	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
 	// The caller does not have permission to execute the specified operation.
@@ -117,7 +117,7 @@ const (
 	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
 )
 
-// HandlerError is a special error that can be returned from [Handler] methods for failing an HTTP request with a custom
+// HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
 // status code and failure message.
 type HandlerError struct {
 	// Defaults to HandlerErrorTypeInternal
@@ -138,6 +138,7 @@ func (e *HandlerError) Error() string {
 	return fmt.Sprintf("handler error (%s)", typ)
 }
 
+// HandlerErrorf creates a [HandlerError] with the given type and a formatted failure message.
 func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerError {
 	return &HandlerError{
 		Type: typ,
@@ -211,10 +212,10 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	} else if errors.As(err, &handlerError) {
 		failure = handlerError.Failure
 		switch handlerError.Type {
-		case HandlerErrorTypeApplicationTimeout:
-			statusCode = statusApplicationTimeout
-		case HandlerErrorTypeApplicationError:
-			statusCode = statusApplicationError
+		case HandlerErrorTypeDownstreamTimeout:
+			statusCode = statusDownstreamTimeout
+		case HandlerErrorTypeUpstreamError:
+			statusCode = statusDownstreamError
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
 		case HandlerErrorTypeForbidden:
