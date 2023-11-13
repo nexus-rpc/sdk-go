@@ -13,8 +13,7 @@ import (
 )
 
 // Package version.
-// TODO: Actual version as part of the release tagging process.
-const version = "dev"
+const version = "v0.0.2"
 
 const (
 	headerOperationState = "Nexus-Operation-State"
