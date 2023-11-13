@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -162,10 +164,12 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 				return nil, err
 			}
 		}
+		header := maps.Clone(content.Header)
+		header["length"] = strconv.Itoa(len(content.Data))
 
 		reader = &Reader{
 			io.NopCloser(bytes.NewReader(content.Data)),
-			content.Header,
+			header,
 		}
 	}
 

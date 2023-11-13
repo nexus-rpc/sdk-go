@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -174,9 +176,12 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 				return
 			}
 		}
+		header := maps.Clone(content.Header)
+		header["length"] = strconv.Itoa(len(content.Data))
+
 		reader = &Reader{
 			io.NopCloser(bytes.NewReader(content.Data)),
-			content.Header,
+			header,
 		}
 	}
 

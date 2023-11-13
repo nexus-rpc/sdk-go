@@ -13,7 +13,7 @@ func TestJSONSerializer(t *testing.T) {
 	s := jsonSerializer{}
 	c, err = s.Serialize(1)
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/json", "length": "1"}, c.Header)
+	require.Equal(t, Header{"type": "application/json"}, c.Header)
 	var i int
 	err = s.Deserialize(c, &i)
 	require.NoError(t, err)
@@ -29,7 +29,7 @@ func TestNilSerializer(t *testing.T) {
 
 	c, err = s.Serialize(nil)
 	require.NoError(t, err)
-	require.Equal(t, Header{"length": "0"}, c.Header)
+	require.Equal(t, Header{}, c.Header)
 	var out any
 	require.NoError(t, s.Deserialize(c, &out))
 	require.Equal(t, nil, out)
@@ -60,14 +60,14 @@ func TestByteSliceSerializer(t *testing.T) {
 	// decode into byte slice
 	c, err = s.Serialize([]byte("abc"))
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/octet-stream", "length": "3"}, c.Header)
+	require.Equal(t, Header{"type": "application/octet-stream"}, c.Header)
 	var out []byte
 	require.NoError(t, s.Deserialize(c, &out))
 	require.Equal(t, []byte("abc"), out)
 
 	c, err = s.Serialize([]byte("abc"))
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/octet-stream", "length": "3"}, c.Header)
+	require.Equal(t, Header{"type": "application/octet-stream"}, c.Header)
 	// decode into nil pointer fails
 	var pout *[]byte
 	require.ErrorContains(t, s.Deserialize(c, pout), "cannot deserialize into nil pointer")

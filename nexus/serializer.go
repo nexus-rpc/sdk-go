@@ -124,7 +124,6 @@ func (jsonSerializer) Serialize(v any) (*Content, error) {
 	return &Content{
 		Header: Header{
 			"type":   "application/json",
-			"length": fmt.Sprintf("%d", len(data)),
 		},
 		Data: data,
 	}, nil
@@ -163,7 +162,7 @@ func (nilSerializer) Serialize(v any) (*Content, error) {
 		}
 	}
 	return &Content{
-		Header: Header{"length": "0"},
+		Header: Header{},
 		Data:   nil,
 	}, nil
 }
@@ -203,7 +202,6 @@ func (byteSliceSerializer) Serialize(v any) (*Content, error) {
 		return &Content{
 			Header: Header{
 				"type":   "application/octet-stream",
-				"length": fmt.Sprintf("%d", len(b)),
 			},
 			Data: b,
 		}, nil
