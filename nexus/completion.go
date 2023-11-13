@@ -38,20 +38,17 @@ type OperationCompletionSuccessful struct {
 	Body io.Reader
 }
 
-// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a JSONable value.
-// Marshals the provided value to JSON using [json.Marshal] and sets the proper Content-Type header.
-func NewOperationCompletionSuccessful(v any) (*OperationCompletionSuccessful, error) {
-	b, err := json.Marshal(v)
+// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
+// Serializes the provided result using the SDK's default [Serializer], which handles JSONables, byte slices and nils.
+func NewOperationCompletionSuccessful(result any) (*OperationCompletionSuccessful, error) {
+	content, err := defaultSerializer.Serialize(result)
 	if err != nil {
 		return nil, err
 	}
 
-	header := make(http.Header, 1)
-	header.Set(headerContentType, contentTypeJSON)
-
 	return &OperationCompletionSuccessful{
-		Header: header,
-		Body:   bytes.NewReader(b),
+		Header: addContentHeaderToHTTPHeader(content.Header, make(http.Header)),
+		Body:   bytes.NewReader(content.Data),
 	}, nil
 }
 
@@ -84,7 +81,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(c.State))
-	request.Header.Set(headerContentType, contentTypeJSON)
+	request.Header.Set("Content-Type", contentTypeJSON)
 
 	b, err := json.Marshal(c.Failure)
 	if err != nil {
@@ -118,9 +115,6 @@ type CompletionHandlerOptions struct {
 	// A stuctured logging handler.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
-	// Optional marshaler for marshaling objects to JSON.
-	// Defaults to json.Marshal.
-	Marshaler func(any) ([]byte, error)
 }
 
 type completionHTTPHandler struct {
@@ -136,25 +130,25 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	}
 	switch completion.State {
 	case OperationStateFailed, OperationStateCanceled:
-		if !isContentTypeJSON(request.Header) {
-			h.writeFailure(writer, newBadRequestError("invalid request content type: %q", request.Header.Get(headerContentType)))
+		if !isMediaTypeJSON(request.Header.Get("Content-Type")) {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request content type: %q", request.Header.Get("Content-Type")))
 			return
 		}
 		var failure Failure
 		b, err := io.ReadAll(request.Body)
 		if err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
 		if err := json.Unmarshal(b, &failure); err != nil {
-			h.writeFailure(writer, newBadRequestError("failed to read Failure from request body"))
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
 		completion.Failure = &failure
 	case OperationStateSucceeded:
 		// Nothing to do here.
 	default:
-		h.writeFailure(writer, newBadRequestError("invalid request operation state: %q", completion.State))
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request operation state: %q", completion.State))
 		return
 	}
 	if err := h.handler.CompleteOperation(ctx, &completion); err != nil {
@@ -164,9 +158,6 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 
 // NewCompletionHTTPHandler constructs an [http.Handler] from given options for handling operation completion requests.
 func NewCompletionHTTPHandler(options CompletionHandlerOptions) http.Handler {
-	if options.Marshaler == nil {
-		options.Marshaler = json.Marshal
-	}
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}

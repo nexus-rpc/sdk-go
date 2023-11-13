@@ -17,7 +17,6 @@ import (
 const version = "dev"
 
 const (
-	headerContentType    = "Content-Type"
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
@@ -26,18 +25,21 @@ const (
 const contentTypeJSON = "application/json"
 
 // Query param for passing a callback URL.
-const queryCallbackURL = "callback"
+const (
+	queryCallbackURL = "callback"
+	// Query param for passing wait duration.
+	queryWait = "wait"
+)
 
-// Query param for passing wait duration.
-const queryWait = "wait"
+const (
+	statusOperationRunning = http.StatusPreconditionFailed
+	// HTTP status code for failed operation responses.
+	statusOperationFailed   = http.StatusFailedDependency
+	statusDownstreamError   = 520
+	statusDownstreamTimeout = 521
+)
 
-const statusOperationRunning = http.StatusPreconditionFailed
-
-// HTTP status code for failed operation responses.
-const statusOperationFailed = http.StatusFailedDependency
-
-// Failure represents protocol level failures returned in non successful HTTP responses as well as `failed` or
-// `canceled` operation results.
+// A Failure represents failed handler invocations as well as `failed` or `canceled` operation results.
 type Failure struct {
 	// A simple text message.
 	Message string `json:"message"`
@@ -86,11 +88,6 @@ const (
 	OperationStateCanceled OperationState = "canceled"
 )
 
-// isContentTypeJSON returns true if header contains a parsable Content-Type header with media type of application/json.
-func isContentTypeJSON(header http.Header) bool {
-	return isMediaTypeJSON(header.Get(headerContentType))
-}
-
 // isMediaTypeJSON returns true if the given content type's media type is application/json.
 func isMediaTypeJSON(contentType string) bool {
 	if contentType == "" {
@@ -116,4 +113,40 @@ type Header map[string]string
 // Get is a case-insensitive key lookup from the header map.
 func (h Header) Get(k string) string {
 	return h[strings.ToLower(k)]
+}
+
+func httpHeaderToContentHeader(httpHeader http.Header) Header {
+	header := Header{}
+	for k, v := range httpHeader {
+		if strings.HasPrefix(k, "Content-") {
+			// Nexus headers can only have single values, ignore multiple values.
+			header[strings.ToLower(k[8:])] = v[0]
+		}
+	}
+	return header
+}
+
+func addContentHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) http.Header {
+	for k, v := range nexusHeader {
+		httpHeader.Set("Content-"+k, v)
+	}
+	return httpHeader
+}
+
+func httpHeaderToNexusHeader(httpHeader http.Header) Header {
+	header := Header{}
+	for k, v := range httpHeader {
+		if !strings.HasPrefix(k, "Content-") {
+			// Nexus headers can only have single values, ignore multiple values.
+			header[strings.ToLower(k)] = v[0]
+		}
+	}
+	return header
+}
+
+func addNexusHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) http.Header {
+	for k, v := range nexusHeader {
+		httpHeader.Set(k, v)
+	}
+	return httpHeader
 }

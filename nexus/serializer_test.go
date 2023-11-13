@@ -1,6 +1,7 @@
 package nexus
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,7 @@ func TestJSONSerializer(t *testing.T) {
 	s := jsonSerializer{}
 	c, err = s.Serialize(1)
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/json", "length": "1"}, c.Header)
+	require.Equal(t, Header{"type": "application/json"}, c.Header)
 	var i int
 	err = s.Deserialize(c, &i)
 	require.NoError(t, err)
@@ -28,7 +29,7 @@ func TestNilSerializer(t *testing.T) {
 
 	c, err = s.Serialize(nil)
 	require.NoError(t, err)
-	require.Equal(t, Header{"length": "0"}, c.Header)
+	require.Equal(t, Header{}, c.Header)
 	var out any
 	require.NoError(t, s.Deserialize(c, &out))
 	require.Equal(t, nil, out)
@@ -59,14 +60,14 @@ func TestByteSliceSerializer(t *testing.T) {
 	// decode into byte slice
 	c, err = s.Serialize([]byte("abc"))
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/octet-stream", "length": "3"}, c.Header)
+	require.Equal(t, Header{"type": "application/octet-stream"}, c.Header)
 	var out []byte
 	require.NoError(t, s.Deserialize(c, &out))
 	require.Equal(t, []byte("abc"), out)
 
 	c, err = s.Serialize([]byte("abc"))
 	require.NoError(t, err)
-	require.Equal(t, Header{"type": "application/octet-stream", "length": "3"}, c.Header)
+	require.Equal(t, Header{"type": "application/octet-stream"}, c.Header)
 	// decode into nil pointer fails
 	var pout *[]byte
 	require.ErrorContains(t, s.Deserialize(c, pout), "cannot deserialize into nil pointer")
@@ -101,4 +102,58 @@ func TestDefaultSerializer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.Deserialize(c, &a))
 	require.Equal(t, nil, a)
+}
+
+// There's zero chance of concurrent updates in the test where this is used. Don't bother locking.
+type customSerializer struct {
+	encoded int
+	decoded int
+}
+
+func (c *customSerializer) Serialize(v any) (*Content, error) {
+	vint := v.(int)
+	c.encoded++
+	return &Content{
+		Header: map[string]string{
+			"custom": strconv.Itoa(vint),
+		},
+	}, nil
+}
+
+func (c *customSerializer) Deserialize(s *Content, v any) error {
+	vintPtr := v.(*int)
+	decoded, err := strconv.Atoi(s.Header["custom"])
+	if err != nil {
+		return err
+	}
+	*vintPtr = decoded
+	c.decoded++
+	return nil
+}
+
+func TestCustomSerializer(t *testing.T) {
+	registry := OperationRegistry{}
+	require.NoError(t, registry.Register(
+		numberValidatorOperation,
+		asyncNumberValidatorOperationInstance,
+	))
+
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	c := &customSerializer{}
+	ctx, client, teardown := setupSerializer(t, handler, c)
+	defer teardown()
+
+	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 3, result)
+
+	// Async triggers GetResult, test this too.
+	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, ExecuteOperationOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 3, result)
+
+	require.Equal(t, 4, c.decoded)
+	require.Equal(t, 4, c.encoded)
 }

@@ -1,102 +1,105 @@
 package nexus
 
 import (
-	"bytes"
 	"context"
-	"io"
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-type asyncWithResultHandler struct {
-	UnimplementedHandler
-	timesToBlock int
-	resultError  error
-	requests     []*GetOperationResultRequest
+type request struct {
+	options     GetOperationResultOptions
+	operation   string
+	operationID string
 }
 
-func (h *asyncWithResultHandler) StartOperation(ctx context.Context, request *StartOperationRequest) (OperationResponse, error) {
-	return &OperationResponseAsync{
+type asyncWithResultHandler struct {
+	UnimplementedHandler
+	timesToBlock     int
+	resultError      error
+	expectTestHeader bool
+	requests         []request
+}
+
+func (h *asyncWithResultHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	if h.expectTestHeader && options.Header.Get("test") != "ok" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
+	}
+
+	return &HandlerStartOperationResultAsync{
 		OperationID: "a/sync",
 	}, nil
 }
 
-func (h *asyncWithResultHandler) getResult(request *GetOperationResultRequest) (*OperationResponseSync, error) {
+func (h *asyncWithResultHandler) getResult() (any, error) {
 	if h.resultError != nil {
 		return nil, h.resultError
 	}
-	return &OperationResponseSync{
-		Header: request.HTTPRequest.Header,
-		Body:   bytes.NewReader([]byte("body")),
-	}, nil
+	return []byte("body"), nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, request *GetOperationResultRequest) (*OperationResponseSync, error) {
-	h.requests = append(h.requests, request)
+func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
+	h.requests = append(h.requests, request{options: options, operation: operation, operationID: operationID})
 
-	if request.HTTPRequest.Header.Get("User-Agent") != userAgent {
-		return nil, newBadRequestError("invalid 'User-Agent' header: %q", request.HTTPRequest.Header.Get("User-Agent"))
+	if h.expectTestHeader && options.Header.Get("test") != "ok" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
 	}
-	if request.HTTPRequest.Header.Get("Content-Type") != "" {
-		return nil, newBadRequestError("'Content-Type' header set on request")
+	if options.Header.Get("User-Agent") != userAgent {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
 	}
-	if request.Wait == 0 {
-		return h.getResult(request)
+	if options.Header.Get("Content-Type") != "" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "'Content-Type' header set on request")
 	}
-	if request.Wait > 0 {
+	if options.Wait == 0 {
+		return h.getResult()
+	}
+	if options.Wait > 0 {
 		deadline, set := ctx.Deadline()
 		if !set {
-			return nil, newBadRequestError("context deadline unset")
+			return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "context deadline unset")
 		}
 		timeout := time.Until(deadline)
 		diff := (getResultMaxTimeout - timeout).Abs()
 		if diff > time.Millisecond*100 {
-			return nil, newBadRequestError("context deadline invalid, timeout: %v", timeout)
+			return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "context deadline invalid, timeout: %v", timeout)
 		}
 	}
 	if len(h.requests) <= h.timesToBlock {
-		ctx, cancel := context.WithTimeout(ctx, request.Wait)
+		ctx, cancel := context.WithTimeout(ctx, options.Wait)
 		defer cancel()
 		<-ctx.Done()
 		return nil, ErrOperationStillRunning
 	}
-	return h.getResult(request)
+	return h.getResult()
 }
 
 func TestWaitResult(t *testing.T) {
-	handler := asyncWithResultHandler{timesToBlock: 1}
+	handler := asyncWithResultHandler{timesToBlock: 1, expectTestHeader: true}
 	ctx, client, teardown := setup(t, &handler)
 	defer teardown()
 
-	response, err := client.ExecuteOperation(ctx, ExecuteOperationOptions{
-		Operation: "f/o/o",
-		Header: http.Header{
-			"foo":          []string{"bar"},
-			"Content-Type": []string{"checking that this gets unset in the get-result request"},
-		},
+	response, err := client.ExecuteOperation(ctx, "f/o/o", nil, ExecuteOperationOptions{
+		Header: Header{"test": "ok"},
 	})
 	require.NoError(t, err)
-	defer response.Body.Close()
-	require.Equal(t, "bar", response.Header.Get("foo"))
-	body, err := io.ReadAll(response.Body)
+	var body []byte
+	err = response.Consume(&body)
 	require.NoError(t, err)
 	require.Equal(t, []byte("body"), body)
 
 	require.Equal(t, 2, len(handler.requests))
-	require.InDelta(t, testTimeout+getResultContextPadding, handler.requests[0].Wait, float64(time.Millisecond*50))
-	require.InDelta(t, testTimeout+getResultContextPadding-getResultMaxTimeout, handler.requests[1].Wait, float64(time.Millisecond*50))
-	require.Equal(t, "f/o/o", handler.requests[0].Operation)
-	require.Equal(t, "a/sync", handler.requests[0].OperationID)
+	require.InDelta(t, testTimeout+getResultContextPadding, handler.requests[0].options.Wait, float64(time.Millisecond*50))
+	require.InDelta(t, testTimeout+getResultContextPadding-getResultMaxTimeout, handler.requests[1].options.Wait, float64(time.Millisecond*50))
+	require.Equal(t, "f/o/o", handler.requests[0].operation)
+	require.Equal(t, "a/sync", handler.requests[0].operationID)
 }
 
 func TestWaitResult_StillRunning(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{timesToBlock: 1000})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, StartOperationOptions{Operation: "foo"})
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
@@ -110,7 +113,7 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{timesToBlock: 1000})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, StartOperationOptions{Operation: "foo"})
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
@@ -132,7 +135,7 @@ func TestPeekResult_StillRunning(t *testing.T) {
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 	require.Equal(t, 1, len(handler.requests))
-	require.Equal(t, time.Duration(0), handler.requests[0].Wait)
+	require.Equal(t, time.Duration(0), handler.requests[0].options.Wait)
 }
 
 func TestPeekResult_Success(t *testing.T) {
@@ -143,8 +146,8 @@ func TestPeekResult_Success(t *testing.T) {
 	require.NoError(t, err)
 	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	var body []byte
+	err = response.Consume(&body)
 	require.NoError(t, err)
 	require.Equal(t, []byte("body"), body)
 }

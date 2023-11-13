@@ -11,12 +11,12 @@ import (
 // A Reader is a container for a [Header] and an [io.Reader].
 // It is used to stream inputs and outputs in the various client and server APIs.
 type Reader struct {
+	// ReaderCloser contains request or response data. May be nil for empty data.
+	io.ReadCloser
 	// Header that should include information on how to deserialize this content.
 	// Headers constructed by the framework always have lower case keys.
 	// User provided keys are considered case-insensitive by the framework.
 	Header Header
-	// Reader contains request or response data. May be nil for empty data.
-	Reader io.ReadCloser
 }
 
 // A Content is a container for a [Header] and a byte slice.
@@ -32,8 +32,9 @@ type Content struct {
 
 // A LazyValue holds a value encoded in an underlying [Reader].
 //
-// ⚠️ When a LazyValue is returned from a client - if directly accessing the content - it must be read it in its entirety
-// and closed to free up the associated HTTP connection. Otherwise the [LazyValue.Consume] method must be called.
+// ⚠️ When a LazyValue is returned from a client - if directly accessing the [Reader] - it must be read it in its
+// entirety and closed to free up the associated HTTP connection. Otherwise the [LazyValue.Consume] method must be
+// called.
 //
 // ⚠️ When a LazyValue is passed to a server handler, it must not be used after the returning from the handler method.
 type LazyValue struct {
@@ -41,13 +42,14 @@ type LazyValue struct {
 	Reader     *Reader
 }
 
-// Consume consumes the lazy value, decodes it from the underlying content, and stores the result in the value pointed to by v.
+// Consume consumes the lazy value, decodes it from the underlying [Reader], and stores the result in the value pointed
+// to by v.
 //
 //	var v int
 //	err := lazyValue.Consume(&v)
 func (l *LazyValue) Consume(v any) error {
-	defer l.Reader.Reader.Close()
-	data, err := io.ReadAll(l.Reader.Reader)
+	defer l.Reader.Close()
+	data, err := io.ReadAll(l.Reader)
 	if err != nil {
 		return err
 	}
@@ -122,7 +124,6 @@ func (jsonSerializer) Serialize(v any) (*Content, error) {
 	return &Content{
 		Header: Header{
 			"type":   "application/json",
-			"length": fmt.Sprintf("%d", len(data)),
 		},
 		Data: data,
 	}, nil
@@ -161,7 +162,7 @@ func (nilSerializer) Serialize(v any) (*Content, error) {
 		}
 	}
 	return &Content{
-		Header: Header{"length": "0"},
+		Header: Header{},
 		Data:   nil,
 	}, nil
 }
@@ -201,7 +202,6 @@ func (byteSliceSerializer) Serialize(v any) (*Content, error) {
 		return &Content{
 			Header: Header{
 				"type":   "application/octet-stream",
-				"length": fmt.Sprintf("%d", len(b)),
 			},
 			Data: b,
 		}, nil
