@@ -415,7 +415,7 @@ func NewHTTPHandler(options HandlerOptions) http.Handler {
 	}
 	handler := &httpHandler{
 		baseHTTPHandler: baseHTTPHandler{
-			logger: slog.Default(),
+			logger: options.Logger,
 		},
 		options: options,
 	}
