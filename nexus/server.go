@@ -103,7 +103,7 @@ const (
 	// An internal error occured.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
 	// Used by gateways to report that a downstream server has responded with an error.
-	HandlerErrorTypeUpstreamError HandlerErrorType = "DOWNSTREAM_ERROR"
+	HandlerErrorTypeDownstreamError HandlerErrorType = "DOWNSTREAM_ERROR"
 	// Used by gateways to report that a request to a downstream server has timed out.
 	HandlerErrorTypeDownstreamTimeout HandlerErrorType = "DOWNSTREAM_TIMEOUT"
 	// The client did not supply valid authentication credentials for this request.
@@ -219,7 +219,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		switch handlerError.Type {
 		case HandlerErrorTypeDownstreamTimeout:
 			statusCode = statusDownstreamTimeout
-		case HandlerErrorTypeUpstreamError:
+		case HandlerErrorTypeDownstreamError:
 			statusCode = statusDownstreamError
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
