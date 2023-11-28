@@ -13,7 +13,7 @@ import (
 )
 
 // Package version.
-const version = "v0.0.3"
+const version = "v0.0.4"
 
 const (
 	headerOperationState = "Nexus-Operation-State"
