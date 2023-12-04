@@ -102,6 +102,8 @@ type HandlerErrorType string
 const (
 	// An internal error occured.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
+	// The service is currently unavailable
+	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
 	// Used by gateways to report that a downstream server has responded with an error.
 	HandlerErrorTypeDownstreamError HandlerErrorType = "DOWNSTREAM_ERROR"
 	// Used by gateways to report that a request to a downstream server has timed out.
@@ -237,6 +239,8 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 			statusCode = http.StatusNotImplemented
 		case HandlerErrorTypeInternal:
 			statusCode = http.StatusInternalServerError
+		case HandlerErrorTypeUnavailable:
+			statusCode = http.StatusServiceUnavailable
 		default:
 			h.logger.Error("unexpected handler error type", "type", handlerError.Type)
 		}
