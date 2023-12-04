@@ -110,6 +110,8 @@ const (
 	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
 	// The caller does not have permission to execute the specified operation.
 	HandlerErrorTypeForbidden HandlerErrorType = "UNAUTHORIZED"
+	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
+	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
 	// The server cannot or will not process the request due to an apparent client error.
 	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
 	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
@@ -218,13 +220,15 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		failure = handlerError.Failure
 		switch handlerError.Type {
 		case HandlerErrorTypeDownstreamTimeout:
-			statusCode = statusDownstreamTimeout
+			statusCode = StatusDownstreamTimeout
 		case HandlerErrorTypeDownstreamError:
-			statusCode = statusDownstreamError
+			statusCode = StatusDownstreamError
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
 		case HandlerErrorTypeForbidden:
 			statusCode = http.StatusForbidden
+		case HandlerErrorTypeResourceExhausted:
+			statusCode = http.StatusTooManyRequests
 		case HandlerErrorTypeUnauthenticated:
 			statusCode = http.StatusUnauthorized
 		case HandlerErrorTypeNotFound:
