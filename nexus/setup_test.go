@@ -46,11 +46,12 @@ func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, 
 	return setupSerializer(t, handler, nil)
 }
 
-func setupForCompletion(t *testing.T, handler CompletionHandler) (ctx context.Context, callbackURL string, teardown func()) {
+func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Serializer) (ctx context.Context, callbackURL string, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewCompletionHTTPHandler(CompletionHandlerOptions{
-		Handler: handler,
+		Handler:    handler,
+		Serializer: serializer,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")

@@ -26,24 +26,26 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if completion.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", completion.HTTPRequest.Header.Get("User-Agent"))
 	}
-	b, err := io.ReadAll(completion.HTTPRequest.Body)
+	var result int
+	err := completion.Result.Consume(&result)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(b, []byte("success")) {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request body: %q", b)
+	if result != 666 {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid result: %q", result)
 	}
 	return nil
 }
 
 func TestSuccessfulCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{})
+	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil)
 	defer teardown()
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionSuccessful{
-		Header: http.Header{"foo": []string{"bar"}},
-		Body:   bytes.NewReader([]byte("success")),
-	})
+	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccesfulOptions{})
+	completion.Header.Add("foo", "bar")
+	require.NoError(t, err)
+
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
@@ -51,6 +53,30 @@ func TestSuccessfulCompletion(t *testing.T) {
 	_, err = io.ReadAll(response.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestSuccessfulCompletion_CustomSerializr(t *testing.T) {
+	serializer := &customSerializer{}
+	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer)
+	defer teardown()
+
+	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccesfulOptions{
+		Serializer: serializer,
+	})
+	completion.Header.Add("foo", "bar")
+	require.NoError(t, err)
+
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
+	require.NoError(t, err)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	_, err = io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	require.Equal(t, 1, serializer.decoded)
+	require.Equal(t, 1, serializer.encoded)
 }
 
 type failureExpectingCompletionHandler struct {
@@ -71,7 +97,7 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 }
 
 func TestFailureCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{})
+	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{}, nil)
 	defer teardown()
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionUnsuccessful{
@@ -98,7 +124,7 @@ func (h *failingCompletionHandler) CompleteOperation(ctx context.Context, comple
 }
 
 func TestBadRequestCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{})
+	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil)
 	defer teardown()
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionSuccessful{Body: bytes.NewReader([]byte("success"))})
