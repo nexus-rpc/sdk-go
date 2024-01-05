@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 )
 
 // NewCompletionHTTPRequest creates an HTTP request deliver an operation completion to a given URL.
@@ -38,18 +39,40 @@ type OperationCompletionSuccessful struct {
 	Body io.Reader
 }
 
-// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
-// Serializes the provided result using the SDK's default [Serializer], which handles JSONables, byte slices and nils.
-func NewOperationCompletionSuccessful(result any) (*OperationCompletionSuccessful, error) {
-	content, err := defaultSerializer.Serialize(result)
-	if err != nil {
-		return nil, err
-	}
+// OperationCompletionSuccesfulOptions are options for [NewOperationCompletionSuccessful].
+type OperationCompletionSuccesfulOptions struct {
+	// Optional serializer for the result. Defaults to the SDK's default Serializer, which handles JSONables, byte
+	// slices and nils.
+	Serializer Serializer
+}
 
-	return &OperationCompletionSuccessful{
-		Header: addContentHeaderToHTTPHeader(content.Header, make(http.Header)),
-		Body:   bytes.NewReader(content.Data),
-	}, nil
+// NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
+func NewOperationCompletionSuccessful(result any, options OperationCompletionSuccesfulOptions) (*OperationCompletionSuccessful, error) {
+	if reader, ok := result.(*Reader); ok {
+		return &OperationCompletionSuccessful{
+			Header: addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
+			Body:   reader.ReadCloser,
+		}, nil
+	} else {
+		content, ok := result.(*Content)
+		if !ok {
+			var err error
+			serializer := options.Serializer
+			if serializer == nil {
+				serializer = defaultSerializer
+			}
+			content, err = serializer.Serialize(result)
+			if err != nil {
+				return nil, err
+			}
+		}
+		header := http.Header{"Content-Length": []string{strconv.Itoa(len(content.Data))}}
+
+		return &OperationCompletionSuccessful{
+			Header: addContentHeaderToHTTPHeader(content.Header, header),
+			Body:   bytes.NewReader(content.Data),
+		}, nil
+	}
 }
 
 func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request) error {
@@ -100,6 +123,8 @@ type CompletionRequest struct {
 	State OperationState
 	// Parsed from request and set if State is failed or canceled.
 	Failure *Failure
+	// Extracted from request and set if State is succeeded.
+	Result *LazyValue
 }
 
 // A CompletionHandler can receive operation completion requests as delivered via the callback URL provided in
@@ -115,11 +140,14 @@ type CompletionHandlerOptions struct {
 	// A stuctured logging handler.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
+	// A [Serializer] to customize handler serialization behavior.
+	// By default the handler handles, JSONables, byte slices, and nil.
+	Serializer Serializer
 }
 
 type completionHTTPHandler struct {
 	baseHTTPHandler
-	handler CompletionHandler
+	options CompletionHandlerOptions
 }
 
 func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -146,12 +174,18 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 		}
 		completion.Failure = &failure
 	case OperationStateSucceeded:
-		// Nothing to do here.
+		completion.Result = &LazyValue{
+			serializer: h.options.Serializer,
+			Reader: &Reader{
+				request.Body,
+				httpHeaderToContentHeader(request.Header),
+			},
+		}
 	default:
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request operation state: %q", completion.State))
 		return
 	}
-	if err := h.handler.CompleteOperation(ctx, &completion); err != nil {
+	if err := h.options.Handler.CompleteOperation(ctx, &completion); err != nil {
 		h.writeFailure(writer, err)
 	}
 }
@@ -161,10 +195,13 @@ func NewCompletionHTTPHandler(options CompletionHandlerOptions) http.Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
+	if options.Serializer == nil {
+		options.Serializer = defaultSerializer
+	}
 	return &completionHTTPHandler{
+		options: options,
 		baseHTTPHandler: baseHTTPHandler{
 			logger: options.Logger,
 		},
-		handler: options.Handler,
 	}
 }

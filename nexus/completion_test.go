@@ -26,12 +26,13 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if completion.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", completion.HTTPRequest.Header.Get("User-Agent"))
 	}
-	b, err := io.ReadAll(completion.HTTPRequest.Body)
+	var result string
+	err := completion.Result.Consume(&result)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(b, []byte("success")) {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request body: %q", b)
+	if result != "content" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid result: %q", result)
 	}
 	return nil
 }
@@ -40,10 +41,11 @@ func TestSuccessfulCompletion(t *testing.T) {
 	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{})
 	defer teardown()
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionSuccessful{
-		Header: http.Header{"foo": []string{"bar"}},
-		Body:   bytes.NewReader([]byte("success")),
-	})
+	completion, err := NewOperationCompletionSuccessful("content", OperationCompletionSuccesfulOptions{})
+	completion.Header.Add("foo", "bar")
+	require.NoError(t, err)
+
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
