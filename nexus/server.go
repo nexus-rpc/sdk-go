@@ -100,27 +100,27 @@ type Handler interface {
 type HandlerErrorType string
 
 const (
+	// The server cannot or will not process the request due to an apparent client error.
+	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
+	// The client did not supply valid authentication credentials for this request.
+	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
+	// The caller does not have permission to execute the specified operation.
+	HandlerErrorTypeUnauthorized HandlerErrorType = "UNAUTHORIZED"
+	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
+	// are permissible.
+	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
+	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
+	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
 	// An internal error occured.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
-	// The service is currently unavailable
+	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
+	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
+	// The service is currently unavailable.
 	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
 	// Used by gateways to report that a downstream server has responded with an error.
 	HandlerErrorTypeDownstreamError HandlerErrorType = "DOWNSTREAM_ERROR"
 	// Used by gateways to report that a request to a downstream server has timed out.
 	HandlerErrorTypeDownstreamTimeout HandlerErrorType = "DOWNSTREAM_TIMEOUT"
-	// The client did not supply valid authentication credentials for this request.
-	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
-	// The caller does not have permission to execute the specified operation.
-	HandlerErrorTypeForbidden HandlerErrorType = "UNAUTHORIZED"
-	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
-	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
-	// The server cannot or will not process the request due to an apparent client error.
-	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
-	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
-	// are permissible.
-	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
-	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
-	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
 )
 
 // HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
@@ -221,26 +221,26 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	} else if errors.As(err, &handlerError) {
 		failure = handlerError.Failure
 		switch handlerError.Type {
-		case HandlerErrorTypeDownstreamTimeout:
-			statusCode = StatusDownstreamTimeout
-		case HandlerErrorTypeDownstreamError:
-			statusCode = StatusDownstreamError
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
-		case HandlerErrorTypeForbidden:
-			statusCode = http.StatusForbidden
-		case HandlerErrorTypeResourceExhausted:
-			statusCode = http.StatusTooManyRequests
 		case HandlerErrorTypeUnauthenticated:
 			statusCode = http.StatusUnauthorized
+		case HandlerErrorTypeUnauthorized:
+			statusCode = http.StatusForbidden
 		case HandlerErrorTypeNotFound:
 			statusCode = http.StatusNotFound
-		case HandlerErrorTypeNotImplemented:
-			statusCode = http.StatusNotImplemented
+		case HandlerErrorTypeResourceExhausted:
+			statusCode = http.StatusTooManyRequests
 		case HandlerErrorTypeInternal:
 			statusCode = http.StatusInternalServerError
+		case HandlerErrorTypeNotImplemented:
+			statusCode = http.StatusNotImplemented
 		case HandlerErrorTypeUnavailable:
 			statusCode = http.StatusServiceUnavailable
+		case HandlerErrorTypeDownstreamError:
+			statusCode = StatusDownstreamError
+		case HandlerErrorTypeDownstreamTimeout:
+			statusCode = StatusDownstreamTimeout
 		default:
 			h.logger.Error("unexpected handler error type", "type", handlerError.Type)
 		}
