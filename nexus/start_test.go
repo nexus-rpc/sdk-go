@@ -25,8 +25,18 @@ func (h *successHandler) StartOperation(ctx context.Context, operation string, i
 	if options.CallbackURL != "http://test/callback" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected callback URL: %s", options.CallbackURL)
 	}
+	if options.CallbackHeader.Get("callback-test") != "ok" {
+		return nil, HandlerErrorf(
+			HandlerErrorTypeBadRequest,
+			"invalid 'callback-test' callback header: %q",
+			options.CallbackHeader.Get("callback-test"),
+		)
+	}
 	if options.Header.Get("test") != "ok" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
+	}
+	if options.Header.Get("nexus-callback-callback-test") != "" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "callback header not omitted from options Header")
 	}
 	if options.Header.Get("User-Agent") != userAgent {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
@@ -42,8 +52,9 @@ func TestSuccess(t *testing.T) {
 	requestBody := []byte{0x00, 0x01}
 
 	response, err := client.ExecuteOperation(ctx, "i need to/be escaped", requestBody, ExecuteOperationOptions{
-		CallbackURL: "http://test/callback",
-		Header:      Header{"test": "ok"},
+		CallbackURL:    "http://test/callback",
+		CallbackHeader: Header{"callback-test": "ok"},
+		Header:         Header{"test": "ok"},
 	})
 	require.NoError(t, err)
 	var responseBody []byte
