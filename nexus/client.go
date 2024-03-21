@@ -206,7 +206,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 				serializer: c.options.Serializer,
 				Reader: &Reader{
 					response.Body,
-					httpHeaderToContentHeader(response.Header),
+					prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
 				},
 			},
 		}, nil

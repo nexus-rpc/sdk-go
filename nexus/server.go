@@ -278,14 +278,14 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	options := StartOperationOptions{
 		RequestID:      request.Header.Get(headerRequestID),
 		CallbackURL:    request.URL.Query().Get(queryCallbackURL),
-		CallbackHeader: httpHeaderToCallbackHeader(request.Header),
+		CallbackHeader: prefixStrippedHTTPHeaderToNexusHeader(request.Header, "nexus-callback-"),
 		Header:         httpHeaderToNexusHeader(request.Header, "content-", "nexus-callback-"),
 	}
 	value := &LazyValue{
 		serializer: h.options.Serializer,
 		Reader: &Reader{
 			request.Body,
-			httpHeaderToContentHeader(request.Header),
+			prefixStrippedHTTPHeaderToNexusHeader(request.Header, "content-"),
 		},
 	}
 	response, err := h.options.Handler.StartOperation(request.Context(), operation, value, options)

@@ -114,25 +114,13 @@ func (h Header) Get(k string) string {
 	return h[strings.ToLower(k)]
 }
 
-func httpHeaderToContentHeader(httpHeader http.Header) Header {
+func prefixStrippedHTTPHeaderToNexusHeader(httpHeader http.Header, prefix string) Header {
 	header := Header{}
 	for k, v := range httpHeader {
 		lowerK := strings.ToLower(k)
-		if strings.HasPrefix(lowerK, "content-") {
+		if strings.HasPrefix(lowerK, prefix) {
 			// Nexus headers can only have single values, ignore multiple values.
-			header[lowerK[8:]] = v[0]
-		}
-	}
-	return header
-}
-
-func httpHeaderToCallbackHeader(httpHeader http.Header) Header {
-	header := Header{}
-	for k, v := range httpHeader {
-		lowerK := strings.ToLower(k)
-		if strings.HasPrefix(lowerK, "nexus-callback-") {
-			// Nexus headers can only have single values, ignore multiple values.
-			header[lowerK[15:]] = v[0]
+			header[lowerK[len(prefix):]] = v[0]
 		}
 	}
 	return header
