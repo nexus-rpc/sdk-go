@@ -107,7 +107,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 			serializer: h.client.options.Serializer,
 			Reader: &Reader{
 				response.Body,
-				httpHeaderToContentHeader(response.Header),
+				prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
 			},
 		}
 		if _, ok := any(result).(*LazyValue); ok {

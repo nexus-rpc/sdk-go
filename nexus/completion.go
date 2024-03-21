@@ -178,7 +178,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 			serializer: h.options.Serializer,
 			Reader: &Reader{
 				request.Body,
-				httpHeaderToContentHeader(request.Header),
+				prefixStrippedHTTPHeaderToNexusHeader(request.Header, "content-"),
 			},
 		}
 	default:
