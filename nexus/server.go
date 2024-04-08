@@ -326,8 +326,21 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 	}
 	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	waitStr := request.URL.Query().Get(queryWait)
+	// If both Request-Timeout http header and wait query string are set, the minimum will be used as the context timeout.
 	ctx := request.Context()
+	var ctxTimeout time.Duration
+
+	timeoutStr := request.Header.Get(headerRequestTimeout)
+	if timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
+			return
+		}
+		ctxTimeout = timeoutDuration
+	}
+	waitStr := request.URL.Query().Get(queryWait)
 	if waitStr != "" {
 		waitDuration, err := time.ParseDuration(waitStr)
 		if err != nil {
@@ -336,8 +349,11 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 			return
 		}
 		options.Wait = waitDuration
+		ctxTimeout = min(ctxTimeout, waitDuration)
+	}
+	if ctxTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(request.Context(), h.options.GetResultTimeout)
+		ctx, cancel = context.WithTimeout(request.Context(), ctxTimeout)
 		defer cancel()
 	}
 
