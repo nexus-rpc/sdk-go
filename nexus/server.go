@@ -349,7 +349,11 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 			return
 		}
 		options.Wait = waitDuration
-		ctxTimeout = min(ctxTimeout, waitDuration)
+		if ctxTimeout <= 0 {
+			ctxTimeout = min(ctxTimeout, waitDuration)
+		} else {
+			ctxTimeout = waitDuration
+		}
 	}
 	if ctxTimeout > 0 {
 		var cancel context.CancelFunc
