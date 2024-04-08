@@ -288,7 +288,22 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 			prefixStrippedHTTPHeaderToNexusHeader(request.Header, "content-"),
 		},
 	}
-	response, err := h.options.Handler.StartOperation(request.Context(), operation, value, options)
+
+	timeoutStr := request.Header.Get(headerRequestTimeout)
+	ctx := request.Context()
+	if timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
+			return
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
+		defer cancel()
+	}
+
+	response, err := h.options.Handler.StartOperation(ctx, operation, value, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
@@ -354,7 +369,21 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 	}
 	options := GetOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	info, err := h.options.Handler.GetOperationInfo(request.Context(), operation, operationID, options)
+	timeoutStr := request.Header.Get(headerRequestTimeout)
+	ctx := request.Context()
+	if timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
+			return
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
+		defer cancel()
+	}
+
+	info, err := h.options.Handler.GetOperationInfo(ctx, operation, operationID, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 		return
@@ -386,7 +415,21 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 	}
 	options := CancelOperationOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	if err := h.options.Handler.CancelOperation(request.Context(), operation, operationID, options); err != nil {
+	timeoutStr := request.Header.Get(headerRequestTimeout)
+	ctx := request.Context()
+	if timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
+			return
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
+		defer cancel()
+	}
+
+	if err := h.options.Handler.CancelOperation(ctx, operation, operationID, options); err != nil {
 		h.writeFailure(writer, err)
 		return
 	}

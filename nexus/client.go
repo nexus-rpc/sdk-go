@@ -194,6 +194,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 	request.Header.Set(headerUserAgent, userAgent)
 	addContentHeaderToHTTPHeader(reader.Header, request.Header)
 	addCallbackHeaderToHTTPHeader(options.CallbackHeader, request.Header)
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
 
 	response, err := c.options.HTTPCaller(request)
 	if err != nil {
