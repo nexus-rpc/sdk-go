@@ -349,7 +349,7 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 			return
 		}
 		options.Wait = waitDuration
-		if ctxTimeout <= 0 {
+		if ctxTimeout > 0 {
 			ctxTimeout = min(ctxTimeout, waitDuration)
 		} else {
 			ctxTimeout = waitDuration
