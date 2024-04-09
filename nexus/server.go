@@ -289,19 +289,11 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 		},
 	}
 
-	timeoutStr := request.Header.Get(headerRequestTimeout)
-	ctx := request.Context()
-	if timeoutStr != "" {
-		timeoutDuration, err := time.ParseDuration(timeoutStr)
-		if err != nil {
-			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
-			return
-		}
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
-		defer cancel()
+	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
+	if !ok {
+		return
 	}
+	defer cancel()
 
 	response, err := h.options.Handler.StartOperation(ctx, operation, value, options)
 	if err != nil {
@@ -326,19 +318,12 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 	}
 	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	// If both Request-Timeout http header and wait query string are set, the minimum will be used as the context timeout.
+	// If both Request-Timeout http header and wait query string are set, the minimum of the Request-Timeout header
+	// and h.options.GetResultTimeout will be used.
 	ctx := request.Context()
-	var ctxTimeout time.Duration
-
-	timeoutStr := request.Header.Get(headerRequestTimeout)
-	if timeoutStr != "" {
-		timeoutDuration, err := time.ParseDuration(timeoutStr)
-		if err != nil {
-			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
-			return
-		}
-		ctxTimeout = timeoutDuration
+	requestTimeout, ok := h.parseRequestTimeoutHeader(writer, request)
+	if !ok {
+		return
 	}
 	waitStr := request.URL.Query().Get(queryWait)
 	if waitStr != "" {
@@ -349,15 +334,15 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 			return
 		}
 		options.Wait = waitDuration
-		if ctxTimeout > 0 {
-			ctxTimeout = min(ctxTimeout, waitDuration)
+		if requestTimeout > 0 {
+			requestTimeout = min(requestTimeout, h.options.GetResultTimeout)
 		} else {
-			ctxTimeout = waitDuration
+			requestTimeout = h.options.GetResultTimeout
 		}
 	}
-	if ctxTimeout > 0 {
+	if requestTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(request.Context(), ctxTimeout)
+		ctx, cancel = context.WithTimeout(request.Context(), requestTimeout)
 		defer cancel()
 	}
 
@@ -389,19 +374,11 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 	}
 	options := GetOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	timeoutStr := request.Header.Get(headerRequestTimeout)
-	ctx := request.Context()
-	if timeoutStr != "" {
-		timeoutDuration, err := time.ParseDuration(timeoutStr)
-		if err != nil {
-			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
-			return
-		}
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
-		defer cancel()
+	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
+	if !ok {
+		return
 	}
+	defer cancel()
 
 	info, err := h.options.Handler.GetOperationInfo(ctx, operation, operationID, options)
 	if err != nil {
@@ -435,19 +412,11 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 	}
 	options := CancelOperationOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
-	timeoutStr := request.Header.Get(headerRequestTimeout)
-	ctx := request.Context()
-	if timeoutStr != "" {
-		timeoutDuration, err := time.ParseDuration(timeoutStr)
-		if err != nil {
-			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
-			return
-		}
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(request.Context(), timeoutDuration)
-		defer cancel()
+	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
+	if !ok {
+		return
 	}
+	defer cancel()
 
 	if err := h.options.Handler.CancelOperation(ctx, operation, operationID, options); err != nil {
 		h.writeFailure(writer, err)
@@ -455,6 +424,37 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 	}
 
 	writer.WriteHeader(http.StatusAccepted)
+}
+
+// parseRequestTimeoutHeader checks if the Request-Timeout HTTP header is set and returns the parsed duration if so.
+// Returns (0, true) if unset. Returns ({parsedDuration}, true) if set. If set and there is an error parsing the
+// duration, it writes a failure response and returns (0, false).
+func (h *httpHandler) parseRequestTimeoutHeader(writer http.ResponseWriter, request *http.Request) (time.Duration, bool) {
+	timeoutStr := request.Header.Get(headerRequestTimeout)
+	if timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))
+			return 0, false
+		}
+		return timeoutDuration, true
+	}
+	return 0, true
+}
+
+// contextWithTimeoutFromHTTPRequest extracts the context from the HTTP request and applies the timeout indicated by
+// the Request-Timeout header, if set.
+func (h *httpHandler) contextWithTimeoutFromHTTPRequest(writer http.ResponseWriter, request *http.Request) (context.Context, context.CancelFunc, bool) {
+	requestTimeout, ok := h.parseRequestTimeoutHeader(writer, request)
+	if !ok {
+		return nil, nil, false
+	}
+	if requestTimeout > 0 {
+		ctx, cancel := context.WithTimeout(request.Context(), requestTimeout)
+		return ctx, cancel, true
+	}
+	return request.Context(), func() {}, true
 }
 
 // HandlerOptions are options for [NewHTTPHandler].
