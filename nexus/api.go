@@ -18,7 +18,7 @@ import (
 const version = "v0.0.6"
 
 const (
-	// Nexus specific headers
+	// Nexus specific headers.
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"

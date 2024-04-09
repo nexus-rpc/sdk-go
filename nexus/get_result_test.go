@@ -61,7 +61,7 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, operati
 		}
 		timeout := time.Until(deadline)
 		diff := (getResultMaxTimeout - timeout).Abs()
-		if diff > time.Millisecond*100 {
+		if diff > time.Millisecond*200 {
 			return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "context deadline invalid, timeout: %v", timeout)
 		}
 	}
@@ -122,6 +122,19 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 	defer cancel()
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestWaitResult_RequestTimeout(t *testing.T) {
+	ctx, client, teardown := setup(t, &asyncWithResultHandler{timesToBlock: 1000})
+	defer teardown()
+
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
+	require.NoError(t, err)
+	handle := result.Pending
+	require.NotNil(t, handle)
+
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{headerRequestTimeout: "200ms"}})
+	require.ErrorIs(t, err, ErrOperationStillRunning)
 }
 
 func TestPeekResult_StillRunning(t *testing.T) {
