@@ -3,6 +3,7 @@ package nexus
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +54,64 @@ func TestCancel_HandleFromClient(t *testing.T) {
 	defer teardown()
 
 	handle, err := client.NewHandle("f/o/o", "a/sync")
+	require.NoError(t, err)
+	err = handle.Cancel(ctx, CancelOperationOptions{})
+	require.NoError(t, err)
+}
+
+type echoTimeoutAsyncWithCancelHandler struct {
+	expectedTimeout time.Duration
+	UnimplementedHandler
+}
+
+func (h *echoTimeoutAsyncWithCancelHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return &HandlerStartOperationResultAsync{
+		OperationID: "timeout",
+	}, nil
+}
+
+func (h *echoTimeoutAsyncWithCancelHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
+	deadline, set := ctx.Deadline()
+	if h.expectedTimeout > 0 && !set {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
+	}
+	if h.expectedTimeout <= 0 && set {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have no timeout but context has deadline set")
+	}
+	timeout := time.Until(deadline)
+	if timeout > h.expectedTimeout {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "operation has timeout (%s) greater than expected (%s)", timeout.String(), h.expectedTimeout.String())
+	}
+	return nil
+}
+
+func TestCancel_ContextDeadlinePropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{expectedTimeout: testTimeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	err = handle.Cancel(ctx, CancelOperationOptions{})
+	require.NoError(t, err)
+}
+
+func TestCancel_RequestTimeoutHeaderPropagated(t *testing.T) {
+	timeout := 100 * time.Millisecond
+	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{expectedTimeout: timeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	err = handle.Cancel(ctx, CancelOperationOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+	require.NoError(t, err)
+}
+
+func TestCancel_TimeoutNotPropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{})
+	defer teardown()
+
+	ctx = context.Background()
+	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.NoError(t, err)

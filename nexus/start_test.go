@@ -3,7 +3,6 @@ package nexus
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"testing"
 	"time"
@@ -258,121 +257,64 @@ type timeoutEchoHandler struct {
 }
 
 func (h *timeoutEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	time.Sleep(20 * time.Millisecond)
-
-	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, HandlerErrorf(HandlerErrorTypeDownstreamTimeout, "handler exceeded request timeout of %s", options.Header.Get(headerRequestTimeout))
+	deadline, set := ctx.Deadline()
+	if !set {
+		return &HandlerStartOperationResultSync[any]{
+			Value: []byte("not set"),
+		}, nil
 	}
-
 	return &HandlerStartOperationResultSync[any]{
-		Value: []byte(options.Header.Get("Request-Timeout")),
+		Value: []byte(time.Until(deadline).String()),
 	}, nil
 }
 
-func TestRequestTimeout(t *testing.T) {
+func TestStart_ContextDeadlinePropagated(t *testing.T) {
 	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
 	defer teardown()
 
-	type testcase struct {
-		name         string
-		timeout      time.Duration
-		setOnHeader  bool
-		setOnContext bool
-		validator    func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error)
-	}
-	cases := []testcase{
-		{
-			name:         "time_out: set on context",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  false,
-			setOnContext: true,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.ErrorContains(t, err, "context deadline exceeded")
-			},
-		},
-		{
-			name:         "time_out: set on header",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.ErrorContains(t, err, "handler exceeded request timeout of 1ms")
-			},
-		},
-		{
-			name:         "time_out: set on context and header",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  true,
-			setOnContext: true,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.ErrorContains(t, err, "context deadline exceeded")
-			},
-		},
-		{
-			name:         "success: set on context",
-			timeout:      5 * time.Second,
-			setOnHeader:  false,
-			setOnContext: true,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.NoError(t, err)
-				response := result.Successful
-				require.NotNil(t, response)
-				var responseBody []byte
-				err = response.Consume(&responseBody)
-				require.NoError(t, err)
-				parsedTimeout, err := time.ParseDuration(string(responseBody))
-				require.NoError(t, err)
-				require.LessOrEqual(t, parsedTimeout, 5*time.Second)
-			},
-		},
-		{
-			name:         "success: set on header",
-			timeout:      5 * time.Second,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.NoError(t, err)
-				response := result.Successful
-				require.NotNil(t, response)
-				var responseBody []byte
-				err = response.Consume(&responseBody)
-				require.NoError(t, err)
-				require.Equal(t, []byte("5s"), responseBody)
-			},
-		},
-		{
-			name:         "success: set on context and header",
-			timeout:      5 * time.Second,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, result *ClientStartOperationResult[*LazyValue], err error) {
-				require.NoError(t, err)
-				response := result.Successful
-				require.NotNil(t, response)
-				var responseBody []byte
-				err = response.Consume(&responseBody)
-				require.NoError(t, err)
-				require.Equal(t, []byte("5s"), responseBody)
-			},
-		},
-	}
+	deadline, _ := ctx.Deadline()
+	initialTimeout := time.Until(deadline)
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			startCtx := ctx
-			if c.setOnContext {
-				var cancel context.CancelFunc
-				startCtx, cancel = context.WithTimeout(ctx, c.timeout)
-				defer cancel()
-			}
-			opts := StartOperationOptions{}
-			if c.setOnHeader {
-				opts.Header = Header{headerRequestTimeout: c.timeout.String()}
-			}
+	require.NoError(t, err)
+	requireTimeoutPropagated(t, result, initialTimeout)
+}
 
-			result, err := client.StartOperation(startCtx, "foo", nil, opts)
-			c.validator(t, result, err)
-		})
-	}
+func TestStart_RequestTimeoutHeaderPropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
+	defer teardown()
+
+	timeout := 100 * time.Millisecond
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+
+	require.NoError(t, err)
+	requireTimeoutPropagated(t, result, timeout)
+}
+
+func requireTimeoutPropagated(t *testing.T, result *ClientStartOperationResult[*LazyValue], expected time.Duration) {
+	response := result.Successful
+	require.NotNil(t, response)
+	var responseBody []byte
+	err := response.Consume(&responseBody)
+	require.NoError(t, err)
+	parsedTimeout, err := time.ParseDuration(string(responseBody))
+	require.NoError(t, err)
+	require.NotZero(t, parsedTimeout)
+	require.LessOrEqual(t, parsedTimeout, expected)
+}
+
+func TestStart_TimeoutNotPropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
+	defer teardown()
+
+	ctx = context.Background()
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
+
+	require.NoError(t, err)
+	response := result.Successful
+	require.NotNil(t, response)
+	var responseBody []byte
+	err = response.Consume(&responseBody)
+	require.NoError(t, err)
+	require.Equal(t, []byte("not set"), responseBody)
 }

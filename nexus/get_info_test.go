@@ -67,20 +67,27 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 }
 
 type asyncWithInfoTimeoutHandler struct {
+	expectedTimeout time.Duration
 	UnimplementedHandler
 }
 
 func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "needs /URL/ escaping",
+		OperationID: "timeout",
 	}, nil
 }
 
 func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	time.Sleep(20 * time.Millisecond)
-
-	if ctx.Err() != nil {
-		return nil, HandlerErrorf(HandlerErrorTypeDownstreamTimeout, "handler exceeded request timeout of %s", options.Header.Get(headerRequestTimeout))
+	deadline, set := ctx.Deadline()
+	if h.expectedTimeout > 0 && !set {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
+	}
+	if h.expectedTimeout <= 0 && set {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have no timeout but context has deadline set")
+	}
+	timeout := time.Until(deadline)
+	if timeout > h.expectedTimeout {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "operation has timeout (%s) greater than expected (%s)", timeout.String(), h.expectedTimeout.String())
 	}
 
 	return &OperationInfo{
@@ -89,99 +96,34 @@ func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, oper
 	}, nil
 }
 
-func TestGetInfoHandlerTimeout(t *testing.T) {
+func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: testTimeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	require.NoError(t, err)
+}
+
+func TestGetInfo_RequestTimeoutHeaderPropagated(t *testing.T) {
+	timeout := 100 * time.Millisecond
+	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: timeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+	require.NoError(t, err)
+}
+
+func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
 	defer teardown()
 
-	type testcase struct {
-		name         string
-		timeout      time.Duration
-		setOnHeader  bool
-		setOnContext bool
-		validator    func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error)
-	}
-	cases := []testcase{
-		{
-			name:         "time_out: set on context",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  false,
-			setOnContext: true,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.ErrorContains(t, err, "context deadline exceeded")
-			},
-		},
-		{
-			name:         "time_out: set on header",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.ErrorContains(t, err, "handler exceeded request timeout of 1ms")
-			},
-		},
-		{
-			name:         "time_out: set on context and header",
-			timeout:      1 * time.Millisecond,
-			setOnHeader:  true,
-			setOnContext: true,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.ErrorContains(t, err, "context deadline exceeded")
-			},
-		},
-		{
-			name:         "success: set on context",
-			timeout:      5 * time.Second,
-			setOnHeader:  false,
-			setOnContext: true,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.NoError(t, err)
-				require.Equal(t, handle.ID, info.ID)
-				require.Equal(t, OperationStateCanceled, info.State)
-			},
-		},
-		{
-			name:         "success: set on header",
-			timeout:      5 * time.Second,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.NoError(t, err)
-				require.Equal(t, handle.ID, info.ID)
-				require.Equal(t, OperationStateCanceled, info.State)
-			},
-		},
-		{
-			name:         "success: set on context and header",
-			timeout:      5 * time.Second,
-			setOnHeader:  true,
-			setOnContext: false,
-			validator: func(t *testing.T, handle *OperationHandle[*LazyValue], info *OperationInfo, err error) {
-				require.NoError(t, err)
-				require.Equal(t, handle.ID, info.ID)
-				require.Equal(t, OperationStateCanceled, info.State)
-			},
-		},
-	}
-
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			handle, err := client.NewHandle("escape/me", "needs /URL/ escaping")
-			require.NoError(t, err)
-
-			requestCtx := ctx
-			if c.setOnContext {
-				var cancel context.CancelFunc
-				requestCtx, cancel = context.WithTimeout(ctx, c.timeout)
-				defer cancel()
-			}
-			opts := GetOperationInfoOptions{}
-			if c.setOnHeader {
-				opts.Header = Header{headerRequestTimeout: c.timeout.String()}
-			}
-
-			info, err := handle.GetInfo(requestCtx, opts)
-			c.validator(t, handle, info, err)
-		})
-	}
+	ctx = context.Background()
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	require.NoError(t, err)
 }

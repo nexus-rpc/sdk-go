@@ -12,6 +12,7 @@ type request struct {
 	options     GetOperationResultOptions
 	operation   string
 	operationID string
+	deadline    time.Time
 }
 
 type asyncWithResultHandler struct {
@@ -40,7 +41,12 @@ func (h *asyncWithResultHandler) getResult() (any, error) {
 }
 
 func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
-	h.requests = append(h.requests, request{options: options, operation: operation, operationID: operationID})
+	req := request{options: options, operation: operation, operationID: operationID}
+	deadline, set := ctx.Deadline()
+	if set {
+		req.deadline = deadline
+	}
+	h.requests = append(h.requests, req)
 
 	if h.expectTestHeader && options.Header.Get("test") != "ok" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
@@ -110,7 +116,8 @@ func TestWaitResult_StillRunning(t *testing.T) {
 }
 
 func TestWaitResult_DeadlineExceeded(t *testing.T) {
-	ctx, client, teardown := setup(t, &asyncWithResultHandler{timesToBlock: 1000})
+	handler := &asyncWithResultHandler{timesToBlock: 1000}
+	ctx, client, teardown := setup(t, handler)
 	defer teardown()
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
@@ -120,12 +127,15 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
+	deadline, _ := ctx.Deadline()
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
 }
 
 func TestWaitResult_RequestTimeout(t *testing.T) {
-	ctx, client, teardown := setup(t, &asyncWithResultHandler{timesToBlock: 1000})
+	handler := &asyncWithResultHandler{timesToBlock: 1000}
+	ctx, client, teardown := setup(t, handler)
 	defer teardown()
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
@@ -133,8 +143,11 @@ func TestWaitResult_RequestTimeout(t *testing.T) {
 	handle := result.Pending
 	require.NotNil(t, handle)
 
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{headerRequestTimeout: "200ms"}})
+	timeout := 200 * time.Millisecond
+	deadline := time.Now().Add(200 * time.Millisecond)
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{headerRequestTimeout: timeout.String()}})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
+	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
 }
 
 func TestPeekResult_StillRunning(t *testing.T) {
