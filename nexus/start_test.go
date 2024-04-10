@@ -305,11 +305,10 @@ func requireTimeoutPropagated(t *testing.T, result *ClientStartOperationResult[*
 }
 
 func TestStart_TimeoutNotPropagated(t *testing.T) {
-	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
+	_, client, teardown := setup(t, &timeoutEchoHandler{})
 	defer teardown()
 
-	ctx = context.Background()
-	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
+	result, err := client.StartOperation(context.Background(), "foo", nil, StartOperationOptions{})
 
 	require.NoError(t, err)
 	response := result.Successful

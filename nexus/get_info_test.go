@@ -119,12 +119,11 @@ func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 }
 
 func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
-	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
+	_, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
 	defer teardown()
 
-	ctx = context.Background()
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	_, err = handle.GetInfo(context.Background(), GetOperationInfoOptions{})
 	require.NoError(t, err)
 }
