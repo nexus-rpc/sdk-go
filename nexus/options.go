@@ -10,8 +10,10 @@ type StartOperationOptions struct {
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
 	//
+	// Header values set here will overwrite any SDK-provided values for the same key.
+	//
 	// Header keys with the "content-" prefix are reserved for [Serializer] headers and should not be set in the
-	// client API; they are not be avaliable to server [Handler] and [Operation] implementations.
+	// client API; they are not available to server [Handler] and [Operation] implementations.
 	Header Header
 	// Callbacks are used to deliver completion of async operations.
 	// This value may optionally be set by the client and should be called by a handler upon completion if the started operation is async.
@@ -31,6 +33,8 @@ type GetOperationResultOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
+	//
+	// Header values set here will overwrite any SDK-provided values for the same key.
 	Header Header
 	// If non-zero, reflects the duration the caller has indicated that it wants to wait for operation completion,
 	// turning the request into a long poll.
@@ -42,6 +46,8 @@ type GetOperationInfoOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
+	//
+	// Header values set here will overwrite any SDK-provided values for the same key.
 	Header Header
 }
 
@@ -50,5 +56,7 @@ type CancelOperationOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
+	//
+	// Header values set here will overwrite any SDK-provided values for the same key.
 	Header Header
 }

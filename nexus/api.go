@@ -4,21 +4,27 @@
 package nexus
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Package version.
 const version = "v0.0.6"
 
 const (
+	// Nexus specific headers.
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
+
+	// General HTTP headers.
+	headerRequestTimeout = "Request-Timeout"
 )
 
 const contentTypeJSON = "application/json"
@@ -160,5 +166,14 @@ func addNexusHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) http
 	for k, v := range nexusHeader {
 		httpHeader.Set(k, v)
 	}
+	return httpHeader
+}
+
+func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) http.Header {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return httpHeader
+	}
+	httpHeader.Set(headerRequestTimeout, time.Until(deadline).String())
 	return httpHeader
 }

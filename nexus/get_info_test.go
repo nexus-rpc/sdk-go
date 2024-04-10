@@ -3,6 +3,7 @@ package nexus
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +64,66 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, OperationStateCanceled, info.State)
+}
+
+type asyncWithInfoTimeoutHandler struct {
+	expectedTimeout time.Duration
+	UnimplementedHandler
+}
+
+func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return &HandlerStartOperationResultAsync{
+		OperationID: "timeout",
+	}, nil
+}
+
+func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	deadline, set := ctx.Deadline()
+	if h.expectedTimeout > 0 && !set {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
+	}
+	if h.expectedTimeout <= 0 && set {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have no timeout but context has deadline set")
+	}
+	timeout := time.Until(deadline)
+	if timeout > h.expectedTimeout {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "operation has timeout (%s) greater than expected (%s)", timeout.String(), h.expectedTimeout.String())
+	}
+
+	return &OperationInfo{
+		ID:    operationID,
+		State: OperationStateCanceled,
+	}, nil
+}
+
+func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: testTimeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	require.NoError(t, err)
+}
+
+func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
+	timeout := 100 * time.Millisecond
+	// relies on ctx returned here having default testTimeout set greater than expected timeout
+	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: timeout})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+	require.NoError(t, err)
+}
+
+func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
+	_, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
+	defer teardown()
+
+	handle, err := client.NewHandle("foo", "timeout")
+	require.NoError(t, err)
+	_, err = handle.GetInfo(context.Background(), GetOperationInfoOptions{})
+	require.NoError(t, err)
 }

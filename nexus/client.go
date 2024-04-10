@@ -185,8 +185,6 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		return nil, err
 	}
 
-	// Use provided header as a base.
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 	if options.RequestID == "" {
 		options.RequestID = uuid.NewString()
 	}
@@ -194,6 +192,8 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 	request.Header.Set(headerUserAgent, userAgent)
 	addContentHeaderToHTTPHeader(reader.Header, request.Header)
 	addCallbackHeaderToHTTPHeader(options.CallbackHeader, request.Header)
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 
 	response, err := c.options.HTTPCaller(request)
 	if err != nil {
@@ -268,8 +268,10 @@ type ExecuteOperationOptions struct {
 	RequestID string
 	// Header to attach to start and get-result requests. Optional.
 	//
+	// Header values set here will overwrite any SDK-provided values for the same key.
+	//
 	// Header keys with the "content-" prefix are reserved for [Serializer] headers and should not be set in the
-	// client API; they are not be avaliable to server [Handler] and [Operation] implementations.
+	// client API; they are not available to server [Handler] and [Operation] implementations.
 	Header Header
 	// Duration to wait for operation completion.
 	//

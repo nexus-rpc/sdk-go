@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -249,4 +250,71 @@ func TestUnsuccessful(t *testing.T) {
 		require.ErrorAs(t, err, &unsuccessfulError)
 		require.Equal(t, OperationState(c), unsuccessfulError.State)
 	}
+}
+
+type timeoutEchoHandler struct {
+	UnimplementedHandler
+}
+
+func (h *timeoutEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	deadline, set := ctx.Deadline()
+	if !set {
+		return &HandlerStartOperationResultSync[any]{
+			Value: []byte("not set"),
+		}, nil
+	}
+	return &HandlerStartOperationResultSync[any]{
+		Value: []byte(time.Until(deadline).String()),
+	}, nil
+}
+
+func TestStart_ContextDeadlinePropagated(t *testing.T) {
+	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
+	defer teardown()
+
+	deadline, _ := ctx.Deadline()
+	initialTimeout := time.Until(deadline)
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
+
+	require.NoError(t, err)
+	requireTimeoutPropagated(t, result, initialTimeout)
+}
+
+func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
+	// relies on ctx returned here having default testTimeout set greater than expected timeout
+	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
+	defer teardown()
+
+	timeout := 100 * time.Millisecond
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+
+	require.NoError(t, err)
+	requireTimeoutPropagated(t, result, timeout)
+}
+
+func requireTimeoutPropagated(t *testing.T, result *ClientStartOperationResult[*LazyValue], expected time.Duration) {
+	response := result.Successful
+	require.NotNil(t, response)
+	var responseBody []byte
+	err := response.Consume(&responseBody)
+	require.NoError(t, err)
+	parsedTimeout, err := time.ParseDuration(string(responseBody))
+	require.NoError(t, err)
+	require.NotZero(t, parsedTimeout)
+	require.LessOrEqual(t, parsedTimeout, expected)
+}
+
+func TestStart_TimeoutNotPropagated(t *testing.T) {
+	_, client, teardown := setup(t, &timeoutEchoHandler{})
+	defer teardown()
+
+	result, err := client.StartOperation(context.Background(), "foo", nil, StartOperationOptions{})
+
+	require.NoError(t, err)
+	response := result.Successful
+	require.NotNil(t, response)
+	var responseBody []byte
+	err = response.Consume(&responseBody)
+	require.NoError(t, err)
+	require.Equal(t, []byte("not set"), responseBody)
 }

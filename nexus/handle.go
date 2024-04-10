@@ -27,6 +27,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 	if err != nil {
 		return nil, err
 	}
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 
 	request.Header.Set(headerUserAgent, userAgent)
@@ -71,8 +72,9 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 	if err != nil {
 		return result, err
 	}
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 
 	startTime := time.Now()
 	wait := options.Wait
@@ -166,8 +168,9 @@ func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperation
 	if err != nil {
 		return err
 	}
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {
 		return err
