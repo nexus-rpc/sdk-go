@@ -106,8 +106,9 @@ func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestGetInfo_RequestTimeoutHeaderPropagated(t *testing.T) {
+func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	timeout := 100 * time.Millisecond
+	// relies on ctx returned here having default testTimeout set greater than expected timeout
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: timeout})
 	defer teardown()
 

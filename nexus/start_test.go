@@ -280,7 +280,8 @@ func TestStart_ContextDeadlinePropagated(t *testing.T) {
 	requireTimeoutPropagated(t, result, initialTimeout)
 }
 
-func TestStart_RequestTimeoutHeaderPropagated(t *testing.T) {
+func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
+	// relies on ctx returned here having default testTimeout set greater than expected timeout
 	ctx, client, teardown := setup(t, &timeoutEchoHandler{})
 	defer teardown()
 

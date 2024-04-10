@@ -95,8 +95,9 @@ func TestCancel_ContextDeadlinePropagated(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCancel_RequestTimeoutHeaderPropagated(t *testing.T) {
+func TestCancel_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	timeout := 100 * time.Millisecond
+	// relies on ctx returned here having default testTimeout set greater than expected timeout
 	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{expectedTimeout: timeout})
 	defer teardown()
 
