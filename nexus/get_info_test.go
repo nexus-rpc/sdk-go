@@ -114,7 +114,7 @@ func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{HeaderRequestTimeout: timeout.String()}})
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{headerRequestTimeout: timeout.String()}})
 	require.NoError(t, err)
 }
 

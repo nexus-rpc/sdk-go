@@ -430,7 +430,7 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 // Returns (0, true) if unset. Returns ({parsedDuration}, true) if set. If set and there is an error parsing the
 // duration, it writes a failure response and returns (0, false).
 func (h *httpHandler) parseRequestTimeoutHeader(writer http.ResponseWriter, request *http.Request) (time.Duration, bool) {
-	timeoutStr := request.Header.Get(HeaderRequestTimeout)
+	timeoutStr := request.Header.Get(headerRequestTimeout)
 	if timeoutStr != "" {
 		timeoutDuration, err := time.ParseDuration(timeoutStr)
 		if err != nil {

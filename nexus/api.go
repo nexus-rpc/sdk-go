@@ -23,8 +23,8 @@ const (
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
 
-	// HeaderRequestTimeout indicates the total time to complete a Nexus HTTP request
-	HeaderRequestTimeout = "Request-Timeout"
+	// General HTTP headers.
+	headerRequestTimeout = "Request-Timeout"
 )
 
 const contentTypeJSON = "application/json"
@@ -174,6 +174,6 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 	if !ok {
 		return httpHeader
 	}
-	httpHeader.Set(HeaderRequestTimeout, time.Until(deadline).String())
+	httpHeader.Set(headerRequestTimeout, time.Until(deadline).String())
 	return httpHeader
 }
