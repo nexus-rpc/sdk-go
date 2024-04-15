@@ -286,7 +286,7 @@ func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	defer teardown()
 
 	timeout := 100 * time.Millisecond
-	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{headerRequestTimeout: timeout.String()}})
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{HeaderRequestTimeout: timeout.String()}})
 
 	require.NoError(t, err)
 	requireTimeoutPropagated(t, result, timeout)
