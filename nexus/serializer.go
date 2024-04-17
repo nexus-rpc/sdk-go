@@ -42,6 +42,14 @@ type LazyValue struct {
 	Reader     *Reader
 }
 
+// Create a new [LazyValue] from a given serializer and reader.
+func NewLazyValue(serializer Serializer, reader *Reader) *LazyValue {
+	return &LazyValue{
+		serializer: serializer,
+		Reader:     reader,
+	}
+}
+
 // Consume consumes the lazy value, decodes it from the underlying [Reader], and stores the result in the value pointed
 // to by v.
 //
@@ -123,7 +131,7 @@ func (jsonSerializer) Serialize(v any) (*Content, error) {
 	}
 	return &Content{
 		Header: Header{
-			"type":   "application/json",
+			"type": "application/json",
 		},
 		Data: data,
 	}, nil
@@ -201,7 +209,7 @@ func (byteSliceSerializer) Serialize(v any) (*Content, error) {
 	if b, ok := v.([]byte); ok {
 		return &Content{
 			Header: Header{
-				"type":   "application/octet-stream",
+				"type": "application/octet-stream",
 			},
 			Data: b,
 		}, nil
