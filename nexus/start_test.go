@@ -318,3 +318,17 @@ func TestStart_TimeoutNotPropagated(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("not set"), responseBody)
 }
+
+func TestStart_NilContentHeaderDoesNotPanic(t *testing.T) {
+	_, client, teardown := setup(t, &requestIDEchoHandler{})
+	defer teardown()
+
+	result, err := client.StartOperation(context.Background(), "op", &Content{Data: []byte("abc")}, StartOperationOptions{})
+
+	require.NoError(t, err)
+	response := result.Successful
+	require.NotNil(t, response)
+	var responseBody []byte
+	err = response.Consume(&responseBody)
+	require.NoError(t, err)
+}

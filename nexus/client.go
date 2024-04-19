@@ -165,6 +165,9 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 			}
 		}
 		header := maps.Clone(content.Header)
+		if header == nil {
+			header = make(Header, 1)
+		}
 		header["length"] = strconv.Itoa(len(content.Data))
 
 		reader = &Reader{
