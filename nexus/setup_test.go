@@ -12,6 +12,7 @@ import (
 )
 
 const testTimeout = time.Second * 5
+const testService = "Ser/vic e"
 const getResultMaxTimeout = time.Millisecond * 300
 
 func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx context.Context, client *Client, teardown func()) {
@@ -26,8 +27,9 @@ func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	client, err = NewClient(ClientOptions{
-		ServiceBaseURL: fmt.Sprintf("http://%s/", listener.Addr().String()),
-		Serializer:     serializer,
+		BaseURL:    fmt.Sprintf("http://%s/", listener.Addr().String()),
+		Service:    testService,
+		Serializer: serializer,
 	})
 	require.NoError(t, err)
 

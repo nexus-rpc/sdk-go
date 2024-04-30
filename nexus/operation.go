@@ -114,25 +114,37 @@ func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartO
 	return &HandlerStartOperationResultSync[O]{o}, err
 }
 
-// An OperationRegistry registers operations and constructs a [Handler] that dispatches requests to those operations.
-type OperationRegistry struct {
+// A Service is a container for a group of operations.
+type Service struct {
+	Name string
+
 	operations map[string]RegisterableOperation
 }
 
+// NewService constructs a [Service].
+func NewService(name string) *Service {
+	return &Service{
+		Name:       name,
+		operations: make(map[string]RegisterableOperation),
+	}
+}
+
 // Register one or more operations.
-// Returns an error if duplicate operations were registered with the same name.
+// Returns an error if duplicate operations were registered with the same name or when trying to register an operation
+// with no name.
 //
 // Can be called multiple times and is not thread safe.
-func (r *OperationRegistry) Register(operations ...RegisterableOperation) error {
-	if r.operations == nil {
-		r.operations = make(map[string]RegisterableOperation)
-	}
+func (s *Service) Register(operations ...RegisterableOperation) error {
 	var dups []string
 	for _, op := range operations {
-		if _, found := r.operations[op.Name()]; found {
-			dups = append(dups, op.Name())
+		if op.Name() == "" {
+			return fmt.Errorf("tried to register an operation with no name")
 		}
-		r.operations[op.Name()] = op
+		if _, found := s.operations[op.Name()]; found {
+			dups = append(dups, op.Name())
+		} else {
+			s.operations[op.Name()] = op
+		}
 	}
 	if len(dups) > 0 {
 		return fmt.Errorf("duplicate operations: %s", strings.Join(dups, ", "))
@@ -140,23 +152,65 @@ func (r *OperationRegistry) Register(operations ...RegisterableOperation) error 
 	return nil
 }
 
-// NewHandler creates a [Handler] that dispatches requests to registered operations based on their name.
-func (r OperationRegistry) NewHandler() (Handler, error) {
-	if len(r.operations) == 0 {
-		return nil, errors.New("must register at least one operation")
+// A ServiceRegistry registers services and constructs a [Handler] that dispatches operations requests to those services.
+type ServiceRegistry struct {
+	services map[string]*Service
+}
+
+func NewServiceRegistry() *ServiceRegistry {
+	return &ServiceRegistry{services: make(map[string]*Service)}
+}
+
+// Register one or more service.
+// Returns an error if duplicate operations were registered with the same name or when trying to register a service with
+// no name.
+//
+// Can be called multiple times and is not thread safe.
+func (r *ServiceRegistry) Register(services ...*Service) error {
+	var dups []string
+	for _, service := range services {
+		if service.Name == "" {
+			return fmt.Errorf("tried to register a service with no name")
+		}
+		if _, found := r.services[service.Name]; found {
+			dups = append(dups, service.Name)
+		} else {
+			r.services[service.Name] = service
+		}
 	}
-	return &registryHandler{operations: r.operations}, nil
+	if len(dups) > 0 {
+		return fmt.Errorf("duplicate services: %s", strings.Join(dups, ", "))
+	}
+	return nil
+}
+
+// NewHandler creates a [Handler] that dispatches requests to registered operations based on their name.
+func (r *ServiceRegistry) NewHandler() (Handler, error) {
+	if len(r.services) == 0 {
+		return nil, errors.New("must register at least one service")
+	}
+	for _, service := range r.services {
+		if len(service.operations) == 0 {
+			return nil, fmt.Errorf("service %q has no operations registered", service.Name)
+		}
+	}
+
+	return &registryHandler{services: r.services}, nil
 }
 
 type registryHandler struct {
 	UnimplementedHandler
 
-	operations map[string]RegisterableOperation
+	services map[string]*Service
 }
 
 // CancelOperation implements Handler.
-func (r *registryHandler) CancelOperation(ctx context.Context, operation string, operationID string, options CancelOperationOptions) error {
-	h, ok := r.operations[operation]
+func (r *registryHandler) CancelOperation(ctx context.Context, service, operation string, operationID string, options CancelOperationOptions) error {
+	s, ok := r.services[service]
+	if !ok {
+		return HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+	}
+	h, ok := s.operations[operation]
 	if !ok {
 		return HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
@@ -172,8 +226,12 @@ func (r *registryHandler) CancelOperation(ctx context.Context, operation string,
 }
 
 // GetOperationInfo implements Handler.
-func (r *registryHandler) GetOperationInfo(ctx context.Context, operation string, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	h, ok := r.operations[operation]
+func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operation string, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	s, ok := r.services[service]
+	if !ok {
+		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+	}
+	h, ok := s.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
@@ -190,8 +248,12 @@ func (r *registryHandler) GetOperationInfo(ctx context.Context, operation string
 }
 
 // GetOperationResult implements Handler.
-func (r *registryHandler) GetOperationResult(ctx context.Context, operation string, operationID string, options GetOperationResultOptions) (any, error) {
-	h, ok := r.operations[operation]
+func (r *registryHandler) GetOperationResult(ctx context.Context, service, operation string, operationID string, options GetOperationResultOptions) (any, error) {
+	s, ok := r.services[service]
+	if !ok {
+		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+	}
+	h, ok := s.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
@@ -206,8 +268,12 @@ func (r *registryHandler) GetOperationResult(ctx context.Context, operation stri
 }
 
 // StartOperation implements Handler.
-func (r *registryHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	h, ok := r.operations[operation]
+func (r *registryHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	s, ok := r.services[service]
+	if !ok {
+		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+	}
+	h, ok := s.operations[operation]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}

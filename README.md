@@ -38,7 +38,8 @@ The Nexus Client is used to start operations and get [handles](#operationhandle)
 
 ```go
 client, err := nexus.NewClient(nexus.ClientOptions{
-	ServiceBaseURL: "https://example.com/path/to/my/service",
+	BaseURL: "https://example.com/path/to/my/services",
+	Service: "example-service",
 })
 ```
 
@@ -263,8 +264,10 @@ func (h *myArbitraryLengthOperation) GetInfo(ctx context.Context, id string, opt
 #### Create an HTTP Handler
 
 ```go
-reg := nexus.OperationRegistry{}
-_ := reg.Register(exampleOperation, &myArbitraryLengthOperation{})
+svc := NewService("example-service")
+_ = svc.Register(exampleOperation, &myArbitraryLengthOperation{})
+reg := NewServiceRegistry()
+_ = reg.Register(svc)
 handler, _ = reg.NewHandler()
 
 httpHandler := nexus.NewHTTPHandler(nexus.HandlerOptions{

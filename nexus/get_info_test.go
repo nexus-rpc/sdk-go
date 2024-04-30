@@ -13,13 +13,16 @@ type asyncWithInfoHandler struct {
 	expectHeader bool
 }
 
-func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
 		OperationID: "needs /URL/ escaping",
 	}, nil
 }
 
-func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	if service != testService {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
+	}
 	if operation != "escape/me" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to be 'escape me', got: %s", operation)
 	}
@@ -71,13 +74,13 @@ type asyncWithInfoTimeoutHandler struct {
 	UnimplementedHandler
 }
 
-func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
 		OperationID: "timeout",
 	}, nil
 }
 
-func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	deadline, set := ctx.Deadline()
 	if h.expectedTimeout > 0 && !set {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
