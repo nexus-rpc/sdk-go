@@ -13,13 +13,16 @@ type asyncWithCancelHandler struct {
 	UnimplementedHandler
 }
 
-func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
 		OperationID: "a/sync",
 	}, nil
 }
 
-func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
+func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error {
+	if service != testService {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
+	}
 	if operation != "f/o/o" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to be 'foo', got: %s", operation)
 	}
@@ -64,13 +67,13 @@ type echoTimeoutAsyncWithCancelHandler struct {
 	UnimplementedHandler
 }
 
-func (h *echoTimeoutAsyncWithCancelHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *echoTimeoutAsyncWithCancelHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
 		OperationID: "timeout",
 	}, nil
 }
 
-func (h *echoTimeoutAsyncWithCancelHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
+func (h *echoTimeoutAsyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error {
 	deadline, set := ctx.Deadline()
 	if h.expectedTimeout > 0 && !set {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")

@@ -19,8 +19,10 @@ import (
 
 // ClientOptions are options for creating a Client.
 type ClientOptions struct {
-	// Base URL of the service.
-	ServiceBaseURL string
+	// Base URL for all requests. Required.
+	BaseURL string
+	// Service name. Required.
+	Service string
 	// A function for making HTTP requests.
 	// Defaults to [http.DefaultClient.Do].
 	HTTPCaller func(*http.Request) (*http.Response, error)
@@ -33,12 +35,6 @@ type ClientOptions struct {
 const userAgent = "Nexus-go-sdk/" + version
 
 const headerUserAgent = "User-Agent"
-
-// Error indicating an empty ServiceBaseURL option was used to create a client when making a Nexus service request.
-var errEmptyServiceBaseURL = errors.New("empty serviceBaseURL")
-
-// Error indicating a non HTTP URL was used to create a [Client].
-var errInvalidURLScheme = errors.New("invalid URL scheme")
 
 var errEmptyOperationName = errors.New("empty operation name")
 
@@ -93,22 +89,25 @@ type Client struct {
 }
 
 // NewClient creates a new [Client] from provided [ClientOptions].
-// Only BaseServiceURL is required.
+// BaseURL and Service are required.
 func NewClient(options ClientOptions) (*Client, error) {
 	if options.HTTPCaller == nil {
 		options.HTTPCaller = http.DefaultClient.Do
 	}
-	if options.ServiceBaseURL == "" {
-		return nil, errEmptyServiceBaseURL
+	if options.BaseURL == "" {
+		return nil, errors.New("empty BaseURL")
 	}
-	var serviceBaseURL *url.URL
+	if options.Service == "" {
+		return nil, errors.New("empty Service")
+	}
+	var baseURL *url.URL
 	var err error
-	serviceBaseURL, err = url.Parse(options.ServiceBaseURL)
+	baseURL, err = url.Parse(options.BaseURL)
 	if err != nil {
 		return nil, err
 	}
-	if serviceBaseURL.Scheme != "http" && serviceBaseURL.Scheme != "https" {
-		return nil, errInvalidURLScheme
+	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
+		return nil, fmt.Errorf("invalid URL scheme: %s", baseURL.Scheme)
 	}
 	if options.Serializer == nil {
 		options.Serializer = defaultSerializer
@@ -116,7 +115,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 
 	return &Client{
 		options:        options,
-		serviceBaseURL: serviceBaseURL,
+		serviceBaseURL: baseURL,
 	}, nil
 }
 
@@ -176,7 +175,7 @@ func (c *Client) StartOperation(ctx context.Context, operation string, input any
 		}
 	}
 
-	url := c.serviceBaseURL.JoinPath(url.PathEscape(operation))
+	url := c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation))
 
 	if options.CallbackURL != "" {
 		q := url.Query()

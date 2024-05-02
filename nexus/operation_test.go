@@ -55,23 +55,36 @@ func (h *asyncNumberValidatorOperation) GetInfo(ctx context.Context, id string, 
 
 var asyncNumberValidatorOperationInstance = &asyncNumberValidatorOperation{}
 
-func TestOperationRegistryErrors(t *testing.T) {
-	reg := OperationRegistry{}
-	err := reg.Register(numberValidatorOperation, numberValidatorOperation)
+func TestRegistrationErrors(t *testing.T) {
+	reg := NewServiceRegistry()
+	svc := NewService(testService)
+	err := svc.Register(NewSyncOperation("", func(ctx context.Context, i int, soo StartOperationOptions) (int, error) { return 5, nil }))
+	require.ErrorContains(t, err, "tried to register an operation with no name")
+
+	err = svc.Register(numberValidatorOperation, numberValidatorOperation)
 	require.ErrorContains(t, err, "duplicate operations: "+numberValidatorOperation.Name())
-	reg.operations = nil
+
 	_, err = reg.NewHandler()
-	require.ErrorContains(t, err, "must register at least one operation")
+	require.ErrorContains(t, err, "must register at least one service")
+
+	require.ErrorContains(t, reg.Register(NewService("")), "tried to register a service with no name")
+	// Reset operations to trigger an error.
+	svc.operations = nil
+	require.NoError(t, reg.Register(svc))
+
+	_, err = reg.NewHandler()
+	require.ErrorContains(t, err, fmt.Sprintf("service %q has no operations registered", testService))
 }
 
 func TestExecuteOperation(t *testing.T) {
-	registry := OperationRegistry{}
-	require.NoError(t, registry.Register(
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(
 		numberValidatorOperation,
 		bytesIOOperation,
 		noValueOperation,
 	))
-
+	require.NoError(t, registry.Register(svc))
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
@@ -101,11 +114,13 @@ func TestExecuteOperation(t *testing.T) {
 }
 
 func TestStartOperation(t *testing.T) {
-	registry := OperationRegistry{}
-	require.NoError(t, registry.Register(
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(
 		numberValidatorOperation,
 		asyncNumberValidatorOperationInstance,
 	))
+	require.NoError(t, registry.Register(svc))
 
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
@@ -130,10 +145,12 @@ func TestStartOperation(t *testing.T) {
 }
 
 func TestCancelOperation(t *testing.T) {
-	registry := OperationRegistry{}
-	require.NoError(t, registry.Register(
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(
 		asyncNumberValidatorOperationInstance,
 	))
+	require.NoError(t, registry.Register(svc))
 
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
@@ -149,10 +166,12 @@ func TestCancelOperation(t *testing.T) {
 }
 
 func TestGetOperationInfo(t *testing.T) {
-	registry := OperationRegistry{}
-	require.NoError(t, registry.Register(
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(
 		asyncNumberValidatorOperationInstance,
 	))
+	require.NoError(t, registry.Register(svc))
 
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)

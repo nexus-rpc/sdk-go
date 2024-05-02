@@ -23,7 +23,7 @@ type asyncWithResultHandler struct {
 	requests         []request
 }
 
-func (h *asyncWithResultHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *asyncWithResultHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	if h.expectTestHeader && options.Header.Get("test") != "ok" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
 	}
@@ -40,7 +40,7 @@ func (h *asyncWithResultHandler) getResult() (any, error) {
 	return []byte("body"), nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
+func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service, operation, operationID string, options GetOperationResultOptions) (any, error) {
 	req := request{options: options, operation: operation, operationID: operationID}
 	deadline, set := ctx.Deadline()
 	if set {
@@ -48,6 +48,9 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, operati
 	}
 	h.requests = append(h.requests, req)
 
+	if service != testService {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
+	}
 	if h.expectTestHeader && options.Header.Get("test") != "ok" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' header: %q", options.Header.Get("test"))
 	}

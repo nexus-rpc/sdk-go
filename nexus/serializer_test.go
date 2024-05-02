@@ -132,12 +132,13 @@ func (c *customSerializer) Deserialize(s *Content, v any) error {
 }
 
 func TestCustomSerializer(t *testing.T) {
-	registry := OperationRegistry{}
-	require.NoError(t, registry.Register(
+	svc := NewService(testService)
+	registry := NewServiceRegistry()
+	require.NoError(t, svc.Register(
 		numberValidatorOperation,
 		asyncNumberValidatorOperationInstance,
 	))
-
+	require.NoError(t, registry.Register(svc))
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 

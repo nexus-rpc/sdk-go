@@ -15,10 +15,13 @@ type successHandler struct {
 	UnimplementedHandler
 }
 
-func (h *successHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *successHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	var body []byte
 	if err := input.Consume(&body); err != nil {
 		return nil, err
+	}
+	if service != testService {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
 	}
 	if operation != "i need to/be escaped" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected operation: %s", operation)
@@ -68,7 +71,7 @@ type requestIDEchoHandler struct {
 	UnimplementedHandler
 }
 
-func (h *requestIDEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *requestIDEchoHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultSync[any]{
 		Value: []byte(options.RequestID),
 	}, nil
@@ -120,7 +123,7 @@ type jsonHandler struct {
 	UnimplementedHandler
 }
 
-func (h *jsonHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *jsonHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	var s string
 	if err := input.Consume(&s); err != nil {
 		return nil, err
@@ -146,7 +149,7 @@ type echoHandler struct {
 	UnimplementedHandler
 }
 
-func (h *echoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *echoHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	var output any
 	switch options.Header.Get("input-type") {
 	case "reader":
@@ -210,7 +213,7 @@ type asyncHandler struct {
 	UnimplementedHandler
 }
 
-func (h *asyncHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *asyncHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
 		OperationID: "async",
 	}, nil
@@ -229,7 +232,7 @@ type unsuccessfulHandler struct {
 	UnimplementedHandler
 }
 
-func (h *unsuccessfulHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *unsuccessfulHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return nil, &UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
 		State: OperationState(options.RequestID),
@@ -256,7 +259,7 @@ type timeoutEchoHandler struct {
 	UnimplementedHandler
 }
 
-func (h *timeoutEchoHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h *timeoutEchoHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	deadline, set := ctx.Deadline()
 	if !set {
 		return &HandlerStartOperationResultSync[any]{

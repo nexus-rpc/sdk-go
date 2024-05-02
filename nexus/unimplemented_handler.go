@@ -12,22 +12,22 @@ type UnimplementedHandler struct{}
 func (h UnimplementedHandler) mustEmbedUnimplementedHandler() {}
 
 // StartOperation implements the Handler interface.
-func (h UnimplementedHandler) StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+func (h UnimplementedHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
 // GetOperationResult implements the Handler interface.
-func (h UnimplementedHandler) GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error) {
+func (h UnimplementedHandler) GetOperationResult(ctx context.Context, service, operation, operationID string, options GetOperationResultOptions) (any, error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
 // GetOperationInfo implements the Handler interface.
-func (h UnimplementedHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h UnimplementedHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	return nil, &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 
 // CancelOperation implements the Handler interface.
-func (h UnimplementedHandler) CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error {
+func (h UnimplementedHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error {
 	return &HandlerError{HandlerErrorTypeNotImplemented, &Failure{Message: "not implemented"}}
 }
 

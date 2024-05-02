@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"time"
 
@@ -72,7 +71,7 @@ type Handler interface {
 	// respond successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous
 	// operation was started. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
 	// failed or canceled.
-	StartOperation(ctx context.Context, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error)
+	StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error)
 	// GetOperationResult handles requests to get the result of an asynchronous operation. Return non error result
 	// to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous
 	// operation is still running. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
@@ -85,15 +84,15 @@ type Handler interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the example.
-	GetOperationResult(ctx context.Context, operation, operationID string, options GetOperationResultOptions) (any, error)
+	GetOperationResult(ctx context.Context, service, operation, operationID string, options GetOperationResultOptions) (any, error)
 	// GetOperationInfo handles requests to get information about an asynchronous operation.
-	GetOperationInfo(ctx context.Context, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error)
+	GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
 	//  ignored by the underlying operation implemention.
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
-	CancelOperation(ctx context.Context, operation, operationID string, options CancelOperationOptions) error
+	CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error
 	mustEmbedUnimplementedHandler()
 }
 
@@ -270,7 +269,13 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 }
 
 func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.Request) {
-	operation, err := url.PathUnescape(path.Base(request.URL.EscapedPath()))
+	vars := mux.Vars(request)
+	service, err := url.PathUnescape(vars["service"])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	operation, err := url.PathUnescape(vars["operation"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
@@ -295,7 +300,7 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	}
 	defer cancel()
 
-	response, err := h.options.Handler.StartOperation(ctx, operation, value, options)
+	response, err := h.options.Handler.StartOperation(ctx, service, operation, value, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
@@ -304,14 +309,18 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 }
 
 func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *http.Request) {
-	// strip /result
-	prefix, operationIDEscaped := path.Split(path.Dir(request.URL.EscapedPath()))
-	operationID, err := url.PathUnescape(operationIDEscaped)
+	vars := mux.Vars(request)
+	service, err := url.PathUnescape(vars["service"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
-	operation, err := url.PathUnescape(path.Base(prefix))
+	operation, err := url.PathUnescape(vars["operation"])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	operationID, err := url.PathUnescape(vars["operation_id"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
@@ -346,7 +355,7 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 		defer cancel()
 	}
 
-	result, err := h.options.Handler.GetOperationResult(ctx, operation, operationID, options)
+	result, err := h.options.Handler.GetOperationResult(ctx, service, operation, operationID, options)
 	if err != nil {
 		if options.Wait > 0 && ctx.Err() != nil {
 			writer.WriteHeader(http.StatusRequestTimeout)
@@ -361,13 +370,18 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 }
 
 func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http.Request) {
-	prefix, operationIDEscaped := path.Split(request.URL.EscapedPath())
-	operationID, err := url.PathUnescape(operationIDEscaped)
+	vars := mux.Vars(request)
+	service, err := url.PathUnescape(vars["service"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
-	operation, err := url.PathUnescape(path.Base(prefix))
+	operation, err := url.PathUnescape(vars["operation"])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	operationID, err := url.PathUnescape(vars["operation_id"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
@@ -380,7 +394,7 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 	}
 	defer cancel()
 
-	info, err := h.options.Handler.GetOperationInfo(ctx, operation, operationID, options)
+	info, err := h.options.Handler.GetOperationInfo(ctx, service, operation, operationID, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 		return
@@ -398,14 +412,18 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 }
 
 func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.Request) {
-	// strip /cancel
-	prefix, operationIDEscaped := path.Split(path.Dir(request.URL.EscapedPath()))
-	operationID, err := url.PathUnescape(operationIDEscaped)
+	vars := mux.Vars(request)
+	service, err := url.PathUnescape(vars["service"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
-	operation, err := url.PathUnescape(path.Base(prefix))
+	operation, err := url.PathUnescape(vars["operation"])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	operationID, err := url.PathUnescape(vars["operation_id"])
 	if err != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
@@ -418,7 +436,7 @@ func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.
 	}
 	defer cancel()
 
-	if err := h.options.Handler.CancelOperation(ctx, operation, operationID, options); err != nil {
+	if err := h.options.Handler.CancelOperation(ctx, service, operation, operationID, options); err != nil {
 		h.writeFailure(writer, err)
 		return
 	}
@@ -493,9 +511,9 @@ func NewHTTPHandler(options HandlerOptions) http.Handler {
 	}
 
 	router := mux.NewRouter().UseEncodedPath()
-	router.HandleFunc("/{operation}", handler.startOperation).Methods("POST")
-	router.HandleFunc("/{operation}/{operation_id}", handler.getOperationInfo).Methods("GET")
-	router.HandleFunc("/{operation}/{operation_id}/result", handler.getOperationResult).Methods("GET")
-	router.HandleFunc("/{operation}/{operation_id}/cancel", handler.cancelOperation).Methods("POST")
+	router.HandleFunc("/{service}/{operation}", handler.startOperation).Methods("POST")
+	router.HandleFunc("/{service}/{operation}/{operation_id}", handler.getOperationInfo).Methods("GET")
+	router.HandleFunc("/{service}/{operation}/{operation_id}/result", handler.getOperationResult).Methods("GET")
+	router.HandleFunc("/{service}/{operation}/{operation_id}/cancel", handler.cancelOperation).Methods("POST")
 	return router
 }

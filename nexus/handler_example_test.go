@@ -18,7 +18,7 @@ type MyResult struct {
 }
 
 // StartOperation implements the Handler interface.
-func (h *myHandler) StartOperation(ctx context.Context, operation string, input *nexus.LazyValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
+func (h *myHandler) StartOperation(ctx context.Context, service, operation string, input *nexus.LazyValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
 	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
@@ -26,7 +26,7 @@ func (h *myHandler) StartOperation(ctx context.Context, operation string, input 
 }
 
 // GetOperationResult implements the Handler interface.
-func (h *myHandler) GetOperationResult(ctx context.Context, operation, operationID string, options nexus.GetOperationResultOptions) (any, error) {
+func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, operationID string, options nexus.GetOperationResultOptions) (any, error) {
 	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
@@ -59,12 +59,12 @@ func (h *myHandler) GetOperationResult(ctx context.Context, operation, operation
 	}
 }
 
-func (h *myHandler) CancelOperation(ctx context.Context, operation, operationID string, options nexus.CancelOperationOptions) error {
+func (h *myHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options nexus.CancelOperationOptions) error {
 	// Handlers must implement this.
 	panic("unimplemented")
 }
 
-func (h *myHandler) GetOperationInfo(ctx context.Context, operation, operationID string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+func (h *myHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
 	// Handlers must implement this.
 	panic("unimplemented")
 }
