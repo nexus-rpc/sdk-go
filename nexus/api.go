@@ -40,8 +40,7 @@ const (
 	statusOperationRunning = http.StatusPreconditionFailed
 	// HTTP status code for failed operation responses.
 	statusOperationFailed   = http.StatusFailedDependency
-	StatusDownstreamError   = 520
-	StatusDownstreamTimeout = 521
+	StatusDownstreamTimeout = 520
 )
 
 // A Failure represents failed handler invocations as well as `failed` or `canceled` operation results.
