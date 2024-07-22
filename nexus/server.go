@@ -447,7 +447,6 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 	}
 	var operationID string
 	if len(parts) > 3 {
-		var err error
 		operationID, err = url.PathUnescape(parts[3])
 		if err != nil {
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
@@ -482,6 +481,8 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 				return
 			}
 			h.cancelOperation(service, operation, operationID, writer, request)
+		default:
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 		}
 	default:
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
