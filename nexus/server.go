@@ -12,9 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/gorilla/mux"
 )
 
 // An HandlerStartOperationResult is the return type from the [Handler] StartOperation and [Operation] Start methods. It
@@ -264,18 +263,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	}
 }
 
-func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	service, err := url.PathUnescape(vars["service"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operation, err := url.PathUnescape(vars["operation"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
+func (h *httpHandler) startOperation(service, operation string, writer http.ResponseWriter, request *http.Request) {
 	options := StartOperationOptions{
 		RequestID:      request.Header.Get(headerRequestID),
 		CallbackURL:    request.URL.Query().Get(queryCallbackURL),
@@ -304,23 +292,7 @@ func (h *httpHandler) startOperation(writer http.ResponseWriter, request *http.R
 	}
 }
 
-func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	service, err := url.PathUnescape(vars["service"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operation, err := url.PathUnescape(vars["operation"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operationID, err := url.PathUnescape(vars["operation_id"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
+func (h *httpHandler) getOperationResult(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
 	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	// If both Request-Timeout http header and wait query string are set, the minimum of the Request-Timeout header
@@ -365,23 +337,7 @@ func (h *httpHandler) getOperationResult(writer http.ResponseWriter, request *ht
 	h.writeResult(writer, result)
 }
 
-func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	service, err := url.PathUnescape(vars["service"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operation, err := url.PathUnescape(vars["operation"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operationID, err := url.PathUnescape(vars["operation_id"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
+func (h *httpHandler) getOperationInfo(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
 	options := GetOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
@@ -407,23 +363,7 @@ func (h *httpHandler) getOperationInfo(writer http.ResponseWriter, request *http
 	}
 }
 
-func (h *httpHandler) cancelOperation(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	service, err := url.PathUnescape(vars["service"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operation, err := url.PathUnescape(vars["operation"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
-	operationID, err := url.PathUnescape(vars["operation_id"])
-	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-		return
-	}
+func (h *httpHandler) cancelOperation(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
 	options := CancelOperationOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
@@ -488,6 +428,67 @@ type HandlerOptions struct {
 	Serializer Serializer
 }
 
+func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Request) {
+	parts := strings.Split(request.URL.EscapedPath(), "/")
+	// First part is empty (due to leading /)
+	if len(parts) < 3 {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+		return
+	}
+	service, err := url.PathUnescape(parts[1])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	operation, err := url.PathUnescape(parts[2])
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+		return
+	}
+	var operationID string
+	if len(parts) > 3 {
+		operationID, err = url.PathUnescape(parts[3])
+		if err != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+			return
+		}
+	}
+
+	switch len(parts) {
+	case 3: // /{service}/{operation}
+		if request.Method != "POST" {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
+			return
+		}
+		h.startOperation(service, operation, writer, request)
+	case 4: // /{service}/{operation}/{operation_id}
+		if request.Method != "GET" {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
+			return
+		}
+		h.getOperationInfo(service, operation, operationID, writer, request)
+	case 5:
+		switch parts[4] {
+		case "result": // /{service}/{operation}/{operation_id}/result
+			if request.Method != "GET" {
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
+				return
+			}
+			h.getOperationResult(service, operation, operationID, writer, request)
+		case "cancel": // /{service}/{operation}/{operation_id}/cancel
+			if request.Method != "POST" {
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
+				return
+			}
+			h.cancelOperation(service, operation, operationID, writer, request)
+		default:
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+		}
+	default:
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+	}
+}
+
 // NewHTTPHandler constructs an [http.Handler] from given options for handling Nexus service requests.
 func NewHTTPHandler(options HandlerOptions) http.Handler {
 	if options.Logger == nil {
@@ -506,10 +507,5 @@ func NewHTTPHandler(options HandlerOptions) http.Handler {
 		options: options,
 	}
 
-	router := mux.NewRouter().UseEncodedPath()
-	router.HandleFunc("/{service}/{operation}", handler.startOperation).Methods("POST")
-	router.HandleFunc("/{service}/{operation}/{operation_id}", handler.getOperationInfo).Methods("GET")
-	router.HandleFunc("/{service}/{operation}/{operation_id}/result", handler.getOperationResult).Methods("GET")
-	router.HandleFunc("/{service}/{operation}/{operation_id}/cancel", handler.cancelOperation).Methods("POST")
-	return router
+	return http.HandlerFunc(handler.handleRequest)
 }
