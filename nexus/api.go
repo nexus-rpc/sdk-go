@@ -15,7 +15,7 @@ import (
 )
 
 // Package version.
-const version = "v0.0.8"
+const version = "v0.0.9"
 
 const (
 	// Nexus specific headers.
