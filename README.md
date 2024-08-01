@@ -1,5 +1,8 @@
 # Nexus Go SDK
 
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/nexus-rpc/sdk-go)](https://pkg.go.dev/github.com/nexus-rpc/sdk-go)
+[![Continuous Integration](https://github.com/nexus-rpc/sdk-go/actions/workflows/ci.yml/badge.svg)](https://github.com/nexus-rpc/sdk-go/actions/workflows/ci.yml)
+
 Client and server package for working with the Nexus [HTTP API](https://github.com/nexus-rpc/api).
 
 **⚠️ EXPERIMENTAL ⚠️**
