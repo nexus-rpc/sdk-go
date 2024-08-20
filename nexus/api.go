@@ -5,6 +5,7 @@ package nexus
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ const (
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
+	headerLinks          = "Nexus-Links"
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
 	HeaderRequestTimeout = "Request-Timeout"
@@ -145,6 +147,31 @@ func addCallbackHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) h
 	return httpHeader
 }
 
+func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
+	for _, link := range links {
+		encodedLink, err := EncodeLink(&link)
+		if err != nil {
+			return err
+		}
+		httpHeader.Add(headerLinks, encodedLink)
+	}
+	return nil
+}
+
+func getLinksFromHeader(httpHeader http.Header) ([]Link, error) {
+	var links []Link
+	for _, encodedLink := range httpHeader.Values(headerLinks) {
+		link, err := DecodeLink(encodedLink)
+		if err != nil {
+			return nil, err
+		}
+		if link != nil {
+			links = append(links, *link)
+		}
+	}
+	return links, nil
+}
+
 func httpHeaderToNexusHeader(httpHeader http.Header, excludePrefixes ...string) Header {
 	header := Header{}
 headerLoop:
@@ -175,4 +202,29 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 	}
 	httpHeader.Set(HeaderRequestTimeout, time.Until(deadline).String())
 	return httpHeader
+}
+
+type Link struct {
+	Data []byte `json:"data"`
+	Type string `json:"type"`
+}
+
+var linkBase64Encoding = base64.StdEncoding
+
+func EncodeLink(link *Link) (string, error) {
+	linkJson, err := json.Marshal(link)
+	if err != nil {
+		return "", err
+	}
+	return linkBase64Encoding.EncodeToString(linkJson), nil
+}
+
+func DecodeLink(encodedLink string) (*Link, error) {
+	linkJson, err := linkBase64Encoding.DecodeString(encodedLink)
+	if err != nil {
+		return nil, err
+	}
+	var link *Link
+	err = json.Unmarshal(linkJson, &link)
+	return link, err
 }
