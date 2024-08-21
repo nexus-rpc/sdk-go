@@ -149,7 +149,7 @@ func addCallbackHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) h
 
 func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 	for _, link := range links {
-		encodedLink, err := EncodeLink(&link)
+		encodedLink, err := encodeLink(link)
 		if err != nil {
 			return err
 		}
@@ -161,13 +161,11 @@ func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 func getLinksFromHeader(httpHeader http.Header) ([]Link, error) {
 	var links []Link
 	for _, encodedLink := range httpHeader.Values(headerLinks) {
-		link, err := DecodeLink(encodedLink)
+		link, err := decodeLink(encodedLink)
 		if err != nil {
 			return nil, err
 		}
-		if link != nil {
-			links = append(links, *link)
-		}
+		links = append(links, link)
 	}
 	return links, nil
 }
@@ -205,13 +203,15 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 }
 
 type Link struct {
+	// Encoded representation of arbitrary link information.
 	Data []byte `json:"data"`
+	// Type of the `Data` field for encoding/decoding it.
 	Type string `json:"type"`
 }
 
 var linkBase64Encoding = base64.StdEncoding
 
-func EncodeLink(link *Link) (string, error) {
+func encodeLink(link Link) (string, error) {
 	linkJson, err := json.Marshal(link)
 	if err != nil {
 		return "", err
@@ -219,12 +219,12 @@ func EncodeLink(link *Link) (string, error) {
 	return linkBase64Encoding.EncodeToString(linkJson), nil
 }
 
-func DecodeLink(encodedLink string) (*Link, error) {
+func decodeLink(encodedLink string) (Link, error) {
+	var link Link
 	linkJson, err := linkBase64Encoding.DecodeString(encodedLink)
 	if err != nil {
-		return nil, err
+		return link, err
 	}
-	var link *Link
 	err = json.Unmarshal(linkJson, &link)
 	return link, err
 }

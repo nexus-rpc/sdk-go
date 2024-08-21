@@ -275,7 +275,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 func (h *httpHandler) startOperation(service, operation string, writer http.ResponseWriter, request *http.Request) {
 	links, err := getLinksFromHeader(request.Header)
 	if err != nil {
-		h.writeFailure(writer, err)
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid links header"))
 		return
 	}
 	options := StartOperationOptions{

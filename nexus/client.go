@@ -201,11 +201,11 @@ func (c *Client) StartOperation(
 	request.Header.Set(headerUserAgent, userAgent)
 	addContentHeaderToHTTPHeader(reader.Header, request.Header)
 	addCallbackHeaderToHTTPHeader(options.CallbackHeader, request.Header)
+	if err := addLinksToHTTPHeader(options.Links, request.Header); err != nil {
+		return nil, fmt.Errorf("failed to add links to header: %w", err)
+	}
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	addNexusHeaderToHTTPHeader(options.Header, request.Header)
-	if err := addLinksToHTTPHeader(options.Links, request.Header); err != nil {
-		return nil, err
-	}
 
 	response, err := c.options.HTTPCaller(request)
 	if err != nil {
@@ -241,10 +241,14 @@ func (c *Client) StartOperation(
 		}
 		links, err := getLinksFromHeader(response.Header)
 		if err != nil {
-			return nil, newUnexpectedResponseError(
-				fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLinks)),
-				response,
-				body,
+			return nil, fmt.Errorf(
+				"%w: %w",
+				newUnexpectedResponseError(
+					fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLinks)),
+					response,
+					body,
+				),
+				err,
 			)
 		}
 		return &ClientStartOperationResult[*LazyValue]{
