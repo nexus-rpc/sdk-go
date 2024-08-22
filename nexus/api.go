@@ -23,7 +23,7 @@ const (
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
-	headerLinks          = "Nexus-Links"
+	headerLinks          = "Nexus-Link"
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
 	HeaderRequestTimeout = "Request-Timeout"
