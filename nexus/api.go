@@ -4,6 +4,7 @@
 package nexus
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -149,11 +151,7 @@ func addCallbackHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) h
 
 func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 	for _, link := range links {
-		encodedLink, err := encodeLink(link)
-		if err != nil {
-			return err
-		}
-		httpHeader.Add(headerLinks, encodedLink)
+		httpHeader.Add(headerLinks, encodeLink(link))
 	}
 	return nil
 }
@@ -203,28 +201,63 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 }
 
 type Link struct {
-	// Encoded representation of arbitrary link information.
-	Data []byte `json:"data"`
-	// Type of the `Data` field for encoding/decoding it.
+	// URL encoded information about the link.
+	URL string `json:"url"`
+	// Type can describe an actual data type for decoding the URL.
 	Type string `json:"type"`
 }
 
-var linkBase64Encoding = base64.StdEncoding
-
-func encodeLink(link Link) (string, error) {
-	linkJson, err := json.Marshal(link)
-	if err != nil {
-		return "", err
-	}
-	return linkBase64Encoding.EncodeToString(linkJson), nil
+func encodeLink(link Link) string {
+	return fmt.Sprintf("<%s>; Type=%q", link.URL, link.Type)
 }
 
 func decodeLink(encodedLink string) (Link, error) {
-	var link Link
-	linkJson, err := linkBase64Encoding.DecodeString(encodedLink)
-	if err != nil {
-		return link, err
+	consumeUntilAndDiscard := func(buf []byte, c byte) (bool, []byte, []byte) {
+		idx := bytes.IndexByte(buf, c)
+		if idx == -1 {
+			return false, buf, nil
+		}
+		return true, bytes.TrimSpace(buf[:idx]), bytes.TrimSpace(buf[idx+1:])
 	}
-	err = json.Unmarshal(linkJson, &link)
-	return link, err
+
+	var link Link
+	buf := []byte(encodedLink)
+
+	var found bool
+	var part []byte
+	_, part, buf = consumeUntilAndDiscard(buf, ';')
+	if !bytes.HasPrefix(part, []byte{'<'}) || !bytes.HasSuffix(part, []byte{'>'}) {
+		return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+	}
+	link.URL = string(part[1 : len(part)-1])
+
+	for len(buf) > 0 {
+		var key string
+		var val string
+		found, part, buf = consumeUntilAndDiscard(buf, '=')
+		key = string(part)
+		if !found || len(buf) == 0 {
+			// key without value
+			break
+		}
+		if buf[0] == '"' {
+			found, part, buf = consumeUntilAndDiscard(buf, '"')
+			if !found {
+				return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+			}
+			val = string(part[1:])
+			// next char must a semi-colon
+			if buf[0] != ';' {
+				return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+			}
+			buf = bytes.TrimSpace(buf[1:])
+		} else {
+			_, part, buf = consumeUntilAndDiscard(buf, ';')
+			val = string(part)
+		}
+		if key == "Type" {
+			link.Type = val
+		}
+	}
+	return link, nil
 }
