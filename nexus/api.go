@@ -208,7 +208,7 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 type Link struct {
 	// URL information about the link.
 	// It must be URL percent-encoded.
-	URL string
+	URL *url.URL
 	// Type can describe an actual data type for decoding the URL.
 	// Valid chars: alphanumeric, '_', '.', '/'
 	Type string
@@ -216,6 +216,8 @@ type Link struct {
 
 const linkTypeKey = "type"
 
+// decodeLink encodes the link to Nexus-Link header value.
+// It follows the same format of HTTP Link header: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Link
 func encodeLink(link Link) (string, error) {
 	if err := validateLinkURL(link.URL); err != nil {
 		return "", fmt.Errorf("failed to encode link: %w", err)
@@ -223,48 +225,61 @@ func encodeLink(link Link) (string, error) {
 	if err := validateLinkType(link.Type); err != nil {
 		return "", fmt.Errorf("failed to encode link: %w", err)
 	}
-	return fmt.Sprintf(`<%s>; %s="%s"`, link.URL, linkTypeKey, link.Type), nil
+	return fmt.Sprintf(`<%s>; %s="%s"`, link.URL.String(), linkTypeKey, link.Type), nil
 }
 
+// decodeLink decodes the Nexus-Link header values.
+// It must have the same format of HTTP Link header: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Link
 func decodeLink(encodedLink string) (Link, error) {
 	var link Link
-	parts := strings.Split(encodedLink, ";")
-
-	u := strings.TrimSpace(parts[0])
-	if !strings.HasPrefix(u, "<") || !strings.HasSuffix(u, ">") {
-		return link, fmt.Errorf(
-			"failed to parse link header value: expected url to be enclosed between < and >: %s",
-			encodedLink,
-		)
+	encodedLink = strings.TrimSpace(encodedLink)
+	if len(encodedLink) == 0 {
+		return link, fmt.Errorf("failed to parse link header: value is empty")
 	}
-	u = u[1 : len(u)-1]
+
+	if encodedLink[0] != '<' {
+		return link, fmt.Errorf("failed to parse link header: invalid format: %s", encodedLink)
+	}
+	urlEnd := strings.Index(encodedLink, ">")
+	if urlEnd == -1 {
+		return link, fmt.Errorf("failed to parse link header: invalid format: %s", encodedLink)
+	}
+	urlStr := strings.TrimSpace(encodedLink[1:urlEnd])
+	if len(urlStr) == 0 {
+		return link, fmt.Errorf("failed to parse link header: url is empty")
+	}
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return link, fmt.Errorf("failed to parse link header: invalid url: %s", urlStr)
+	}
 	if err := validateLinkURL(u); err != nil {
-		return link, fmt.Errorf("failed to parse link header value: %w", err)
+		return link, fmt.Errorf("failed to parse link header: %w", err)
 	}
 	link.URL = u
 
+	params := strings.Split(encodedLink[urlEnd+1:], ";")
+	// must contain at least one semi-colon, and first param must be empty since
+	// it corresponds to the url part parsed above.
+	if len(params) < 2 {
+		return link, fmt.Errorf("failed to parse link header: invalid format: %s", encodedLink)
+	}
+
 	typeKeyFound := false
-	for _, part := range parts[1:] {
-		part = strings.TrimSpace(part)
-		if len(part) == 0 {
-			return link, fmt.Errorf(
-				"failed to parse link header value: parameter is empty: %s",
-				encodedLink,
-			)
+	for _, param := range params[1:] {
+		param = strings.TrimSpace(param)
+		if len(param) == 0 {
+			return link, fmt.Errorf("failed to parse link header: parameter is empty: %s", encodedLink)
 		}
-		kv := strings.SplitN(part, "=", 2)
+		kv := strings.SplitN(param, "=", 2)
 		if len(kv) != 2 {
-			return link, fmt.Errorf(
-				"failed to parse link header value: invalid parameter format: %s",
-				part,
-			)
+			return link, fmt.Errorf("failed to parse link header: invalid parameter format: %s", param)
 		}
 		key := strings.TrimSpace(kv[0])
 		val := strings.TrimSpace(kv[1])
 		if strings.HasPrefix(val, `"`) != strings.HasSuffix(val, `"`) {
 			return link, fmt.Errorf(
-				"failed to parse link header value: parameter value missing double-quote: %s",
-				part,
+				"failed to parse link header: parameter value missing double-quote: %s",
+				param,
 			)
 		}
 		if strings.HasPrefix(val, `"`) {
@@ -272,7 +287,7 @@ func decodeLink(encodedLink string) (Link, error) {
 		}
 		if key == linkTypeKey {
 			if err := validateLinkType(val); err != nil {
-				return link, fmt.Errorf("failed to parse link header value: %w", err)
+				return link, fmt.Errorf("failed to parse link header: %w", err)
 			}
 			link.Type = val
 			typeKeyFound = true
@@ -280,7 +295,7 @@ func decodeLink(encodedLink string) (Link, error) {
 	}
 	if !typeKeyFound {
 		return link, fmt.Errorf(
-			"failed to parse link header value: %q key not found: %s",
+			"failed to parse link header: %q key not found: %s",
 			linkTypeKey,
 			encodedLink,
 		)
@@ -289,21 +304,11 @@ func decodeLink(encodedLink string) (Link, error) {
 	return link, nil
 }
 
-func validateLinkURL(value string) error {
-	if len(value) == 0 {
+func validateLinkURL(value *url.URL) error {
+	if value.String() == "" {
 		return fmt.Errorf("url is empty")
 	}
-	u, err := url.Parse(value)
-	if err != nil {
-		return fmt.Errorf("url %s not valid: %w", value, err)
-	}
-	for _, p := range strings.Split(u.EscapedPath(), "/") {
-		unescaped, err := url.PathUnescape(p)
-		if err != nil || p != url.PathEscape(unescaped) {
-			return fmt.Errorf("url path not percent-encoded: %s", value)
-		}
-	}
-	_, err = url.ParseQuery(u.RawQuery)
+	_, err := url.ParseQuery(value.RawQuery)
 	if err != nil {
 		return fmt.Errorf("url query not percent-encoded: %s", value)
 	}
