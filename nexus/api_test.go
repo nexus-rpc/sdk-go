@@ -2,6 +2,7 @@ package nexus
 
 import (
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -75,28 +76,236 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 	}
 }
 
+func TestAddLinksToHeader(t *testing.T) {
+	type testcase struct {
+		name   string
+		input  []Link
+		output http.Header
+		errMsg string
+	}
+
+	cases := []testcase{
+		{
+			name: "single link",
+			input: []Link{{
+				URL:  "https://example.com/path?param=value",
+				Type: "url",
+			}},
+			output: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value>; Type="url"`,
+				},
+			},
+		},
+		{
+			name: "multiple links",
+			input: []Link{
+				{
+					URL:  "https://example.com/path?param=value",
+					Type: "url",
+				},
+				{
+					URL:  "https://foo.com/path?bar=value",
+					Type: "url",
+				},
+			},
+			output: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value>; Type="url"`,
+					`<https://foo.com/path?bar=value>; Type="url"`,
+				},
+			},
+		},
+		{
+			name: "invalid link",
+			input: []Link{{
+				URL:  "https://example.com/path%",
+				Type: "url",
+			}},
+			errMsg: "failed to encode link",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := http.Header{}
+			err := addLinksToHTTPHeader(tc.input, output)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.output, output)
+			}
+		})
+	}
+}
+
+func TestGetLinksFromHeader(t *testing.T) {
+	type testcase struct {
+		name   string
+		input  http.Header
+		output []Link
+		errMsg string
+	}
+
+	cases := []testcase{
+		{
+			name: "single link",
+			input: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value>; Type="url"`,
+				},
+			},
+			output: []Link{{
+				URL:  "https://example.com/path?param=value",
+				Type: "url",
+			}},
+		},
+		{
+			name: "multiple links",
+			input: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value>; Type="url"`,
+					`<https://foo.com/path?bar=value>; Type="url"`,
+				},
+			},
+			output: []Link{
+				{
+					URL:  "https://example.com/path?param=value",
+					Type: "url",
+				},
+				{
+					URL:  "https://foo.com/path?bar=value",
+					Type: "url",
+				},
+			},
+		},
+		{
+			name: "multiple links single header",
+			input: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value>; Type="url", <https://foo.com/path?bar=value>; Type="url"`,
+				},
+			},
+			output: []Link{
+				{
+					URL:  "https://example.com/path?param=value",
+					Type: "url",
+				},
+				{
+					URL:  "https://foo.com/path?bar=value",
+					Type: "url",
+				},
+			},
+		},
+		{
+			name: "invalid header",
+			input: http.Header{
+				headerLink: []string{
+					`<https://example.com/path?param=value> Type="url"`,
+				},
+			},
+			errMsg: "failed to parse link header value",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output, err := getLinksFromHeader(tc.input)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.output, output)
+			}
+		})
+	}
+}
+
 func TestEncodeLink(t *testing.T) {
 	type testcase struct {
-		name     string
-		input    Link
-		expected string
+		name   string
+		input  Link
+		output string
+		errMsg string
 	}
 
 	cases := []testcase{
 		{
 			name: "valid",
 			input: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
-				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain",
 			},
-			expected: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent"`,
+			output: `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain"`,
+		},
+		{
+			name: "valid with encoded percent and semi-colon",
+			input: Link{
+				URL:  "https://example.com/path/to/something%25%3B?param1=value1&param2=value2",
+				Type: "text/plain",
+			},
+			output: `<https://example.com/path/to/something%25%3B?param1=value1&param2=value2>; type="text/plain"`,
+		},
+		{
+			name: "valid custom URL",
+			input: Link{
+				URL:  "nexus:///path/to/something?param1=value",
+				Type: "nexus.data_type",
+			},
+			output: `<nexus:///path/to/something?param1=value>; type="nexus.data_type"`,
+		},
+		{
+			name: "invalid url",
+			input: Link{
+				URL:  "https://example.com/path/to/something%?param1=value1&param2=value2",
+				Type: "text/plain",
+			},
+			errMsg: "failed to encode link: url not valid",
+		},
+		{
+			name: "invalid path not percent-encoded ;",
+			input: Link{
+				URL:  "https://example.com/path/to/something%3B;?param1=value1&param2=value2",
+				Type: "text/plain",
+			},
+			errMsg: "failed to encode link: path not percent-encoded",
+		},
+		{
+			name: "invalid path not percent-encoded ,",
+			input: Link{
+				URL:  "https://example.com/path/to/something,?param1=value1&param2=value2",
+				Type: "text/plain",
+			},
+			errMsg: "failed to encode link: path not percent-encoded",
+		},
+		{
+			name: "invalid query not percent-encoded",
+			input: Link{
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2;",
+				Type: "text/plain",
+			},
+			errMsg: "failed to encode link: query not percent-encoded",
+		},
+		{
+			name: "invalid type invalid chars",
+			input: Link{
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain;",
+			},
+			errMsg: "failed to encode link: type contains invalid chars",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			output := encodeLink(tc.input)
-			require.Equal(t, tc.expected, output)
+			output, err := encodeLink(tc.input)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.output, output)
+			}
 		})
 	}
 }
@@ -112,93 +321,106 @@ func TestDecodeLink(t *testing.T) {
 	cases := []testcase{
 		{
 			name:  "valid",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent"`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain"`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
-				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain",
 			},
 		},
 		{
 			name:  "valid multiple params",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent"; Param="value"`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain"; Param="value"`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
-				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain",
 			},
 		},
 		{
 			name:  "valid param not quoted",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type=temporal.api.common.v1.Link.WorkflowEvent`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type=text/plain`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
-				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain",
 			},
 		},
 		{
 			name:  "valid param missing value with equal sign",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type=;`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type=`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
 				Type: "",
 			},
 		},
 		{
 			name:  "valid no type param",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
 				Type: "",
 			},
 		},
 		{
 			name:  "valid trailing semi-colon",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent";`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain";`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
-				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "text/plain",
 			},
 		},
 		{
 			name:  "valid no type param trailing semi-colon",
-			input: `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>;`,
+			input: `<https://example.com/path/to/something?param1=value1&param2=value2>;`,
 			output: Link{
-				URL:  "temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2",
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
 				Type: "",
 			},
 		},
 		{
+			name:  "valid custom URL",
+			input: `<nexus:///path/to/something?param=value>; type="nexus.data_type"`,
+			output: Link{
+				URL:  "nexus:///path/to/something?param=value",
+				Type: "nexus.data_type",
+			},
+		},
+		{
+			name:   "invalid url",
+			input:  `<https://example.com/path/to/something%?param1=value1&param2=value2>`,
+			errMsg: "failed to parse link header value",
+		},
+		{
 			name:   "invalid url not enclosed",
-			input:  `temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid url missing closing bracket",
-			input:  `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2`,
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid url missing opening bracket",
-			input:  `temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2>`,
 			errMsg: "failed to parse link header value",
 		},
 		{
-			name:   "invalid param",
-			input:  `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent`,
+			name:   "invalid param missing quote",
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid multiple params missing semi-colon",
-			input:  `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type="temporal.api.common.v1.Link.WorkflowEvent" Param=value`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain" Param=value`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid missing semi-colon after url",
-			input:  `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2> Type="temporal.api.common.v1.Link.WorkflowEvent";`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2> type="text/plain"`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid param missing value",
-			input:  `<temporal:///namespaces/test-ns/workflows/test-wf-id/test-run-id/history?event_id=1&event_type=2>; Type;`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2>; type`,
 			errMsg: "failed to parse link header value",
 		},
 	}

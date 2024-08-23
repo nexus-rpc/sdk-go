@@ -130,7 +130,8 @@ type ClientStartOperationResult[T any] struct {
 	// Set when the handler indicates that it started an asynchronous operation.
 	// The attached handle can be used to perform actions such as cancel the operation or get its result.
 	Pending *OperationHandle[T]
-	// Links contains information about the operations started by the handler.
+	// Links contain arbitrary caller information. Handlers may use these links as
+	// metadata on resources associated with and operation.
 	Links []Link
 }
 
@@ -202,7 +203,7 @@ func (c *Client) StartOperation(
 	addContentHeaderToHTTPHeader(reader.Header, request.Header)
 	addCallbackHeaderToHTTPHeader(options.CallbackHeader, request.Header)
 	if err := addLinksToHTTPHeader(options.Links, request.Header); err != nil {
-		return nil, fmt.Errorf("failed to add links to header: %w", err)
+		return nil, fmt.Errorf("failed to serialize links into header: %w", err)
 	}
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	addNexusHeaderToHTTPHeader(options.Header, request.Header)

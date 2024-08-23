@@ -50,7 +50,7 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 	}
 
 	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
-		handler.logger.Error("failed to serialize links info", "error", err)
+		handler.logger.Error("failed to serialize links into header", "error", err)
 		// clear any previous links already written to the header
 		writer.Header().Del(headerLink)
 		writer.WriteHeader(http.StatusInternalServerError)
@@ -275,7 +275,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 func (h *httpHandler) startOperation(service, operation string, writer http.ResponseWriter, request *http.Request) {
 	links, err := getLinksFromHeader(request.Header)
 	if err != nil {
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid links header"))
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header", headerLink))
 		return
 	}
 	options := StartOperationOptions{

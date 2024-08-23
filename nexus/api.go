@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Package version.
@@ -148,7 +151,11 @@ func addCallbackHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) h
 
 func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 	for _, link := range links {
-		httpHeader.Add(headerLink, encodeLink(link))
+		encodedLink, err := encodeLink(link)
+		if err != nil {
+			return err
+		}
+		httpHeader.Add(headerLink, encodedLink)
 	}
 	return nil
 }
@@ -197,49 +204,78 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 	return httpHeader
 }
 
+// Link contains an URL and a Type that can be used to decode the URL.
+// Links can contain any arbitrary information as a percent-encoded URL.
+// It can be used to pass information about the caller to the handler, or vice-versa.
 type Link struct {
-	// URL encoded information about the link
-	// It cannot contain the following chars: ',', '';', '='.
+	// URL information about the link.
+	// It must be URL percent-encoded.
 	URL string
 	// Type can describe an actual data type for decoding the URL.
-	// It cannot contain the following chars: ',', ';', '='.
+	// Valid chars: alphanumeric, '_', '.', '/'
 	Type string
 }
 
-func encodeLink(link Link) string {
-	return fmt.Sprintf("<%s>; Type=%q", link.URL, link.Type)
+const linkTypeKey = "type"
+
+func encodeLink(link Link) (string, error) {
+	u, err := url.Parse(link.URL)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode link: url not valid: %s", link.URL)
+	}
+	for _, p := range strings.Split(u.EscapedPath(), "/") {
+		unescaped, err := url.PathUnescape(p)
+		if err != nil || p != url.PathEscape(unescaped) {
+			return "", fmt.Errorf("failed to encode link: path not percent-encoded: %s", link.URL)
+		}
+	}
+	_, err = url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode link: query not percent-encoded: %s", link.URL)
+	}
+
+	validSymbols := []rune("_./")
+	for _, c := range link.Type {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && !slices.Contains(validSymbols, c) {
+			return "", fmt.Errorf("failed to encode link: type contains invalid chars: %s", link.Type)
+		}
+	}
+
+	return fmt.Sprintf(`<%s>; %s="%s"`, link.URL, linkTypeKey, link.Type), nil
 }
 
 func decodeLink(encodedLink string) (Link, error) {
 	var link Link
 	parts := strings.Split(encodedLink, ";")
-	if len(parts) == 0 {
-		return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
-	}
 
-	url := strings.TrimSpace(parts[0])
-	if !strings.HasPrefix(url, "<") || !strings.HasSuffix(url, ">") {
-		return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+	u := strings.TrimSpace(parts[0])
+	if !strings.HasPrefix(u, "<") || !strings.HasSuffix(u, ">") {
+		return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
 	}
-	link.URL = url[1 : len(url)-1]
+	u = u[1 : len(u)-1]
+	if _, err := url.Parse(u); err != nil {
+		return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+	}
+	link.URL = u
 
 	for _, part := range parts[1:] {
+		part = strings.TrimSpace(part)
 		if len(part) == 0 {
 			continue
 		}
-		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
-			return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
 		}
 		key := strings.TrimSpace(kv[0])
 		val := strings.TrimSpace(kv[1])
 		if strings.HasPrefix(val, `"`) != strings.HasSuffix(val, `"`) {
-			return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
 		}
 		if strings.HasPrefix(val, `"`) {
 			val = val[1 : len(val)-1]
 		}
-		if key == "Type" {
+		if strings.ToLower(key) == linkTypeKey {
 			link.Type = val
 		}
 	}
