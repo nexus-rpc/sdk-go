@@ -256,12 +256,28 @@ func TestEncodeLink(t *testing.T) {
 			output: `<nexus:///path/to/something?param1=value>; type="nexus.data_type"`,
 		},
 		{
+			name: "invalid url empty",
+			input: Link{
+				URL:  "",
+				Type: "text/plain",
+			},
+			errMsg: "failed to encode link",
+		},
+		{
 			name: "invalid url",
 			input: Link{
 				URL:  "https://example.com/path/to/something%?param1=value1&param2=value2",
 				Type: "text/plain",
 			},
-			errMsg: "failed to encode link: url not valid",
+			errMsg: "failed to encode link",
+		},
+		{
+			name: "invalid type empty",
+			input: Link{
+				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
+				Type: "",
+			},
+			errMsg: "failed to encode link",
 		},
 		{
 			name: "invalid path not percent-encoded ;",
@@ -269,7 +285,7 @@ func TestEncodeLink(t *testing.T) {
 				URL:  "https://example.com/path/to/something%3B;?param1=value1&param2=value2",
 				Type: "text/plain",
 			},
-			errMsg: "failed to encode link: path not percent-encoded",
+			errMsg: "failed to encode link",
 		},
 		{
 			name: "invalid path not percent-encoded ,",
@@ -277,7 +293,7 @@ func TestEncodeLink(t *testing.T) {
 				URL:  "https://example.com/path/to/something,?param1=value1&param2=value2",
 				Type: "text/plain",
 			},
-			errMsg: "failed to encode link: path not percent-encoded",
+			errMsg: "failed to encode link",
 		},
 		{
 			name: "invalid query not percent-encoded",
@@ -285,7 +301,7 @@ func TestEncodeLink(t *testing.T) {
 				URL:  "https://example.com/path/to/something?param1=value1&param2=value2;",
 				Type: "text/plain",
 			},
-			errMsg: "failed to encode link: query not percent-encoded",
+			errMsg: "failed to encode link",
 		},
 		{
 			name: "invalid type invalid chars",
@@ -293,7 +309,7 @@ func TestEncodeLink(t *testing.T) {
 				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
 				Type: "text/plain;",
 			},
-			errMsg: "failed to encode link: type contains invalid chars",
+			errMsg: "failed to encode link",
 		},
 	}
 
@@ -344,38 +360,6 @@ func TestDecodeLink(t *testing.T) {
 			},
 		},
 		{
-			name:  "valid param missing value with equal sign",
-			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type=`,
-			output: Link{
-				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
-				Type: "",
-			},
-		},
-		{
-			name:  "valid no type param",
-			input: `<https://example.com/path/to/something?param1=value1&param2=value2>`,
-			output: Link{
-				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
-				Type: "",
-			},
-		},
-		{
-			name:  "valid trailing semi-colon",
-			input: `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain";`,
-			output: Link{
-				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
-				Type: "text/plain",
-			},
-		},
-		{
-			name:  "valid no type param trailing semi-colon",
-			input: `<https://example.com/path/to/something?param1=value1&param2=value2>;`,
-			output: Link{
-				URL:  "https://example.com/path/to/something?param1=value1&param2=value2",
-				Type: "",
-			},
-		},
-		{
 			name:  "valid custom URL",
 			input: `<nexus:///path/to/something?param=value>; type="nexus.data_type"`,
 			output: Link{
@@ -389,18 +373,33 @@ func TestDecodeLink(t *testing.T) {
 			errMsg: "failed to parse link header value",
 		},
 		{
+			name:   "invalid trailing semi-colon",
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain";`,
+			errMsg: "failed to parse link header value",
+		},
+		{
+			name:   "invalid empty param part",
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2>; ; type="text/plain`,
+			errMsg: "failed to parse link header value",
+		},
+		{
+			name:   "invalid no type param trailing semi-colon",
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2>;`,
+			errMsg: "failed to parse link header value",
+		},
+		{
 			name:   "invalid url not enclosed",
-			input:  `https://example.com/path/to/something?param1=value1&param2=value2`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2; type="text/plain"`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid url missing closing bracket",
-			input:  `<https://example.com/path/to/something?param1=value1&param2=value2`,
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2; type="text/plain"`,
 			errMsg: "failed to parse link header value",
 		},
 		{
 			name:   "invalid url missing opening bracket",
-			input:  `https://example.com/path/to/something?param1=value1&param2=value2>`,
+			input:  `https://example.com/path/to/something?param1=value1&param2=value2>; type="text/plain"`,
 			errMsg: "failed to parse link header value",
 		},
 		{
@@ -421,6 +420,21 @@ func TestDecodeLink(t *testing.T) {
 		{
 			name:   "invalid param missing value",
 			input:  `https://example.com/path/to/something?param1=value1&param2=value2>; type`,
+			errMsg: "failed to parse link header value",
+		},
+		{
+			name:   "invalid param missing value with equal sign",
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2>; type=`,
+			errMsg: "failed to parse link header value",
+		},
+		{
+			name:   "invalid missing type key",
+			input:  `<https://example.com/path/to/something?param1=value1&param2=value2>`,
+			errMsg: "failed to parse link header value",
+		},
+		{
+			name:   "invalid url empty",
+			input:  `<>; type="text/plain"`,
 			errMsg: "failed to parse link header value",
 		},
 	}

@@ -11,10 +11,8 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
-	"unicode"
 )
 
 // Package version.
@@ -219,28 +217,12 @@ type Link struct {
 const linkTypeKey = "type"
 
 func encodeLink(link Link) (string, error) {
-	u, err := url.Parse(link.URL)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode link: url not valid: %s", link.URL)
+	if err := validateLinkURL(link.URL); err != nil {
+		return "", fmt.Errorf("failed to encode link: %w", err)
 	}
-	for _, p := range strings.Split(u.EscapedPath(), "/") {
-		unescaped, err := url.PathUnescape(p)
-		if err != nil || p != url.PathEscape(unescaped) {
-			return "", fmt.Errorf("failed to encode link: path not percent-encoded: %s", link.URL)
-		}
+	if err := validateLinkType(link.Type); err != nil {
+		return "", fmt.Errorf("failed to encode link: %w", err)
 	}
-	_, err = url.ParseQuery(u.RawQuery)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode link: query not percent-encoded: %s", link.URL)
-	}
-
-	validSymbols := []rune("_./")
-	for _, c := range link.Type {
-		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && !slices.Contains(validSymbols, c) {
-			return "", fmt.Errorf("failed to encode link: type contains invalid chars: %s", link.Type)
-		}
-	}
-
 	return fmt.Sprintf(`<%s>; %s="%s"`, link.URL, linkTypeKey, link.Type), nil
 }
 
@@ -253,32 +235,73 @@ func decodeLink(encodedLink string) (Link, error) {
 		return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
 	}
 	u = u[1 : len(u)-1]
-	if _, err := url.Parse(u); err != nil {
-		return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+	if err := validateLinkURL(u); err != nil {
+		return link, fmt.Errorf("failed to parse link header value: %w", err)
 	}
 	link.URL = u
 
+	typeKeyFound := false
 	for _, part := range parts[1:] {
 		part = strings.TrimSpace(part)
 		if len(part) == 0 {
-			continue
+			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
 		}
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
-			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+			return link, fmt.Errorf("failed to parse link header value: invalid parameter format: %s", part)
 		}
 		key := strings.TrimSpace(kv[0])
 		val := strings.TrimSpace(kv[1])
 		if strings.HasPrefix(val, `"`) != strings.HasSuffix(val, `"`) {
-			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+			return link, fmt.Errorf("failed to parse link header value: parameter value missing double-quote: %s", part)
 		}
 		if strings.HasPrefix(val, `"`) {
 			val = val[1 : len(val)-1]
 		}
-		if strings.ToLower(key) == linkTypeKey {
+		if key == linkTypeKey {
+			if err := validateLinkType(val); err != nil {
+				return link, fmt.Errorf("failed to parse link header value: %w", err)
+			}
 			link.Type = val
+			typeKeyFound = true
 		}
+	}
+	if !typeKeyFound {
+		return link, fmt.Errorf("failed to parse link header value: %q key not found: %s", linkTypeKey, encodedLink)
 	}
 
 	return link, nil
+}
+
+func validateLinkURL(value string) error {
+	if len(value) == 0 {
+		return fmt.Errorf("url is empty")
+	}
+	u, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("url %s not valid: %w", value, err)
+	}
+	for _, p := range strings.Split(u.EscapedPath(), "/") {
+		unescaped, err := url.PathUnescape(p)
+		if err != nil || p != url.PathEscape(unescaped) {
+			return fmt.Errorf("url path not percent-encoded: %s", value)
+		}
+	}
+	_, err = url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return fmt.Errorf("url query not percent-encoded: %s", value)
+	}
+	return nil
+}
+
+func validateLinkType(value string) error {
+	if len(value) == 0 {
+		return fmt.Errorf("link type is empty")
+	}
+	for _, c := range value {
+		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_' && c != '.' && c != '/' {
+			return fmt.Errorf("link type contains invalid char (valid chars: alphanumeric, '_', '.', '/')")
+		}
+	}
+	return nil
 }
