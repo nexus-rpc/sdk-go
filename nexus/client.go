@@ -130,7 +130,7 @@ type ClientStartOperationResult[T any] struct {
 	// Set when the handler indicates that it started an asynchronous operation.
 	// The attached handle can be used to perform actions such as cancel the operation or get its result.
 	Pending *OperationHandle[T]
-	// Links contain information about the caller event that made the Nexus call.
+	// Links contain information about the operations done by the handler.
 	Links []Link
 }
 

@@ -160,7 +160,11 @@ func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 
 func getLinksFromHeader(httpHeader http.Header) ([]Link, error) {
 	var links []Link
-	for _, encodedLink := range strings.Split(strings.Join(httpHeader.Values(headerLink), ","), ",") {
+	headerValues := httpHeader.Values(headerLink)
+	if len(headerValues) == 0 {
+		return nil, nil
+	}
+	for _, encodedLink := range strings.Split(strings.Join(headerValues, ","), ",") {
 		link, err := decodeLink(encodedLink)
 		if err != nil {
 			return nil, err
