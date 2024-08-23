@@ -34,6 +34,7 @@ func (r *HandlerStartOperationResultSync[T]) applyToHTTPResponse(writer http.Res
 // HandlerStartOperationResultAsync indicates that an operation has been accepted and will complete asynchronously.
 type HandlerStartOperationResultAsync struct {
 	OperationID string
+	Links       []Link
 }
 
 func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
@@ -44,6 +45,14 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 	bytes, err := json.Marshal(info)
 	if err != nil {
 		handler.logger.Error("failed to serialize operation info", "error", err)
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
+		handler.logger.Error("failed to serialize links into header", "error", err)
+		// clear any previous links already written to the header
+		writer.Header().Del(headerLink)
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -264,11 +273,17 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 }
 
 func (h *httpHandler) startOperation(service, operation string, writer http.ResponseWriter, request *http.Request) {
+	links, err := getLinksFromHeader(request.Header)
+	if err != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header", headerLink))
+		return
+	}
 	options := StartOperationOptions{
 		RequestID:      request.Header.Get(headerRequestID),
 		CallbackURL:    request.URL.Query().Get(queryCallbackURL),
 		CallbackHeader: prefixStrippedHTTPHeaderToNexusHeader(request.Header, "nexus-callback-"),
 		Header:         httpHeaderToNexusHeader(request.Header, "content-", "nexus-callback-"),
+		Links:          links,
 	}
 	value := &LazyValue{
 		serializer: h.options.Serializer,

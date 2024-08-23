@@ -328,7 +328,10 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 		return &ClientStartOperationResult[O]{Successful: o}, nil
 	}
 	handle := OperationHandle[O]{client: client, Operation: operation.Name(), ID: result.Pending.ID}
-	return &ClientStartOperationResult[O]{Pending: &handle}, nil
+	return &ClientStartOperationResult[O]{
+		Pending: &handle,
+		Links:   result.Links,
+	}, nil
 }
 
 // NewHandle is the type safe version of [Client.NewHandle].
