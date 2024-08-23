@@ -52,7 +52,7 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
 		handler.logger.Error("failed to serialize links info", "error", err)
 		// clear any previous links already written to the header
-		writer.Header().Del(headerLinks)
+		writer.Header().Del(headerLink)
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}

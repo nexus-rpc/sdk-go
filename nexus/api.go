@@ -4,15 +4,12 @@
 package nexus
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -25,7 +22,7 @@ const (
 	headerOperationState = "Nexus-Operation-State"
 	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
-	headerLinks          = "Nexus-Link"
+	headerLink           = "Nexus-Link"
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
 	HeaderRequestTimeout = "Request-Timeout"
@@ -151,14 +148,14 @@ func addCallbackHeaderToHTTPHeader(nexusHeader Header, httpHeader http.Header) h
 
 func addLinksToHTTPHeader(links []Link, httpHeader http.Header) error {
 	for _, link := range links {
-		httpHeader.Add(headerLinks, encodeLink(link))
+		httpHeader.Add(headerLink, encodeLink(link))
 	}
 	return nil
 }
 
 func getLinksFromHeader(httpHeader http.Header) ([]Link, error) {
 	var links []Link
-	for _, encodedLink := range httpHeader.Values(headerLinks) {
+	for _, encodedLink := range strings.Split(strings.Join(httpHeader.Values(headerLink), ","), ",") {
 		link, err := decodeLink(encodedLink)
 		if err != nil {
 			return nil, err
@@ -201,10 +198,12 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 }
 
 type Link struct {
-	// URL encoded information about the link.
-	URL string `json:"url"`
+	// URL encoded information about the link
+	// It cannot contain the following chars: ',', '';', '='.
+	URL string
 	// Type can describe an actual data type for decoding the URL.
-	Type string `json:"type"`
+	// It cannot contain the following chars: ',', ';', '='.
+	Type string
 }
 
 func encodeLink(link Link) string {
@@ -212,52 +211,38 @@ func encodeLink(link Link) string {
 }
 
 func decodeLink(encodedLink string) (Link, error) {
-	consumeUntilAndDiscard := func(buf []byte, c byte) (bool, []byte, []byte) {
-		idx := bytes.IndexByte(buf, c)
-		if idx == -1 {
-			return false, buf, nil
-		}
-		return true, bytes.TrimSpace(buf[:idx]), bytes.TrimSpace(buf[idx+1:])
-	}
-
 	var link Link
-	buf := []byte(encodedLink)
-
-	var found bool
-	var part []byte
-	_, part, buf = consumeUntilAndDiscard(buf, ';')
-	if !bytes.HasPrefix(part, []byte{'<'}) || !bytes.HasSuffix(part, []byte{'>'}) {
+	parts := strings.Split(encodedLink, ";")
+	if len(parts) == 0 {
 		return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
 	}
-	link.URL = string(part[1 : len(part)-1])
 
-	for len(buf) > 0 {
-		var key string
-		var val string
-		found, part, buf = consumeUntilAndDiscard(buf, '=')
-		key = string(part)
-		if !found || len(buf) == 0 {
-			// key without value
-			break
+	url := strings.TrimSpace(parts[0])
+	if !strings.HasPrefix(url, "<") || !strings.HasSuffix(url, ">") {
+		return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+	}
+	link.URL = url[1 : len(url)-1]
+
+	for _, part := range parts[1:] {
+		if len(part) == 0 {
+			continue
 		}
-		if buf[0] == '"' {
-			found, part, buf = consumeUntilAndDiscard(buf, '"')
-			if !found {
-				return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
-			}
-			val = string(part[1:])
-			// next char must a semi-colon
-			if buf[0] != ';' {
-				return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
-			}
-			buf = bytes.TrimSpace(buf[1:])
-		} else {
-			_, part, buf = consumeUntilAndDiscard(buf, ';')
-			val = string(part)
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+		}
+		key := strings.TrimSpace(kv[0])
+		val := strings.TrimSpace(kv[1])
+		if strings.HasPrefix(val, `"`) != strings.HasSuffix(val, `"`) {
+			return link, fmt.Errorf("failed to parse link header value: %q", encodedLink)
+		}
+		if strings.HasPrefix(val, `"`) {
+			val = val[1 : len(val)-1]
 		}
 		if key == "Type" {
 			link.Type = val
 		}
 	}
+
 	return link, nil
 }

@@ -244,7 +244,7 @@ func (c *Client) StartOperation(
 			return nil, fmt.Errorf(
 				"%w: %w",
 				newUnexpectedResponseError(
-					fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLinks)),
+					fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLink)),
 					response,
 					body,
 				),
