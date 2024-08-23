@@ -232,7 +232,10 @@ func decodeLink(encodedLink string) (Link, error) {
 
 	u := strings.TrimSpace(parts[0])
 	if !strings.HasPrefix(u, "<") || !strings.HasSuffix(u, ">") {
-		return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+		return link, fmt.Errorf(
+			"failed to parse link header value: expected url to be enclosed between < and >: %s",
+			encodedLink,
+		)
 	}
 	u = u[1 : len(u)-1]
 	if err := validateLinkURL(u); err != nil {
@@ -244,16 +247,25 @@ func decodeLink(encodedLink string) (Link, error) {
 	for _, part := range parts[1:] {
 		part = strings.TrimSpace(part)
 		if len(part) == 0 {
-			return link, fmt.Errorf("failed to parse link header value: %s", encodedLink)
+			return link, fmt.Errorf(
+				"failed to parse link header value: parameter is empty: %s",
+				encodedLink,
+			)
 		}
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
-			return link, fmt.Errorf("failed to parse link header value: invalid parameter format: %s", part)
+			return link, fmt.Errorf(
+				"failed to parse link header value: invalid parameter format: %s",
+				part,
+			)
 		}
 		key := strings.TrimSpace(kv[0])
 		val := strings.TrimSpace(kv[1])
 		if strings.HasPrefix(val, `"`) != strings.HasSuffix(val, `"`) {
-			return link, fmt.Errorf("failed to parse link header value: parameter value missing double-quote: %s", part)
+			return link, fmt.Errorf(
+				"failed to parse link header value: parameter value missing double-quote: %s",
+				part,
+			)
 		}
 		if strings.HasPrefix(val, `"`) {
 			val = val[1 : len(val)-1]
@@ -267,7 +279,11 @@ func decodeLink(encodedLink string) (Link, error) {
 		}
 	}
 	if !typeKeyFound {
-		return link, fmt.Errorf("failed to parse link header value: %q key not found: %s", linkTypeKey, encodedLink)
+		return link, fmt.Errorf(
+			"failed to parse link header value: %q key not found: %s",
+			linkTypeKey,
+			encodedLink,
+		)
 	}
 
 	return link, nil

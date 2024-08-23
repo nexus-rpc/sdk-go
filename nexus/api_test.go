@@ -93,7 +93,7 @@ func TestAddLinksToHeader(t *testing.T) {
 			}},
 			output: http.Header{
 				headerLink: []string{
-					`<https://example.com/path?param=value>; Type="url"`,
+					`<https://example.com/path?param=value>; type="url"`,
 				},
 			},
 		},
@@ -111,8 +111,8 @@ func TestAddLinksToHeader(t *testing.T) {
 			},
 			output: http.Header{
 				headerLink: []string{
-					`<https://example.com/path?param=value>; Type="url"`,
-					`<https://foo.com/path?bar=value>; Type="url"`,
+					`<https://example.com/path?param=value>; type="url"`,
+					`<https://foo.com/path?bar=value>; type="url"`,
 				},
 			},
 		},
@@ -153,7 +153,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 			name: "single link",
 			input: http.Header{
 				headerLink: []string{
-					`<https://example.com/path?param=value>; Type="url"`,
+					`<https://example.com/path?param=value>; type="url"`,
 				},
 			},
 			output: []Link{{
@@ -165,8 +165,8 @@ func TestGetLinksFromHeader(t *testing.T) {
 			name: "multiple links",
 			input: http.Header{
 				headerLink: []string{
-					`<https://example.com/path?param=value>; Type="url"`,
-					`<https://foo.com/path?bar=value>; Type="url"`,
+					`<https://example.com/path?param=value>; type="url"`,
+					`<https://foo.com/path?bar=value>; type="url"`,
 				},
 			},
 			output: []Link{
@@ -184,7 +184,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 			name: "multiple links single header",
 			input: http.Header{
 				headerLink: []string{
-					`<https://example.com/path?param=value>; Type="url", <https://foo.com/path?bar=value>; Type="url"`,
+					`<https://example.com/path?param=value>; type="url", <https://foo.com/path?bar=value>; type="url"`,
 				},
 			},
 			output: []Link{
