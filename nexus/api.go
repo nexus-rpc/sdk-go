@@ -263,6 +263,9 @@ func decodeLink(encodedLink string) (Link, error) {
 	if len(params) < 2 {
 		return link, fmt.Errorf("failed to parse link header: invalid format: %s", encodedLink)
 	}
+	if strings.TrimSpace(params[0]) != "" {
+		return link, fmt.Errorf("failed to parse link header: invalid format: %s", encodedLink)
+	}
 
 	typeKeyFound := false
 	for _, param := range params[1:] {
@@ -305,7 +308,7 @@ func decodeLink(encodedLink string) (Link, error) {
 }
 
 func validateLinkURL(value *url.URL) error {
-	if value.String() == "" {
+	if value == nil || value.String() == "" {
 		return fmt.Errorf("url is empty")
 	}
 	_, err := url.ParseQuery(value.RawQuery)
