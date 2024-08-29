@@ -275,7 +275,7 @@ func (c *Client) StartOperation(
 			Failure: failure,
 		}
 	default:
-		return nil, tryHandlerErrorFromResponse(response, body)
+		return nil, bestEffortHandlerErrorFromResponse(response, body)
 	}
 }
 
@@ -408,7 +408,7 @@ func failureFromResponseOrDefault(response *http.Response, body []byte, defaultM
 	return failure
 }
 
-func tryHandlerErrorFromResponse(response *http.Response, body []byte) error {
+func bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
 	switch response.StatusCode {
 	case http.StatusBadRequest:
 		failure := failureFromResponseOrDefault(response, body, "bad request")
