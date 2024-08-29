@@ -43,7 +43,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 	}
 
 	if response.StatusCode != http.StatusOK {
-		return nil, newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+		return nil, bestEffortHandlerErrorFromResponse(response, body)
 	}
 
 	return operationInfoFromResponse(response, body)
@@ -155,7 +155,7 @@ func (h *OperationHandle[T]) sendGetOperationRequest(ctx context.Context, reques
 			Failure: failure,
 		}
 	default:
-		return nil, newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+		return nil, bestEffortHandlerErrorFromResponse(response, body)
 	}
 }
 
@@ -183,7 +183,7 @@ func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperation
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+		return bestEffortHandlerErrorFromResponse(response, body)
 	}
 	return nil
 }

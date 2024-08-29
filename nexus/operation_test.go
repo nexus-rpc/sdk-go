@@ -161,8 +161,10 @@ func TestCancelOperation(t *testing.T) {
 	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{}))
-	var unexpectedError *UnexpectedResponseError
-	require.ErrorAs(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &unexpectedError)
+	var handlerError *HandlerError
+	require.ErrorAs(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &handlerError)
+	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
+	require.Equal(t, "internal server error", handlerError.Failure.Message)
 }
 
 func TestGetOperationInfo(t *testing.T) {
@@ -185,6 +187,70 @@ func TestGetOperationInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, &OperationInfo{ID: "foo", State: OperationStateRunning}, info)
 	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
-	var unexpectedError *UnexpectedResponseError
-	require.ErrorAs(t, err, &unexpectedError)
+	var handlerError *HandlerError
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
+	require.Equal(t, "internal server error", handlerError.Failure.Message)
+}
+
+type authRejectionHandler struct {
+	UnimplementedOperation[NoValue, NoValue]
+}
+
+func (h *authRejectionHandler) Name() string {
+	return "async-number-validator"
+}
+
+func (h *authRejectionHandler) Start(ctx context.Context, input NoValue, options StartOperationOptions) (HandlerStartOperationResult[NoValue], error) {
+	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+}
+
+func (h *authRejectionHandler) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (NoValue, error) {
+	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+}
+
+func (h *authRejectionHandler) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
+	return HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+}
+
+func (h *authRejectionHandler) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+}
+
+func TestHandlerError(t *testing.T) {
+	var handlerError *HandlerError
+
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(&authRejectionHandler{}))
+	require.NoError(t, registry.Register(svc))
+
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	ctx, client, teardown := setup(t, handler)
+	defer teardown()
+
+	_, err = StartOperation(ctx, client, &authRejectionHandler{}, nil, StartOperationOptions{})
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
+	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+
+	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
+	require.NoError(t, err)
+
+	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
+	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+
+	err = handle.Cancel(ctx, CancelOperationOptions{})
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
+	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
+	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
 }

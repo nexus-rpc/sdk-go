@@ -62,7 +62,11 @@ if err != nil {
 	if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
 		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
 	}
-	// handle arbitrary errors here
+	var handlerError *nexus.HandlerError
+	if errors.As(err, &handlerError) {
+		fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Failure.Message)
+	}
+	// most other errors should be returned as *nexus.UnexpectedResponseError
 }
 if result.Successful != nil { // operation successful
 	output := result.Successful // output is of type MyOutput

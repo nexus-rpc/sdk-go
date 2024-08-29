@@ -22,7 +22,11 @@ func ExampleClient_StartOperation() {
 		if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
 			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
 		}
-		// handle error here
+		var handlerError *nexus.HandlerError
+		if errors.As(err, &handlerError) {
+			fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Failure.Message)
+		}
+		// most other errors should be returned as *nexus.UnexpectedResponseError
 	}
 	if result.Successful != nil { // operation successful
 		response := result.Successful

@@ -124,8 +124,8 @@ const (
 	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
 	// The service is currently unavailable.
 	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
-	// Used by gateways to report that a request to a downstream server has timed out.
-	HandlerErrorTypeDownstreamTimeout HandlerErrorType = "DOWNSTREAM_TIMEOUT"
+	// Used by gateways to report that a request to an upstream server has timed out.
+	HandlerErrorTypeUpstreamTimeout HandlerErrorType = "UPSTREAM_TIMEOUT"
 )
 
 // HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
@@ -242,8 +242,8 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 			statusCode = http.StatusNotImplemented
 		case HandlerErrorTypeUnavailable:
 			statusCode = http.StatusServiceUnavailable
-		case HandlerErrorTypeDownstreamTimeout:
-			statusCode = StatusDownstreamTimeout
+		case HandlerErrorTypeUpstreamTimeout:
+			statusCode = StatusUpstreamTimeout
 		default:
 			h.logger.Error("unexpected handler error type", "type", handlerError.Type)
 		}
