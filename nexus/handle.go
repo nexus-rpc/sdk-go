@@ -3,7 +3,6 @@ package nexus
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -87,7 +86,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 			}
 
 			q := request.URL.Query()
-			q.Set(queryWait, fmt.Sprintf("%dms", wait.Milliseconds()))
+			q.Set(queryWait, formatDuration(wait))
 			request.URL.RawQuery = q.Encode()
 		} else {
 			// We may reuse the request object multiple times and will need to reset the query when wait becomes 0 or

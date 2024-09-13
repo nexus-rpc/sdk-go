@@ -319,7 +319,7 @@ func (h *httpHandler) getOperationResult(service, operation, operationID string,
 	}
 	waitStr := request.URL.Query().Get(queryWait)
 	if waitStr != "" {
-		waitDuration, err := time.ParseDuration(waitStr)
+		waitDuration, err := parseDuration(waitStr)
 		if err != nil {
 			h.logger.Warn("invalid wait duration query parameter", "wait", waitStr)
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid wait query parameter"))
@@ -401,7 +401,7 @@ func (h *httpHandler) cancelOperation(service, operation, operationID string, wr
 func (h *httpHandler) parseRequestTimeoutHeader(writer http.ResponseWriter, request *http.Request) (time.Duration, bool) {
 	timeoutStr := request.Header.Get(HeaderRequestTimeout)
 	if timeoutStr != "" {
-		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		timeoutDuration, err := parseDuration(timeoutStr)
 		if err != nil {
 			h.logger.Warn("invalid request timeout header", "timeout", timeoutStr)
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request timeout header"))

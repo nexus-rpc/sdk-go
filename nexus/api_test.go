@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -507,4 +508,24 @@ func TestDecodeLink(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseDuration(t *testing.T) {
+	_, err := parseDuration("invalid")
+	require.ErrorContains(t, err, "invalid duration:")
+	d, err := parseDuration("10ms")
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Millisecond, d)
+	d, err = parseDuration("10.1ms")
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Millisecond, d)
+	d, err = parseDuration("1s")
+	require.NoError(t, err)
+	require.Equal(t, 1*time.Second, d)
+	d, err = parseDuration("999m")
+	require.NoError(t, err)
+	require.Equal(t, 999*time.Minute, d)
+	d, err = parseDuration("1.3s")
+	require.NoError(t, err)
+	require.Equal(t, 1300*time.Millisecond, d)
 }

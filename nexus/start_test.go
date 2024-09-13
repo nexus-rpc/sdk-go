@@ -267,7 +267,7 @@ func (h *timeoutEchoHandler) StartOperation(ctx context.Context, service, operat
 		}, nil
 	}
 	return &HandlerStartOperationResultSync[any]{
-		Value: []byte(time.Until(deadline).String()),
+		Value: []byte(formatDuration(time.Until(deadline))),
 	}, nil
 }
 
@@ -289,7 +289,7 @@ func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	defer teardown()
 
 	timeout := 100 * time.Millisecond
-	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{HeaderRequestTimeout: timeout.String()}})
+	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 
 	require.NoError(t, err)
 	requireTimeoutPropagated(t, result, timeout)
@@ -301,7 +301,7 @@ func requireTimeoutPropagated(t *testing.T, result *ClientStartOperationResult[*
 	var responseBody []byte
 	err := response.Consume(&responseBody)
 	require.NoError(t, err)
-	parsedTimeout, err := time.ParseDuration(string(responseBody))
+	parsedTimeout, err := parseDuration(string(responseBody))
 	require.NoError(t, err)
 	require.NotZero(t, parsedTimeout)
 	require.LessOrEqual(t, parsedTimeout, expected)
