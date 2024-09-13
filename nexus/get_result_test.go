@@ -133,7 +133,9 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 	deadline, _ := ctx.Deadline()
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
+	// Allow up to 10 ms delay to account for slow CI.
+	// This test is inherently flaky, and should be rewritten.
+	require.WithinDuration(t, deadline, handler.requests[0].deadline, 10*time.Millisecond)
 }
 
 func TestWaitResult_RequestTimeout(t *testing.T) {

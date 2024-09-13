@@ -41,7 +41,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccesfulOptions{})
+	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{})
 	completion.Header.Add("foo", "bar")
 	require.NoError(t, err)
 
@@ -60,7 +60,7 @@ func TestSuccessfulCompletion_CustomSerializr(t *testing.T) {
 	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer)
 	defer teardown()
 
-	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccesfulOptions{
+	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		Serializer: serializer,
 	})
 	completion.Header.Add("foo", "bar")
