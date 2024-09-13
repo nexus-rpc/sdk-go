@@ -150,7 +150,7 @@ func TestWaitResult_RequestTimeout(t *testing.T) {
 
 	timeout := 200 * time.Millisecond
 	deadline := time.Now().Add(200 * time.Millisecond)
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: timeout.String()}})
+	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
 }

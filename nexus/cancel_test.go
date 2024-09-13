@@ -106,7 +106,7 @@ func TestCancel_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	err = handle.Cancel(ctx, CancelOperationOptions{Header: Header{HeaderRequestTimeout: timeout.String()}})
+	err = handle.Cancel(ctx, CancelOperationOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.NoError(t, err)
 }
 

@@ -11,6 +11,8 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -202,7 +204,7 @@ func addContextTimeoutToHTTPHeader(ctx context.Context, httpHeader http.Header) 
 	if !ok {
 		return httpHeader
 	}
-	httpHeader.Set(HeaderRequestTimeout, time.Until(deadline).String())
+	httpHeader.Set(HeaderRequestTimeout, formatDuration(time.Until(deadline)))
 	return httpHeader
 }
 
@@ -332,4 +334,33 @@ func validateLinkType(value string) error {
 		}
 	}
 	return nil
+}
+
+var durationRegexp = regexp.MustCompile("^(\\d+)(ms|s|m|h)$")
+
+func parseDuration(value string) (time.Duration, error) {
+	m := durationRegexp.FindStringSubmatch(value)
+	if len(m) == 0 {
+		return 0, fmt.Errorf("invalid duration: %q", value)
+	}
+	v, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	switch m[2] {
+	case "ms":
+		return time.Millisecond * time.Duration(v), nil
+	case "s":
+		return time.Second * time.Duration(v), nil
+	case "m":
+		return time.Minute * time.Duration(v), nil
+	case "h":
+		return time.Hour * time.Duration(v), nil
+	}
+	panic("unreachable")
+}
+
+func formatDuration(d time.Duration) string {
+	return strconv.FormatInt(d.Milliseconds(), 10) + "ms"
 }
