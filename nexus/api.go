@@ -336,7 +336,7 @@ func validateLinkType(value string) error {
 	return nil
 }
 
-var durationRegexp = regexp.MustCompile("^(\\d+(?:\\.\\d+)?)(ms|s|m)$")
+var durationRegexp = regexp.MustCompile(`^(\d+(?:\.\d+)?)(ms|s|m)$`)
 
 func parseDuration(value string) (time.Duration, error) {
 	m := durationRegexp.FindStringSubmatch(value)
