@@ -522,7 +522,7 @@ func TestParseDuration(t *testing.T) {
 	d, err = parseDuration("999m")
 	require.NoError(t, err)
 	require.Equal(t, 999*time.Minute, d)
-	d, err = parseDuration("6h")
+	d, err = parseDuration("1.3s")
 	require.NoError(t, err)
-	require.Equal(t, 6*time.Hour, d)
+	require.Equal(t, 1300*time.Millisecond, d)
 }

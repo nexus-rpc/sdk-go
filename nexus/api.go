@@ -336,14 +336,14 @@ func validateLinkType(value string) error {
 	return nil
 }
 
-var durationRegexp = regexp.MustCompile("^(\\d+)(ms|s|m|h)$")
+var durationRegexp = regexp.MustCompile("^(\\d+(?:\\.\\d+)?)(ms|s|m)$")
 
 func parseDuration(value string) (time.Duration, error) {
 	m := durationRegexp.FindStringSubmatch(value)
 	if len(m) == 0 {
 		return 0, fmt.Errorf("invalid duration: %q", value)
 	}
-	v, err := strconv.ParseInt(m[1], 10, 64)
+	v, err := strconv.ParseFloat(m[1], 64)
 	if err != nil {
 		return 0, err
 	}
@@ -352,15 +352,14 @@ func parseDuration(value string) (time.Duration, error) {
 	case "ms":
 		return time.Millisecond * time.Duration(v), nil
 	case "s":
-		return time.Second * time.Duration(v), nil
+		return time.Millisecond * time.Duration(v*1e3), nil
 	case "m":
-		return time.Minute * time.Duration(v), nil
-	case "h":
-		return time.Hour * time.Duration(v), nil
+		return time.Millisecond * time.Duration(v*1e3*60), nil
 	}
 	panic("unreachable")
 }
 
+// formatDuration converts a duration into a string representation in millisecond resolution.
 func formatDuration(d time.Duration) string {
 	return strconv.FormatInt(d.Milliseconds(), 10) + "ms"
 }
