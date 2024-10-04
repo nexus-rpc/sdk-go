@@ -41,11 +41,14 @@ func (*UnimplementedOperation[I, O]) inferType(I, O) {} //nolint:unused
 
 func (*UnimplementedOperation[I, O]) mustEmbedUnimplementedOperation() {}
 
-func (*UnimplementedOperation[I, O]) IsInputAssignable(i any) bool {
+func (*UnimplementedOperation[I, O]) InputType() reflect.Type {
 	var zero [0]I
-	tt := reflect.TypeOf(zero).Elem()
-	it := reflect.TypeOf(i)
-	return it.AssignableTo(tt)
+	return reflect.TypeOf(zero).Elem()
+}
+
+func (*UnimplementedOperation[I, O]) OutputType() reflect.Type {
+	var zero [0]O
+	return reflect.TypeOf(zero).Elem()
 }
 
 // Cancel implements Operation.

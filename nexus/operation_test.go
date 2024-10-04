@@ -3,6 +3,7 @@ package nexus
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -255,7 +256,10 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
 }
 
-func TestIsInputAssignable(t *testing.T) {
-	require.True(t, numberValidatorOperation.IsInputAssignable(3))
-	require.False(t, numberValidatorOperation.IsInputAssignable("s"))
+func TestInputOutputType(t *testing.T) {
+	require.True(t, reflect.TypeOf(3).AssignableTo(numberValidatorOperation.InputType()))
+	require.False(t, reflect.TypeOf("s").AssignableTo(numberValidatorOperation.InputType()))
+
+	require.True(t, reflect.TypeOf(3).AssignableTo(numberValidatorOperation.OutputType()))
+	require.False(t, reflect.TypeOf("s").AssignableTo(numberValidatorOperation.OutputType()))
 }
