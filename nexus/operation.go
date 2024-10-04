@@ -20,6 +20,8 @@ type NoValue *struct{}
 // available.
 type OperationReference[I, O any] interface {
 	Name() string
+	// IsInputCompatible returns a boolean indicating whether the given input is assignable to the generic I type.
+	IsInputAssignable(any) bool
 	// A type inference helper for implementations of this interface.
 	inferType(I, O)
 }
@@ -34,6 +36,13 @@ func NewOperationReference[I, O any](name string) OperationReference[I, O] {
 
 func (r operationReference[I, O]) Name() string {
 	return string(r)
+}
+
+func (r operationReference[I, O]) IsInputAssignable(i any) bool {
+	var zero [0]I
+	tt := reflect.TypeOf(zero).Elem()
+	it := reflect.TypeOf(i)
+	return it.AssignableTo(tt)
 }
 
 func (operationReference[I, O]) inferType(I, O) {} //nolint:unused

@@ -254,3 +254,8 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
 }
+
+func TestIsInputAssignable(t *testing.T) {
+	require.True(t, numberValidatorOperation.IsInputAssignable(3))
+	require.False(t, numberValidatorOperation.IsInputAssignable("s"))
+}

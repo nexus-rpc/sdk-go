@@ -2,6 +2,7 @@ package nexus
 
 import (
 	"context"
+	"reflect"
 )
 
 // UnimplementedHandler must be embedded into any [Handler] implementation for future compatibility.
@@ -39,6 +40,13 @@ type UnimplementedOperation[I, O any] struct{}
 func (*UnimplementedOperation[I, O]) inferType(I, O) {} //nolint:unused
 
 func (*UnimplementedOperation[I, O]) mustEmbedUnimplementedOperation() {}
+
+func (*UnimplementedOperation[I, O]) IsInputAssignable(i any) bool {
+	var zero [0]I
+	tt := reflect.TypeOf(zero).Elem()
+	it := reflect.TypeOf(i)
+	return it.AssignableTo(tt)
+}
 
 // Cancel implements Operation.
 func (*UnimplementedOperation[I, O]) Cancel(context.Context, string, CancelOperationOptions) error {
