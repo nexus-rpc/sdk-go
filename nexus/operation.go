@@ -166,6 +166,12 @@ func (s *Service) Register(operations ...RegisterableOperation) error {
 	return nil
 }
 
+// GetOperation returns the operation by its name. The bool value indicates if the operation was found.
+func (s *Service) GetOperation(name string) (RegisterableOperation, bool) {
+	h, ok := s.operations[name]
+	return h, ok
+}
+
 // A ServiceRegistry registers services and constructs a [Handler] that dispatches operations requests to those services.
 type ServiceRegistry struct {
 	services map[string]*Service
