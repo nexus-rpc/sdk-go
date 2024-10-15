@@ -29,6 +29,9 @@ const (
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
 	HeaderRequestTimeout = "Request-Timeout"
+	// HeaderOperationTimeout is the total time to complete a Nexus operation.
+	// Unlike HeaderRequestTimeout, this applies to the whole operation, not just a single HTTP request.
+	HeaderOperationTimeout = "Operation-Timeout"
 )
 
 const contentTypeJSON = "application/json"
