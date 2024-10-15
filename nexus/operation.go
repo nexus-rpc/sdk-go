@@ -166,6 +166,11 @@ func (s *Service) Register(operations ...RegisterableOperation) error {
 	return nil
 }
 
+// Operation returns an operation by name or nil if not found.
+func (s *Service) Operation(name string) RegisterableOperation {
+	return s.operations[name]
+}
+
 // A ServiceRegistry registers services and constructs a [Handler] that dispatches operations requests to those services.
 type ServiceRegistry struct {
 	services map[string]*Service
