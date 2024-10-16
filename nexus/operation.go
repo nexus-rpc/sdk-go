@@ -133,7 +133,7 @@ func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartO
 type Service struct {
 	Name string
 
-	// Lock to protect operations map in case new services are added while workflows are running.
+	// Lock to protect the operations map in case new operations are added while workflows are running.
 	lock       sync.RWMutex
 	operations map[string]RegisterableOperation
 }
@@ -167,7 +167,7 @@ func (s *Service) Register(operations ...RegisterableOperation) error {
 	return nil
 }
 
-// addOperation adds the operation if not found. Returns boolean indicating if the operation was added.
+// addOperation adds the operation if not found. Returns a boolean indicating if the operation was added.
 func (s *Service) addOperation(op RegisterableOperation) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -185,8 +185,8 @@ func (s *Service) Operation(name string) RegisterableOperation {
 	return s.operations[name]
 }
 
-// NumOperations returns the number of operations registered.
-func (s *Service) NumOperations() int {
+// numOperations returns the number of operations registered.
+func (s *Service) numOperations() int {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return len(s.operations)
@@ -230,7 +230,7 @@ func (r *ServiceRegistry) NewHandler() (Handler, error) {
 		return nil, errors.New("must register at least one service")
 	}
 	for _, service := range r.services {
-		if service.NumOperations() == 0 {
+		if service.numOperations() == 0 {
 			return nil, fmt.Errorf("service %q has no operations registered", service.Name)
 		}
 	}
