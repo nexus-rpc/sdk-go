@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 	})
 	completion.Header.Add("foo", "bar")
 	completion.Header.Add(HeaderOperationID, "test-operation-id")
+	completion.Header.Add(headerOperationStartTime, time.Now().Format(http.TimeFormat))
 	require.NoError(t, err)
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)

@@ -93,7 +93,9 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(OperationStateSucceeded))
-	request.Header.Set(headerOperationStartTime, c.StartTime.Format(time.RFC1123))
+	if !c.StartTime.IsZero() {
+		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
+	}
 	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
 		return err
 	}
@@ -127,7 +129,9 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
-	request.Header.Set(headerOperationStartTime, c.StartTime.Format(time.RFC1123))
+	if !c.StartTime.IsZero() {
+		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
+	}
 	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
 		return err
 	}
@@ -191,8 +195,9 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	}
 	if startTimeHeader := request.Header.Get(headerOperationStartTime); startTimeHeader != "" {
 		var parseTimeErr error
-		if completion.StartTime, parseTimeErr = time.Parse(startTimeHeader, time.RFC1123); parseTimeErr != nil {
+		if completion.StartTime, parseTimeErr = http.ParseTime(startTimeHeader); parseTimeErr != nil {
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse operation start time header"))
+			return
 		}
 	}
 	var decodeErr error
