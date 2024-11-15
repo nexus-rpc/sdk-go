@@ -37,6 +37,8 @@ type OperationCompletionSuccessful struct {
 	// Body to send in the completion HTTP request.
 	// If it implements `io.Closer` it will automatically be closed by the client.
 	Body io.Reader
+	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	StartLinks []Link
 }
 
 // OperationCompletionSuccessfulOptions are options for [NewOperationCompletionSuccessful].
@@ -44,14 +46,17 @@ type OperationCompletionSuccessfulOptions struct {
 	// Optional serializer for the result. Defaults to the SDK's default Serializer, which handles JSONables, byte
 	// slices and nils.
 	Serializer Serializer
+	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	StartLinks []Link
 }
 
 // NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
 func NewOperationCompletionSuccessful(result any, options OperationCompletionSuccessfulOptions) (*OperationCompletionSuccessful, error) {
 	if reader, ok := result.(*Reader); ok {
 		return &OperationCompletionSuccessful{
-			Header: addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
-			Body:   reader.ReadCloser,
+			Header:     addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
+			Body:       reader.ReadCloser,
+			StartLinks: options.StartLinks,
 		}, nil
 	} else {
 		content, ok := result.(*Content)
@@ -69,8 +74,9 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		header := http.Header{"Content-Length": []string{strconv.Itoa(len(content.Data))}}
 
 		return &OperationCompletionSuccessful{
-			Header: addContentHeaderToHTTPHeader(content.Header, header),
-			Body:   bytes.NewReader(content.Data),
+			Header:     addContentHeaderToHTTPHeader(content.Header, header),
+			Body:       bytes.NewReader(content.Data),
+			StartLinks: options.StartLinks,
 		}, nil
 	}
 }
@@ -80,6 +86,10 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(OperationStateSucceeded))
+	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		return err
+	}
+
 	if closer, ok := c.Body.(io.ReadCloser); ok {
 		request.Body = closer
 	} else {
@@ -95,6 +105,8 @@ type OperationCompletionUnsuccessful struct {
 	Header http.Header
 	// State of the operation, should be failed or canceled.
 	State OperationState
+	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	StartLinks []Link
 	// Failure object to send with the completion.
 	Failure *Failure
 }
@@ -105,6 +117,9 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
+	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		return err
+	}
 
 	b, err := json.Marshal(c.Failure)
 	if err != nil {
@@ -121,6 +136,10 @@ type CompletionRequest struct {
 	HTTPRequest *http.Request
 	// State of the operation.
 	State OperationState
+	// OperationID is the ID of the operation. Used when a completion request is received before a started response.
+	OperationID string
+	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	StartLinks []Link
 	// Parsed from request and set if State is failed or canceled.
 	Failure *Failure
 	// Extracted from request and set if State is succeeded.
@@ -154,7 +173,13 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	ctx := request.Context()
 	completion := CompletionRequest{
 		State:       OperationState(request.Header.Get(headerOperationState)),
+		OperationID: request.Header.Get(HeaderOperationID),
 		HTTPRequest: request,
+	}
+	var decodeErr error
+	if completion.StartLinks, decodeErr = getLinksFromHeader(request.Header); decodeErr != nil {
+		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to decode links from request headers"))
+		return
 	}
 	switch completion.State {
 	case OperationStateFailed, OperationStateCanceled:

@@ -18,12 +18,11 @@ import (
 )
 
 // Package version.
-const version = "v0.0.11"
+const version = "v0.0.12"
 
 const (
 	// Nexus specific headers.
 	headerOperationState = "Nexus-Operation-State"
-	headerOperationID    = "Nexus-Operation-Id"
 	headerRequestID      = "Nexus-Request-Id"
 	headerLink           = "Nexus-Link"
 
@@ -32,6 +31,9 @@ const (
 	// HeaderOperationTimeout is the total time to complete a Nexus operation.
 	// Unlike HeaderRequestTimeout, this applies to the whole operation, not just a single HTTP request.
 	HeaderOperationTimeout = "Operation-Timeout"
+	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
+	// Must be set on callback headers to support completing operations before the start response is received.
+	HeaderOperationID = "Nexus-Operation-Id"
 )
 
 const contentTypeJSON = "application/json"
