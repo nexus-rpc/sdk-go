@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // NewCompletionHTTPRequest creates an HTTP request deliver an operation completion to a given URL.
@@ -37,6 +38,8 @@ type OperationCompletionSuccessful struct {
 	// Body to send in the completion HTTP request.
 	// If it implements `io.Closer` it will automatically be closed by the client.
 	Body io.Reader
+	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	StartTime time.Time
 	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
 	StartLinks []Link
 }
@@ -46,6 +49,8 @@ type OperationCompletionSuccessfulOptions struct {
 	// Optional serializer for the result. Defaults to the SDK's default Serializer, which handles JSONables, byte
 	// slices and nils.
 	Serializer Serializer
+	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	StartTime time.Time
 	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
 	StartLinks []Link
 }
@@ -56,6 +61,7 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		return &OperationCompletionSuccessful{
 			Header:     addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
 			Body:       reader.ReadCloser,
+			StartTime:  options.StartTime,
 			StartLinks: options.StartLinks,
 		}, nil
 	} else {
@@ -76,6 +82,7 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		return &OperationCompletionSuccessful{
 			Header:     addContentHeaderToHTTPHeader(content.Header, header),
 			Body:       bytes.NewReader(content.Data),
+			StartTime:  options.StartTime,
 			StartLinks: options.StartLinks,
 		}, nil
 	}
@@ -86,6 +93,7 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(OperationStateSucceeded))
+	request.Header.Set(headerOperationStartTime, c.StartTime.Format(time.RFC1123))
 	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
 		return err
 	}
@@ -105,6 +113,8 @@ type OperationCompletionUnsuccessful struct {
 	Header http.Header
 	// State of the operation, should be failed or canceled.
 	State OperationState
+	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	StartTime time.Time
 	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
 	StartLinks []Link
 	// Failure object to send with the completion.
@@ -117,6 +127,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
+	request.Header.Set(headerOperationStartTime, c.StartTime.Format(time.RFC1123))
 	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
 		return err
 	}
@@ -138,6 +149,8 @@ type CompletionRequest struct {
 	State OperationState
 	// OperationID is the ID of the operation. Used when a completion request is received before a started response.
 	OperationID string
+	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	StartTime time.Time
 	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
 	StartLinks []Link
 	// Parsed from request and set if State is failed or canceled.
@@ -175,6 +188,12 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 		State:       OperationState(request.Header.Get(headerOperationState)),
 		OperationID: request.Header.Get(HeaderOperationID),
 		HTTPRequest: request,
+	}
+	if startTimeHeader := request.Header.Get(headerOperationStartTime); startTimeHeader != "" {
+		var parseTimeErr error
+		if completion.StartTime, parseTimeErr = time.Parse(startTimeHeader, time.RFC1123); parseTimeErr != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse operation start time header"))
+		}
 	}
 	var decodeErr error
 	if completion.StartLinks, decodeErr = getLinksFromHeader(request.Header); decodeErr != nil {
