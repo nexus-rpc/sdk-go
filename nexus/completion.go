@@ -38,9 +38,11 @@ type OperationCompletionSuccessful struct {
 	// Body to send in the completion HTTP request.
 	// If it implements `io.Closer` it will automatically be closed by the client.
 	Body io.Reader
-	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
+	OperationID string
+	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
 	StartLinks []Link
 }
 
@@ -49,9 +51,11 @@ type OperationCompletionSuccessfulOptions struct {
 	// Optional serializer for the result. Defaults to the SDK's default Serializer, which handles JSONables, byte
 	// slices and nils.
 	Serializer Serializer
-	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
+	OperationID string
+	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
 	StartLinks []Link
 }
 
@@ -59,10 +63,11 @@ type OperationCompletionSuccessfulOptions struct {
 func NewOperationCompletionSuccessful(result any, options OperationCompletionSuccessfulOptions) (*OperationCompletionSuccessful, error) {
 	if reader, ok := result.(*Reader); ok {
 		return &OperationCompletionSuccessful{
-			Header:     addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
-			Body:       reader.ReadCloser,
-			StartTime:  options.StartTime,
-			StartLinks: options.StartLinks,
+			Header:      addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
+			Body:        reader.ReadCloser,
+			OperationID: options.OperationID,
+			StartTime:   options.StartTime,
+			StartLinks:  options.StartLinks,
 		}, nil
 	} else {
 		content, ok := result.(*Content)
@@ -80,10 +85,11 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		header := http.Header{"Content-Length": []string{strconv.Itoa(len(content.Data))}}
 
 		return &OperationCompletionSuccessful{
-			Header:     addContentHeaderToHTTPHeader(content.Header, header),
-			Body:       bytes.NewReader(content.Data),
-			StartTime:  options.StartTime,
-			StartLinks: options.StartLinks,
+			Header:      addContentHeaderToHTTPHeader(content.Header, header),
+			Body:        bytes.NewReader(content.Data),
+			OperationID: options.OperationID,
+			StartTime:   options.StartTime,
+			StartLinks:  options.StartLinks,
 		}, nil
 	}
 }
@@ -93,11 +99,16 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header = c.Header.Clone()
 	}
 	request.Header.Set(headerOperationState, string(OperationStateSucceeded))
-	if !c.StartTime.IsZero() {
+	if c.Header.Get(HeaderOperationID) == "" && c.OperationID != "" {
+		request.Header.Set(HeaderOperationID, c.OperationID)
+	}
+	if c.Header.Get(headerOperationStartTime) == "" && !c.StartTime.IsZero() {
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
-	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
-		return err
+	if c.Header.Get(headerLink) == "" {
+		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+			return err
+		}
 	}
 
 	if closer, ok := c.Body.(io.ReadCloser); ok {
@@ -115,9 +126,11 @@ type OperationCompletionUnsuccessful struct {
 	Header http.Header
 	// State of the operation, should be failed or canceled.
 	State OperationState
-	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
+	OperationID string
+	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
 	StartLinks []Link
 	// Failure object to send with the completion.
 	Failure *Failure
@@ -129,11 +142,16 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
-	if !c.StartTime.IsZero() {
+	if c.Header.Get(HeaderOperationID) == "" && c.OperationID != "" {
+		request.Header.Set(HeaderOperationID, c.OperationID)
+	}
+	if c.Header.Get(headerOperationStartTime) == "" && !c.StartTime.IsZero() {
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
-	if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
-		return err
+	if c.Header.Get(headerLink) == "" {
+		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+			return err
+		}
 	}
 
 	b, err := json.Marshal(c.Failure)
@@ -151,11 +169,11 @@ type CompletionRequest struct {
 	HTTPRequest *http.Request
 	// State of the operation.
 	State OperationState
-	// OperationID is the ID of the operation. Used when a completion request is received before a started response.
+	// OperationID is the ID of the operation. Used when a completion callback is received before a started response.
 	OperationID string
-	// StartTime is the time the operation started. Used when a completion request is received before a started response.
+	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion request is received before a started response.
+	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
 	StartLinks []Link
 	// Parsed from request and set if State is failed or canceled.
 	Failure *Failure

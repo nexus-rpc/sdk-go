@@ -50,6 +50,8 @@ func TestSuccessfulCompletion(t *testing.T) {
 	defer teardown()
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
+		OperationID: "test-operation-id",
+		StartTime:   time.Now(),
 		StartLinks: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -61,8 +63,6 @@ func TestSuccessfulCompletion(t *testing.T) {
 		}},
 	})
 	completion.Header.Add("foo", "bar")
-	completion.Header.Add(HeaderOperationID, "test-operation-id")
-	completion.Header.Add(headerOperationStartTime, time.Now().Format(http.TimeFormat))
 	require.NoError(t, err)
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
@@ -125,9 +125,6 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if completion.OperationID != "test-operation-id" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
 	}
-	if len(completion.StartLinks) == 0 {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartLinks to be set on CompletionRequest")
-	}
 
 	return nil
 }
@@ -137,8 +134,10 @@ func TestFailureCompletion(t *testing.T) {
 	defer teardown()
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionUnsuccessful{
-		Header: http.Header{"foo": []string{"bar"}},
-		State:  OperationStateCanceled,
+		Header:      http.Header{"foo": []string{"bar"}},
+		State:       OperationStateCanceled,
+		OperationID: "test-operation-id",
+		StartTime:   time.Now(),
 		StartLinks: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -152,7 +151,6 @@ func TestFailureCompletion(t *testing.T) {
 			Message: "expected message",
 		},
 	})
-	request.Header.Add(HeaderOperationID, "test-operation-id")
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
