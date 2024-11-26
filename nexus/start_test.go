@@ -3,6 +3,7 @@ package nexus
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -236,9 +237,7 @@ func (h *unsuccessfulHandler) StartOperation(ctx context.Context, service, opera
 	return nil, &UnsuccessfulOperationError{
 		// We're passing the desired state via request ID in this test.
 		State: OperationState(options.RequestID),
-		Failure: Failure{
-			Message: "intentional",
-		},
+		Cause: fmt.Errorf("intentional"),
 	}
 }
 

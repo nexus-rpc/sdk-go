@@ -15,21 +15,23 @@ const testTimeout = time.Second * 5
 const testService = "Ser/vic e"
 const getResultMaxTimeout = time.Millisecond * 300
 
-func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx context.Context, client *HTTPClient, teardown func()) {
+func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, client *HTTPClient, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
 		GetResultTimeout: getResultMaxTimeout,
 		Handler:          handler,
 		Serializer:       serializer,
+		FailureConverter: failureConverter,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	client, err = NewHTTPClient(HTTPClientOptions{
-		BaseURL:    fmt.Sprintf("http://%s/", listener.Addr().String()),
-		Service:    testService,
-		Serializer: serializer,
+		BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
+		Service:          testService,
+		Serializer:       serializer,
+		FailureConverter: failureConverter,
 	})
 	require.NoError(t, err)
 
@@ -45,15 +47,16 @@ func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx 
 }
 
 func setup(t *testing.T, handler Handler) (ctx context.Context, client *HTTPClient, teardown func()) {
-	return setupSerializer(t, handler, nil)
+	return setupCustom(t, handler, nil, nil)
 }
 
-func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Serializer) (ctx context.Context, callbackURL string, teardown func()) {
+func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, callbackURL string, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewCompletionHTTPHandler(CompletionHandlerOptions{
-		Handler:    handler,
-		Serializer: serializer,
+		Handler:          handler,
+		Serializer:       serializer,
+		FailureConverter: failureConverter,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")

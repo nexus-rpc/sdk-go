@@ -20,11 +20,11 @@ func ExampleHTTPClient_StartOperation() {
 	if err != nil {
 		var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
 		if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
+			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Cause.Error())
 		}
 		var handlerError *nexus.HandlerError
 		if errors.As(err, &handlerError) {
-			fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Failure.Message)
+			fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Cause.Error())
 		}
 		// most other errors should be returned as *nexus.UnexpectedResponseError
 	}

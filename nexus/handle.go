@@ -42,7 +42,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 	}
 
 	if response.StatusCode != http.StatusOK {
-		return nil, bestEffortHandlerErrorFromResponse(response, body)
+		return nil, h.client.bestEffortHandlerErrorFromResponse(response, body)
 	}
 
 	return operationInfoFromResponse(response, body)
@@ -145,16 +145,18 @@ func (h *OperationHandle[T]) sendGetOperationRequest(request *http.Request) (*ht
 		if err != nil {
 			return nil, err
 		}
-		failure, err := failureFromResponse(response, body)
+		failure, err := h.client.failureFromResponse(response, body)
 		if err != nil {
 			return nil, err
 		}
+		failureErr := h.client.options.FailureConverter.FailureToError(failure)
 		return nil, &UnsuccessfulOperationError{
-			State:   state,
-			Failure: failure,
+			State:      state,
+			Cause:      failureErr,
+			rawFailure: &failure,
 		}
 	default:
-		return nil, bestEffortHandlerErrorFromResponse(response, body)
+		return nil, h.client.bestEffortHandlerErrorFromResponse(response, body)
 	}
 }
 
@@ -182,7 +184,7 @@ func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperation
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		return bestEffortHandlerErrorFromResponse(response, body)
+		return h.client.bestEffortHandlerErrorFromResponse(response, body)
 	}
 	return nil
 }

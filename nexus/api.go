@@ -53,7 +53,9 @@ const (
 	StatusUpstreamTimeout = 520
 )
 
-// A Failure represents failed handler invocations as well as `failed` or `canceled` operation results.
+// A Failure represents failed handler invocations as well as `failed` or `canceled` operation results. Failures
+// shouldn't typically be constructed directly. The SDK APIs take a [FailureConverter] instance that can translate
+// language errors to and from [Failure] instances.
 type Failure struct {
 	// A simple text message.
 	Message string `json:"message"`
@@ -65,16 +67,42 @@ type Failure struct {
 
 // UnsuccessfulOperationError represents "failed" and "canceled" operation results.
 type UnsuccessfulOperationError struct {
-	State   OperationState
-	Failure Failure
+	// State of the operation. Only [OperationStateFailed] and [OperationStateCanceled] are valid.
+	State OperationState
+	// The underlying cause for this error.
+	Cause      error
+	rawFailure *Failure
+}
+
+// NewFailedOperationError is shorthand for constructing an [UnsuccessfulOperationError] with State set to
+// [OperationStateFailed] and the given err as the Cause.
+func NewFailedOperationError(err error) *UnsuccessfulOperationError {
+	return &UnsuccessfulOperationError{
+		State: OperationStateFailed,
+		Cause: err,
+	}
+}
+
+// NewFailedOperationError is shorthand for constructing an [UnsuccessfulOperationError] with State set to
+// [OperationStateCanceled] and the given err as the Cause.
+func NewCanceledOperationError(err error) *UnsuccessfulOperationError {
+	return &UnsuccessfulOperationError{
+		State: OperationStateCanceled,
+		Cause: err,
+	}
 }
 
 // Error implements the error interface.
 func (e *UnsuccessfulOperationError) Error() string {
-	if e.Failure.Message != "" {
-		return fmt.Sprintf("operation %s: %s", e.State, e.Failure.Message)
+	if e.Cause == nil {
+		return fmt.Sprintf("operation %s", e.State)
 	}
-	return fmt.Sprintf("operation %s", e.State)
+	return fmt.Sprintf("operation %s: %s", e.State, e.Error())
+}
+
+// Unwrap returns the cause for use with utilities in the errors package.
+func (e *UnsuccessfulOperationError) Unwrap() error {
+	return e.Cause
 }
 
 // ErrOperationStillRunning indicates that an operation is still running while trying to get its result.
