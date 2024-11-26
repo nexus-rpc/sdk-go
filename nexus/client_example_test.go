@@ -13,7 +13,7 @@ type MyStruct struct {
 }
 
 var ctx = context.Background()
-var client *nexus.Client
+var client *nexus.HTTPClient
 
 func ExampleClient_StartOperation() {
 	result, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})

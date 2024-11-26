@@ -17,8 +17,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// ClientOptions are options for creating a Client.
-type ClientOptions struct {
+// HTTPClientOptions are options for creating an [HTTPClient].
+type HTTPClientOptions struct {
 	// Base URL for all requests. Required.
 	BaseURL string
 	// Service name. Required.
@@ -74,25 +74,25 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 	}
 }
 
-// A Client makes Nexus service requests as defined in the [Nexus HTTP API].
+// An HTTPClient makes Nexus service requests as defined in the [Nexus HTTP API].
 //
 // It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
 //
 // Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
 //
-// OperationHandles can be obtained either by starting new operations or by calling [Client.NewHandle] for existing
+// OperationHandles can be obtained either by starting new operations or by calling [HTTPClient.NewHandle] for existing
 // operations.
 //
 // [Nexus HTTP API]: https://github.com/nexus-rpc/api
-type Client struct {
+type HTTPClient struct {
 	// The options this client was created with after applying defaults.
-	options        ClientOptions
+	options        HTTPClientOptions
 	serviceBaseURL *url.URL
 }
 
-// NewClient creates a new [Client] from provided [ClientOptions].
+// NewHTTPClient creates a new [HTTPClient] from provided [HTTPClientOptions].
 // BaseURL and Service are required.
-func NewClient(options ClientOptions) (*Client, error) {
+func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 	if options.HTTPCaller == nil {
 		options.HTTPCaller = http.DefaultClient.Do
 	}
@@ -115,13 +115,13 @@ func NewClient(options ClientOptions) (*Client, error) {
 		options.Serializer = defaultSerializer
 	}
 
-	return &Client{
+	return &HTTPClient{
 		options:        options,
 		serviceBaseURL: baseURL,
 	}, nil
 }
 
-// ClientStartOperationResult is the return type of [Client.StartOperation].
+// ClientStartOperationResult is the return type of [HTTPClient.StartOperation].
 // One and only one of Successful or Pending will be non-nil.
 type ClientStartOperationResult[T any] struct {
 	// Set when start completes synchronously and successfully.
@@ -151,7 +151,7 @@ type ClientStartOperationResult[T any] struct {
 //     [UnsuccessfulOperationError].
 //
 //  4. Any other error.
-func (c *Client) StartOperation(
+func (c *HTTPClient) StartOperation(
 	ctx context.Context,
 	operation string,
 	input any,
@@ -281,7 +281,7 @@ func (c *Client) StartOperation(
 	}
 }
 
-// ExecuteOperationOptions are options for [Client.ExecuteOperation].
+// ExecuteOperationOptions are options for [HTTPClient.ExecuteOperation].
 type ExecuteOperationOptions struct {
 	// Callback URL to provide to the handle for receiving async operation completions. Optional.
 	// Even though Client.ExecuteOperation waits for operation completion, some applications may want to set this
@@ -323,7 +323,7 @@ type ExecuteOperationOptions struct {
 //
 // ⚠️ If this method completes successfully, the returned response's body must be read in its entirety and closed to
 // free up the underlying connection.
-func (c *Client) ExecuteOperation(ctx context.Context, operation string, input any, options ExecuteOperationOptions) (*LazyValue, error) {
+func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, input any, options ExecuteOperationOptions) (*LazyValue, error) {
 	so := StartOperationOptions{
 		CallbackURL:    options.CallbackURL,
 		CallbackHeader: options.CallbackHeader,
@@ -353,7 +353,7 @@ func (c *Client) ExecuteOperation(ctx context.Context, operation string, input a
 // NewHandle gets a handle to an asynchronous operation by name and ID.
 // Does not incur a trip to the server.
 // Fails if provided an empty operation or ID.
-func (c *Client) NewHandle(operation string, operationID string) (*OperationHandle[*LazyValue], error) {
+func (c *HTTPClient) NewHandle(operation string, operationID string) (*OperationHandle[*LazyValue], error) {
 	var es []error
 	if operation == "" {
 		es = append(es, errEmptyOperationName)

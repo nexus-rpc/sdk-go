@@ -16,7 +16,7 @@ type OperationHandle[T any] struct {
 	Operation string
 	// Handler generated ID for this handle's operation.
 	ID     string
-	client *Client
+	client *HTTPClient
 }
 
 // GetInfo gets operation information, issuing a network request to the service handler.
