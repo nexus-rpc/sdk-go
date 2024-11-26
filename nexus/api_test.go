@@ -99,7 +99,7 @@ func TestAddLinksToHeader(t *testing.T) {
 				Type: "url",
 			}},
 			output: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path/to/something?param=value>; type="url"`,
 				},
 			},
@@ -127,7 +127,7 @@ func TestAddLinksToHeader(t *testing.T) {
 				},
 			},
 			output: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path/to/something?param=value>; type="url"`,
 					`<https://foo.com/path/to/something?bar=value>; type="url"`,
 				},
@@ -174,7 +174,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 		{
 			name: "single link",
 			input: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path/to/something?param=value>; type="url"`,
 				},
 			},
@@ -191,7 +191,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 		{
 			name: "multiple links",
 			input: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path/to/something?param=value>; type="url"`,
 					`<https://foo.com/path/to/something?bar=value>; type="url"`,
 				},
@@ -220,7 +220,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 		{
 			name: "multiple links single header",
 			input: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path/to/something?param=value>; type="url", <https://foo.com/path/to/something?bar=value>; type="url"`,
 				},
 			},
@@ -248,7 +248,7 @@ func TestGetLinksFromHeader(t *testing.T) {
 		{
 			name: "invalid header",
 			input: http.Header{
-				headerLink: []string{
+				http.CanonicalHeaderKey(headerLink): []string{
 					`<https://example.com/path?param=value> type="url"`,
 				},
 			},
