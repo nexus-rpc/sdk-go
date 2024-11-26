@@ -46,10 +46,12 @@ var errOperationWaitTimeout = errors.New("operation wait timeout")
 type UnexpectedResponseError struct {
 	// Error message.
 	Message string
-	// The HTTP response. The response body will have already been read into memory and does not need to be closed.
-	Response *http.Response
-	// Optional failure that may have been emedded in the HTTP response body.
+	// Optional failure that may have been emedded in the response.
 	Failure *Failure
+	// Additional transport specific details.
+	// For HTTP, this would include the HTTP response. The response body will have already been read into memory and
+	// does not need to be closed.
+	Details any
 }
 
 // Error implements the error interface.
@@ -66,9 +68,9 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 	}
 
 	return &UnexpectedResponseError{
-		Message:  message,
-		Response: response,
-		Failure:  failure,
+		Message: message,
+		Details: response,
+		Failure: failure,
 	}
 }
 
