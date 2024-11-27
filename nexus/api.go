@@ -22,19 +22,19 @@ const version = "v0.0.12"
 
 const (
 	// Nexus specific headers.
-	headerOperationState     = "Nexus-Operation-State"
-	headerRequestID          = "Nexus-Request-Id"
-	headerLink               = "Nexus-Link"
-	headerOperationStartTime = "Nexus-Operation-Start-Time"
+	headerOperationState     = "nexus-operation-state"
+	headerRequestID          = "nexus-request-id"
+	headerLink               = "nexus-link"
+	headerOperationStartTime = "nexus-operation-start-time"
 	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
 	// Must be set on callback headers to support completing operations before the start response is received.
-	HeaderOperationID = "Nexus-Operation-Id"
+	HeaderOperationID = "nexus-operation-id"
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
-	HeaderRequestTimeout = "Request-Timeout"
+	HeaderRequestTimeout = "request-timeout"
 	// HeaderOperationTimeout is the total time to complete a Nexus operation.
 	// Unlike HeaderRequestTimeout, this applies to the whole operation, not just a single HTTP request.
-	HeaderOperationTimeout = "Operation-Timeout"
+	HeaderOperationTimeout = "operation-timeout"
 )
 
 const contentTypeJSON = "application/json"
@@ -122,11 +122,17 @@ func isMediaTypeOctetStream(contentType string) bool {
 
 // Header is a mapping of string to string.
 // It is used throughout the framework to transmit metadata.
+// The keys should be in lower case form.
 type Header map[string]string
 
 // Get is a case-insensitive key lookup from the header map.
 func (h Header) Get(k string) string {
 	return h[strings.ToLower(k)]
+}
+
+// Set sets the header key to the given value transforming the key to its lower case form.
+func (h Header) Set(k, v string) {
+	h[strings.ToLower(k)] = v
 }
 
 func prefixStrippedHTTPHeaderToNexusHeader(httpHeader http.Header, prefix string) Header {

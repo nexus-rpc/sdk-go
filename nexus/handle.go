@@ -94,7 +94,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 			request.URL.RawQuery = ""
 		}
 
-		response, err := h.sendGetOperationRequest(ctx, request)
+		response, err := h.sendGetOperationRequest(request)
 		if err != nil {
 			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
 				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
@@ -119,7 +119,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 	}
 }
 
-func (h *OperationHandle[T]) sendGetOperationRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
+func (h *OperationHandle[T]) sendGetOperationRequest(request *http.Request) (*http.Response, error) {
 	response, err := h.client.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err
