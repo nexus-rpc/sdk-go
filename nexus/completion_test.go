@@ -125,6 +125,9 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if completion.OperationID != "test-operation-id" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
 	}
+	if len(completion.StartLinks) == 0 {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartLinks to be set on CompletionRequest")
+	}
 
 	return nil
 }

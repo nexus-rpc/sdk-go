@@ -42,7 +42,7 @@ type OperationCompletionSuccessful struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
+	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
 	StartLinks []Link
 }
 
@@ -55,7 +55,7 @@ type OperationCompletionSuccessfulOptions struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
+	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
 	StartLinks []Link
 }
 
@@ -130,7 +130,7 @@ type OperationCompletionUnsuccessful struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
+	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
 	StartLinks []Link
 	// Failure object to send with the completion.
 	Failure *Failure
@@ -173,7 +173,7 @@ type CompletionRequest struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are the links attached to the started response. Used when a completion callback is received before a started response.
+	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
 	StartLinks []Link
 	// Parsed from request and set if State is failed or canceled.
 	Failure *Failure
