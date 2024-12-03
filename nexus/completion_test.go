@@ -1,7 +1,6 @@
 package nexus
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -52,7 +51,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		OperationID: "test-operation-id",
 		StartTime:   time.Now(),
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
@@ -62,7 +61,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 			Type: "url",
 		}},
 	})
-	completion.Header.Add("foo", "bar")
+	completion.Header.Set("foo", "bar")
 	require.NoError(t, err)
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
@@ -82,7 +81,7 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		Serializer: serializer,
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
@@ -92,8 +91,8 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 			Type: "url",
 		}},
 	})
-	completion.Header.Add("foo", "bar")
-	completion.Header.Add(HeaderOperationID, "test-operation-id")
+	completion.Header.Set("foo", "bar")
+	completion.Header.Set(HeaderOperationID, "test-operation-id")
 	require.NoError(t, err)
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
@@ -137,11 +136,11 @@ func TestFailureCompletion(t *testing.T) {
 	defer teardown()
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionUnsuccessful{
-		Header:      http.Header{"foo": []string{"bar"}},
+		Header:      Header{"foo": "bar"},
 		State:       OperationStateCanceled,
 		OperationID: "test-operation-id",
 		StartTime:   time.Now(),
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
@@ -174,7 +173,9 @@ func TestBadRequestCompletion(t *testing.T) {
 	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil)
 	defer teardown()
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionSuccessful{Body: bytes.NewReader([]byte("success"))})
+	completion, err := NewOperationCompletionSuccessful([]byte("success"), OperationCompletionSuccessfulOptions{})
+	require.NoError(t, err)
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)

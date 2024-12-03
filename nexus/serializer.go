@@ -69,7 +69,7 @@ func (l *LazyValue) Consume(v any) error {
 
 // Serializer is used by the framework to serialize/deserialize input and output.
 // To customize serialization logic, implement this interface and provide your implementation to framework methods such
-// as [NewClient] and [NewHTTPHandler].
+// as [NewHTTPClient] and [NewHTTPHandler].
 // By default, the SDK supports serialization of JSONables, byte slices, and nils.
 type Serializer interface {
 	// Serialize encodes a value into a [Content].

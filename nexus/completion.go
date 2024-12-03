@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,16 +35,19 @@ type OperationCompletion interface {
 // OperationCompletionSuccessful is input for [NewCompletionHTTPRequest], used to deliver successful operation results.
 type OperationCompletionSuccessful struct {
 	// Header to send in the completion request.
-	Header http.Header
-	// Body to send in the completion HTTP request.
-	// If it implements `io.Closer` it will automatically be closed by the client.
-	Body io.Reader
+	// Note that this is a Nexus header, not an HTTP header.
+	Header Header
+
+	// A [Reader] that may be directly set on the completion or constructed when instantiating via
+	// [NewOperationCompletionSuccessful].
+	// Automatically closed when the completion is delivered.
+	Reader *Reader
 	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 }
 
 // OperationCompletionSuccessfulOptions are options for [NewOperationCompletionSuccessful].
@@ -55,48 +59,56 @@ type OperationCompletionSuccessfulOptions struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 }
 
 // NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
 func NewOperationCompletionSuccessful(result any, options OperationCompletionSuccessfulOptions) (*OperationCompletionSuccessful, error) {
-	if reader, ok := result.(*Reader); ok {
-		return &OperationCompletionSuccessful{
-			Header:      addContentHeaderToHTTPHeader(reader.Header, make(http.Header)),
-			Body:        reader.ReadCloser,
-			OperationID: options.OperationID,
-			StartTime:   options.StartTime,
-			StartLinks:  options.StartLinks,
-		}, nil
-	} else {
+	reader, ok := result.(*Reader)
+	if !ok {
 		content, ok := result.(*Content)
 		if !ok {
-			var err error
 			serializer := options.Serializer
 			if serializer == nil {
 				serializer = defaultSerializer
 			}
+			var err error
 			content, err = serializer.Serialize(result)
 			if err != nil {
 				return nil, err
 			}
 		}
-		header := http.Header{"Content-Length": []string{strconv.Itoa(len(content.Data))}}
+		header := maps.Clone(content.Header)
+		if header == nil {
+			header = make(Header, 1)
+		}
+		header["length"] = strconv.Itoa(len(content.Data))
 
-		return &OperationCompletionSuccessful{
-			Header:      addContentHeaderToHTTPHeader(content.Header, header),
-			Body:        bytes.NewReader(content.Data),
-			OperationID: options.OperationID,
-			StartTime:   options.StartTime,
-			StartLinks:  options.StartLinks,
-		}, nil
+		reader = &Reader{
+			Header:     header,
+			ReadCloser: io.NopCloser(bytes.NewReader(content.Data)),
+		}
 	}
+
+	return &OperationCompletionSuccessful{
+		Header:      make(Header),
+		Reader:      reader,
+		OperationID: options.OperationID,
+		StartTime:   options.StartTime,
+		Links:       options.Links,
+	}, nil
 }
 
 func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request) error {
+	if request.Header == nil {
+		request.Header = make(http.Header, len(c.Header)+len(c.Reader.Header)+1) // +1 for headerOperationState
+	}
+	if c.Reader.Header != nil {
+		addContentHeaderToHTTPHeader(c.Reader.Header, request.Header)
+	}
 	if c.Header != nil {
-		request.Header = c.Header.Clone()
+		addNexusHeaderToHTTPHeader(c.Header, request.Header)
 	}
 	request.Header.Set(headerOperationState, string(OperationStateSucceeded))
 	if c.Header.Get(HeaderOperationID) == "" && c.OperationID != "" {
@@ -106,16 +118,12 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerLink) == "" {
-		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
 			return err
 		}
 	}
 
-	if closer, ok := c.Body.(io.ReadCloser); ok {
-		request.Body = closer
-	} else {
-		request.Body = io.NopCloser(c.Body)
-	}
+	request.Body = c.Reader.ReadCloser
 	return nil
 }
 
@@ -123,22 +131,26 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 // results.
 type OperationCompletionUnsuccessful struct {
 	// Header to send in the completion request.
-	Header http.Header
+	// Note that this is a Nexus header, not an HTTP header.
+	Header Header
 	// State of the operation, should be failed or canceled.
 	State OperationState
 	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 	// Failure object to send with the completion.
 	Failure *Failure
 }
 
 func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request) error {
+	if request.Header == nil {
+		request.Header = make(http.Header, len(c.Header)+2) // +2 for headerOperationState and content-type
+	}
 	if c.Header != nil {
-		request.Header = c.Header.Clone()
+		addNexusHeaderToHTTPHeader(c.Header, request.Header)
 	}
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
@@ -149,7 +161,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerLink) == "" {
-		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
 			return err
 		}
 	}

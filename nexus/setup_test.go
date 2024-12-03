@@ -15,7 +15,7 @@ const testTimeout = time.Second * 5
 const testService = "Ser/vic e"
 const getResultMaxTimeout = time.Millisecond * 300
 
-func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx context.Context, client *Client, teardown func()) {
+func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx context.Context, client *HTTPClient, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
@@ -26,7 +26,7 @@ func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx 
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	client, err = NewClient(ClientOptions{
+	client, err = NewHTTPClient(HTTPClientOptions{
 		BaseURL:    fmt.Sprintf("http://%s/", listener.Addr().String()),
 		Service:    testService,
 		Serializer: serializer,
@@ -44,7 +44,7 @@ func setupSerializer(t *testing.T, handler Handler, serializer Serializer) (ctx 
 	}
 }
 
-func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
+func setup(t *testing.T, handler Handler) (ctx context.Context, client *HTTPClient, teardown func()) {
 	return setupSerializer(t, handler, nil)
 }
 

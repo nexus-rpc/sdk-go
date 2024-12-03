@@ -35,12 +35,12 @@ import (
 
 ### Client
 
-The Nexus Client is used to start operations and get [handles](#operationhandle) to existing, asynchronous operations.
+The Nexus HTTPClient is used to start operations and get [handles](#operationhandle) to existing, asynchronous operations.
 
-#### Create a Client
+#### Create an HTTPClient
 
 ```go
-client, err := nexus.NewClient(nexus.ClientOptions{
+client, err := nexus.NewHTTPClient(nexus.HTTPClientOptions{
 	BaseURL: "https://example.com/path/to/my/services",
 	Service: "example-service",
 })
@@ -86,7 +86,7 @@ result, err := client.StartOperation(ctx, "example", MyInput{Field: "value"}, ne
 
 #### Start an Operation and Await its Completion
 
-The Client provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and issuing a `GetResult`
+The HTTPClient provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and issuing a `GetResult`
 in case the operation is asynchronous.
 
 ```go
@@ -201,7 +201,7 @@ with the `NewOperationCompletionSuccessful` helper.
 Custom HTTP headers may be provided via `OperationCompletionSuccessful.Header`.
 
 ```go
-completion, _ := nexus.NewOperationCompletionSuccessful(MyStruct{Field: "value"})
+completion, _ := nexus.NewOperationCompletionSuccessful(MyStruct{Field: "value"}, OperationCompletionSuccessfulOptions{})
 request, _ := nexus.NewCompletionHTTPRequest(ctx, callbackURL, completion)
 response, _ := http.DefaultClient.Do(request)
 defer response.Body.Close()
