@@ -46,8 +46,8 @@ type OperationCompletionSuccessful struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 }
 
 // OperationCompletionSuccessfulOptions are options for [NewOperationCompletionSuccessful].
@@ -59,8 +59,8 @@ type OperationCompletionSuccessfulOptions struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 }
 
 // NewOperationCompletionSuccessful constructs an [OperationCompletionSuccessful] from a given result.
@@ -96,7 +96,7 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		Reader:      reader,
 		OperationID: options.OperationID,
 		StartTime:   options.StartTime,
-		StartLinks:  options.StartLinks,
+		Links:       options.Links,
 	}, nil
 }
 
@@ -118,7 +118,7 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerLink) == "" {
-		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
 			return err
 		}
 	}
@@ -139,8 +139,8 @@ type OperationCompletionUnsuccessful struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 	// Failure object to send with the completion.
 	Failure *Failure
 }
@@ -161,7 +161,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerLink) == "" {
-		if err := addLinksToHTTPHeader(c.StartLinks, request.Header); err != nil {
+		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
 			return err
 		}
 	}

@@ -51,7 +51,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		OperationID: "test-operation-id",
 		StartTime:   time.Now(),
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
@@ -81,7 +81,7 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		Serializer: serializer,
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
@@ -140,7 +140,7 @@ func TestFailureCompletion(t *testing.T) {
 		State:       OperationStateCanceled,
 		OperationID: "test-operation-id",
 		StartTime:   time.Now(),
-		StartLinks: []Link{{
+		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
 				Host:     "example.com",
