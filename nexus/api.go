@@ -70,8 +70,7 @@ type UnsuccessfulOperationError struct {
 	// State of the operation. Only [OperationStateFailed] and [OperationStateCanceled] are valid.
 	State OperationState
 	// The underlying cause for this error.
-	Cause      error
-	rawFailure *Failure
+	Cause error
 }
 
 // NewFailedOperationError is shorthand for constructing an [UnsuccessfulOperationError] with State set to

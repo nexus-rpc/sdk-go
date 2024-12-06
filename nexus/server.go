@@ -134,8 +134,7 @@ type HandlerError struct {
 	// Error Type. Defaults to HandlerErrorTypeInternal.
 	Type HandlerErrorType
 	// The underlying cause for this error.
-	Cause      error
-	rawFailure *Failure
+	Cause error
 }
 
 // HandlerErrorf creates a [HandlerError] with the given type using [fmt.Errorf] to construct the cause.

@@ -280,9 +280,8 @@ func (c *HTTPClient) StartOperation(
 
 		failureErr := c.options.FailureConverter.FailureToError(failure)
 		return nil, &UnsuccessfulOperationError{
-			State:      state,
-			Cause:      failureErr,
-			rawFailure: &failure,
+			State: state,
+			Cause: failureErr,
 		}
 	default:
 		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
@@ -418,41 +417,41 @@ func (c *HTTPClient) failureFromResponseOrDefault(response *http.Response, body 
 	return failure
 }
 
-func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) (Failure, error) {
+func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) error {
 	failure := c.failureFromResponseOrDefault(response, body, defaultMessage)
 	failureErr := c.options.FailureConverter.FailureToError(failure)
-	return failure, failureErr
+	return failureErr
 }
 
 func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
 	switch response.StatusCode {
 	case http.StatusBadRequest:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "bad request")
-		return &HandlerError{Type: HandlerErrorTypeBadRequest, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "bad request")
+		return &HandlerError{Type: HandlerErrorTypeBadRequest, Cause: failureErr}
 	case http.StatusUnauthorized:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthenticated")
-		return &HandlerError{Type: HandlerErrorTypeUnauthenticated, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthenticated")
+		return &HandlerError{Type: HandlerErrorTypeUnauthenticated, Cause: failureErr}
 	case http.StatusForbidden:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthorized")
-		return &HandlerError{Type: HandlerErrorTypeUnauthorized, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthorized")
+		return &HandlerError{Type: HandlerErrorTypeUnauthorized, Cause: failureErr}
 	case http.StatusNotFound:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "not found")
-		return &HandlerError{Type: HandlerErrorTypeNotFound, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not found")
+		return &HandlerError{Type: HandlerErrorTypeNotFound, Cause: failureErr}
 	case http.StatusTooManyRequests:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "resource exhausted")
-		return &HandlerError{Type: HandlerErrorTypeResourceExhausted, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "resource exhausted")
+		return &HandlerError{Type: HandlerErrorTypeResourceExhausted, Cause: failureErr}
 	case http.StatusInternalServerError:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "internal error")
-		return &HandlerError{Type: HandlerErrorTypeInternal, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "internal error")
+		return &HandlerError{Type: HandlerErrorTypeInternal, Cause: failureErr}
 	case http.StatusNotImplemented:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "not implemented")
-		return &HandlerError{Type: HandlerErrorTypeNotImplemented, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not implemented")
+		return &HandlerError{Type: HandlerErrorTypeNotImplemented, Cause: failureErr}
 	case http.StatusServiceUnavailable:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "unavailable")
-		return &HandlerError{Type: HandlerErrorTypeUnavailable, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unavailable")
+		return &HandlerError{Type: HandlerErrorTypeUnavailable, Cause: failureErr}
 	case StatusUpstreamTimeout:
-		failure, failureErr := c.failureErrorFromResponseOrDefault(response, body, "upstream timeout")
-		return &HandlerError{Type: HandlerErrorTypeUpstreamTimeout, Cause: failureErr, rawFailure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "upstream timeout")
+		return &HandlerError{Type: HandlerErrorTypeUpstreamTimeout, Cause: failureErr}
 	default:
 		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
 	}
