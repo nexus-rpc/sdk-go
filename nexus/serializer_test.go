@@ -1,6 +1,8 @@
 package nexus
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -143,7 +145,7 @@ func TestCustomSerializer(t *testing.T) {
 	require.NoError(t, err)
 
 	c := &customSerializer{}
-	ctx, client, teardown := setupSerializer(t, handler, c)
+	ctx, client, teardown := setupCustom(t, handler, c, nil)
 	defer teardown()
 
 	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
@@ -157,4 +159,59 @@ func TestCustomSerializer(t *testing.T) {
 
 	require.Equal(t, 4, c.decoded)
 	require.Equal(t, 4, c.encoded)
+}
+
+func TestDefaultFailureConverter(t *testing.T) {
+	sourceErr := errors.New("test")
+	var f Failure
+	conv := defaultFailureConverter
+
+	f = conv.ErrorToFailure(sourceErr)
+	convErr := conv.FailureToError(f)
+	require.Equal(t, sourceErr, convErr)
+}
+
+type customFailureConverter struct{}
+
+var errCustom = errors.New("custom")
+
+// ErrorToFailure implements FailureConverter.
+func (c customFailureConverter) ErrorToFailure(err error) Failure {
+	return Failure{
+		Message: err.Error(),
+		Metadata: map[string]string{
+			"type": "custom",
+		},
+	}
+}
+
+// FailureToError implements FailureConverter.
+func (c customFailureConverter) FailureToError(f Failure) error {
+	if f.Metadata["type"] != "custom" {
+		return errors.New(f.Message)
+	}
+	return fmt.Errorf("%w: %s", errCustom, f.Message)
+}
+
+func TestCustomFailureConverter(t *testing.T) {
+	svc := NewService(testService)
+	registry := NewServiceRegistry()
+	require.NoError(t, svc.Register(
+		numberValidatorOperation,
+		asyncNumberValidatorOperationInstance,
+	))
+	require.NoError(t, registry.Register(svc))
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	c := customFailureConverter{}
+	ctx, client, teardown := setupCustom(t, handler, nil, c)
+	defer teardown()
+
+	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
+	require.ErrorIs(t, err, errCustom)
+
+	// Async triggers GetResult, test this too.
+	_, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 0, ExecuteOperationOptions{})
+	require.ErrorIs(t, err, errCustom)
 }

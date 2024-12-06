@@ -60,11 +60,11 @@ result, err := nexus.StartOperation(ctx, client, operation, MyInput{Field: "valu
 if err != nil {
 	var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
 	if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Failure.Message)
+		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Cause.Error())
 	}
 	var handlerError *nexus.HandlerError
 	if errors.As(err, &handlerError) {
-		fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Failure.Message)
+		fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Cause.Error())
 	}
 	// most other errors should be returned as *nexus.UnexpectedResponseError
 }
@@ -209,16 +209,13 @@ _, err = io.ReadAll(response.Body)
 fmt.Println("delivered completion with status code", response.StatusCode)
 ```
 
-To deliver failed and canceled completions, pass a `OperationCompletionUnsuccessful` struct pointer with the failure and
-state attached.
+To deliver failed and canceled completions, pass a `OperationCompletionUnsuccessful` struct pointer constructed with
+`NewOperationCompletionUnsuccessful`.
 
 Custom HTTP headers may be provided via `OperationCompletionUnsuccessful.Header`.
 
 ```go
-completion := &OperationCompletionUnsuccessful{
-	State: nexus.OperationStateCanceled,
-	Failure: &nexus.Failure{Message: "canceled as requested"},
-}
+completion := nexus.NewOperationCompletionUnsuccessful(nexus.NewOperationFailedError(fmt.Errorf("some error")), nexus.OperationCompletionUnsuccessfulOptions{})
 request, _ := nexus.NewCompletionHTTPRequest(ctx, callbackURL, completion)
 // ...
 ```
@@ -290,10 +287,8 @@ _ = http.Serve(listener, httpHandler)
 
 ```go
 func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
-	return nil, &nexus.UnsuccessfulOperationError{
-		State: nexus.OperationStateFailed, // or OperationStateCanceled
-		Failure: &nexus.Failure{Message: "Do or do not, there is not try"},
-	}
+	// Alternatively use NewCanceledOperationError to resolve an operation as canceled.
+	return nil, nexus.NewFailedOperationError(errors.New("Do or do not, there is not try"))
 }
 ```
 
@@ -329,14 +324,14 @@ func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, o
 			}
 			// Optionally translate to operation failure (could also result in canceled state).
 			// Optionally expose the error details to the caller.
-			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+			return nil, nexus.NewFailedOperationError(err)
 		}
 		return result, nil
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
-			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+			return nil, nexus.NewFailedOperationError(err)
 		}
 		return result, nil
 	}

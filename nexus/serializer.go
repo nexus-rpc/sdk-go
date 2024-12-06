@@ -78,6 +78,20 @@ type Serializer interface {
 	Deserialize(*Content, any) error
 }
 
+// FailureConverter is used by the framework to transform [error] instances to and from [Failure] instances.
+// To customize conversion logic, implement this interface and provide your implementation to framework methods such as
+// [NewClient] and [NewHTTPHandler].
+// By default the SDK translates only error messages, losing type information and struct fields.
+type FailureConverter interface {
+	// ErrorToFailure converts an [error] to a [Failure].
+	// Implementors should take a best-effort approach and never fail this method.
+	// Note that the provided error may be nil.
+	ErrorToFailure(error) Failure
+	// ErrorToFailure converts a [Failure] to an [error].
+	// Implementors should take a best-effort approach and never fail this method.
+	FailureToError(Failure) error
+}
+
 var anyType = reflect.TypeOf((*any)(nil)).Elem()
 
 var errSerializerIncompatible = errors.New("incompatible serializer")
@@ -226,3 +240,22 @@ type compositeSerializer struct {
 var defaultSerializer Serializer = compositeSerializer{
 	serializerChain([]Serializer{nilSerializer{}, byteSliceSerializer{}, jsonSerializer{}}),
 }
+
+type errorMessageFailureConverter struct{}
+
+// ErrorToFailure implements FailureConverter.
+func (e errorMessageFailureConverter) ErrorToFailure(err error) Failure {
+	if err == nil {
+		return Failure{}
+	}
+	return Failure{
+		Message: err.Error(),
+	}
+}
+
+// FailureToError implements FailureConverter.
+func (e errorMessageFailureConverter) FailureToError(f Failure) error {
+	return errors.New(f.Message)
+}
+
+var defaultFailureConverter FailureConverter = errorMessageFailureConverter{}
