@@ -96,7 +96,7 @@ func (e *UnsuccessfulOperationError) Error() string {
 	if e.Cause == nil {
 		return fmt.Sprintf("operation %s", e.State)
 	}
-	return fmt.Sprintf("operation %s: %s", e.State, e.Error())
+	return fmt.Sprintf("operation %s: %s", e.State, e.Cause.Error())
 }
 
 // Unwrap returns the cause for use with utilities in the errors package.
