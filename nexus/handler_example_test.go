@@ -46,14 +46,14 @@ func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, 
 			}
 			// Optionally translate to operation failure (could also result in canceled state).
 			// Optionally expose the error details to the caller.
-			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+			return nil, nexus.NewFailedOperationError(err)
 		}
 		return result, nil
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
-			return nil, &nexus.UnsuccessfulOperationError{State: nexus.OperationStateFailed, Failure: nexus.Failure{Message: err.Error()}}
+			return nil, nexus.NewFailedOperationError(err)
 		}
 		return result, nil
 	}
@@ -77,10 +77,10 @@ func (h *myHandler) peekOperation(ctx context.Context) (*MyResult, error) {
 	panic("unimplemented")
 }
 
-func (h *myHandler) authorize(ctx context.Context, header nexus.Header) error {
+func (h *myHandler) authorize(_ context.Context, header nexus.Header) error {
 	// Authorization for demo purposes
 	if header.Get("Authorization") != "Bearer top-secret" {
-		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeUnauthorized, Failure: &nexus.Failure{Message: "Unauthorized"}}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnauthorized, "unauthorized")
 	}
 	return nil
 }

@@ -13,7 +13,8 @@ import (
 
 func TestWriteFailure_GenericError(t *testing.T) {
 	h := baseHTTPHandler{
-		logger: slog.Default(),
+		logger:           slog.Default(),
+		failureConverter: defaultFailureConverter,
 	}
 
 	writer := httptest.NewRecorder()
@@ -29,7 +30,8 @@ func TestWriteFailure_GenericError(t *testing.T) {
 
 func TestWriteFailure_HandlerError(t *testing.T) {
 	h := baseHTTPHandler{
-		logger: slog.Default(),
+		logger:           slog.Default(),
+		failureConverter: defaultFailureConverter,
 	}
 
 	writer := httptest.NewRecorder()
@@ -45,14 +47,12 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 
 func TestWriteFailure_UnsuccessfulOperationError(t *testing.T) {
 	h := baseHTTPHandler{
-		logger: slog.Default(),
+		logger:           slog.Default(),
+		failureConverter: defaultFailureConverter,
 	}
 
 	writer := httptest.NewRecorder()
-	h.writeFailure(writer, &UnsuccessfulOperationError{
-		State:   OperationStateCanceled,
-		Failure: Failure{Message: "canceled"},
-	})
+	h.writeFailure(writer, NewCanceledOperationError(fmt.Errorf("canceled")))
 
 	require.Equal(t, statusOperationFailed, writer.Code)
 	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))

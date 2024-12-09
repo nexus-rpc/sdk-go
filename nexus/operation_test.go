@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,7 @@ var noValueOperation = NewSyncOperation("no-value", func(ctx context.Context, in
 
 var numberValidatorOperation = NewSyncOperation("number-validator", func(ctx context.Context, input int, options StartOperationOptions) (int, error) {
 	if input == 0 {
-		return 0, &UnsuccessfulOperationError{State: OperationStateFailed, Failure: Failure{Message: "cannot process 0"}}
+		return 0, NewFailedOperationError(fmt.Errorf("cannot process 0"))
 	}
 	return input, nil
 })
@@ -33,11 +34,14 @@ func (h *asyncNumberValidatorOperation) Name() string {
 }
 
 func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, options StartOperationOptions) (HandlerStartOperationResult[int], error) {
-	return &HandlerStartOperationResultAsync{OperationID: "foo"}, nil
+	return &HandlerStartOperationResultAsync{OperationID: fmt.Sprintf("%d", input)}, nil
 }
 
 func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (int, error) {
-	return 3, nil
+	if id == "0" {
+		return 0, NewFailedOperationError(fmt.Errorf("cannot process 0"))
+	}
+	return strconv.Atoi(id)
 }
 
 func (h *asyncNumberValidatorOperation) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
@@ -165,7 +169,7 @@ func TestCancelOperation(t *testing.T) {
 	var handlerError *HandlerError
 	require.ErrorAs(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
-	require.Equal(t, "internal server error", handlerError.Failure.Message)
+	require.Equal(t, "internal server error", handlerError.Cause.Error())
 }
 
 func TestGetOperationInfo(t *testing.T) {
@@ -186,12 +190,12 @@ func TestGetOperationInfo(t *testing.T) {
 	require.NoError(t, err)
 	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
-	require.Equal(t, &OperationInfo{ID: "foo", State: OperationStateRunning}, info)
+	require.Equal(t, &OperationInfo{ID: "3", State: OperationStateRunning}, info)
 	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
 	var handlerError *HandlerError
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
-	require.Equal(t, "internal server error", handlerError.Failure.Message)
+	require.Equal(t, "internal server error", handlerError.Cause.Error())
 }
 
 type authRejectionHandler struct {
@@ -235,7 +239,7 @@ func TestHandlerError(t *testing.T) {
 	_, err = StartOperation(ctx, client, &authRejectionHandler{}, nil, StartOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
 	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
 	require.NoError(t, err)
@@ -243,17 +247,17 @@ func TestHandlerError(t *testing.T) {
 	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Failure.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 }
 
 func TestInputOutputType(t *testing.T) {

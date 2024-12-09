@@ -142,7 +142,36 @@ type OperationCompletionUnsuccessful struct {
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 	// Failure object to send with the completion.
-	Failure *Failure
+	Failure Failure
+}
+
+// OperationCompletionUnsuccessfulOptions are options for [NewOperationCompletionUnsuccessful].
+type OperationCompletionUnsuccessfulOptions struct {
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
+	FailureConverter FailureConverter
+	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
+	OperationID string
+	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
+	StartTime time.Time
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
+}
+
+// NewOperationCompletionUnsuccessful constructs an [OperationCompletionUnsuccessful] from a given error.
+func NewOperationCompletionUnsuccessful(error *UnsuccessfulOperationError, options OperationCompletionUnsuccessfulOptions) (*OperationCompletionUnsuccessful, error) {
+	if options.FailureConverter == nil {
+		options.FailureConverter = defaultFailureConverter
+	}
+
+	return &OperationCompletionUnsuccessful{
+		Header:      make(Header),
+		State:       error.State,
+		Failure:     options.FailureConverter.ErrorToFailure(error.Cause),
+		OperationID: options.OperationID,
+		StartTime:   options.StartTime,
+		Links:       options.Links,
+	}, nil
 }
 
 func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Request) error {
@@ -185,10 +214,10 @@ type CompletionRequest struct {
 	OperationID string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// StartLinks are used to link back to the operation when a completion callback is received before a started response.
-	StartLinks []Link
+	// Links are used to link back to the operation when a completion callback is received before a started response.
+	Links []Link
 	// Parsed from request and set if State is failed or canceled.
-	Failure *Failure
+	Error error
 	// Extracted from request and set if State is succeeded.
 	Result *LazyValue
 }
@@ -209,6 +238,9 @@ type CompletionHandlerOptions struct {
 	// A [Serializer] to customize handler serialization behavior.
 	// By default the handler handles, JSONables, byte slices, and nil.
 	Serializer Serializer
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
+	FailureConverter FailureConverter
 }
 
 type completionHTTPHandler struct {
@@ -231,7 +263,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 		}
 	}
 	var decodeErr error
-	if completion.StartLinks, decodeErr = getLinksFromHeader(request.Header); decodeErr != nil {
+	if completion.Links, decodeErr = getLinksFromHeader(request.Header); decodeErr != nil {
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to decode links from request headers"))
 		return
 	}
@@ -251,7 +283,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
-		completion.Failure = &failure
+		completion.Error = h.failureConverter.FailureToError(failure)
 	case OperationStateSucceeded:
 		completion.Result = &LazyValue{
 			serializer: h.options.Serializer,
@@ -277,10 +309,14 @@ func NewCompletionHTTPHandler(options CompletionHandlerOptions) http.Handler {
 	if options.Serializer == nil {
 		options.Serializer = defaultSerializer
 	}
+	if options.FailureConverter == nil {
+		options.FailureConverter = defaultFailureConverter
+	}
 	return &completionHTTPHandler{
 		options: options,
 		baseHTTPHandler: baseHTTPHandler{
-			logger: options.Logger,
+			logger:           options.Logger,
+			failureConverter: options.FailureConverter,
 		},
 	}
 }

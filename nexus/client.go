@@ -27,8 +27,11 @@ type HTTPClientOptions struct {
 	// Defaults to [http.DefaultClient.Do].
 	HTTPCaller func(*http.Request) (*http.Response, error)
 	// A [Serializer] to customize client serialization behavior.
-	// By default the client handles, JSONables, byte slices, and nil.
+	// By default the client handles JSONables, byte slices, and nil.
 	Serializer Serializer
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
+	FailureConverter FailureConverter
 }
 
 // User-Agent header set on HTTP requests.
@@ -113,6 +116,9 @@ func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 	}
 	if options.Serializer == nil {
 		options.Serializer = defaultSerializer
+	}
+	if options.FailureConverter == nil {
+		options.FailureConverter = defaultFailureConverter
 	}
 
 	return &HTTPClient{
@@ -267,17 +273,18 @@ func (c *HTTPClient) StartOperation(
 			return nil, err
 		}
 
-		failure, err := failureFromResponse(response, body)
+		failure, err := c.failureFromResponse(response, body)
 		if err != nil {
 			return nil, err
 		}
 
+		failureErr := c.options.FailureConverter.FailureToError(failure)
 		return nil, &UnsuccessfulOperationError{
-			State:   state,
-			Failure: failure,
+			State: state,
+			Cause: failureErr,
 		}
 	default:
-		return nil, bestEffortHandlerErrorFromResponse(response, body)
+		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
 	}
 }
 
@@ -393,7 +400,7 @@ func operationInfoFromResponse(response *http.Response, body []byte) (*Operation
 	return &info, nil
 }
 
-func failureFromResponse(response *http.Response, body []byte) (Failure, error) {
+func (c *HTTPClient) failureFromResponse(response *http.Response, body []byte) (Failure, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
 		return Failure{}, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
@@ -402,43 +409,49 @@ func failureFromResponse(response *http.Response, body []byte) (Failure, error) 
 	return failure, err
 }
 
-func failureFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) Failure {
-	failure, err := failureFromResponse(response, body)
+func (c *HTTPClient) failureFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) Failure {
+	failure, err := c.failureFromResponse(response, body)
 	if err != nil {
 		failure.Message = defaultMessage
 	}
 	return failure
 }
 
-func bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
+func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) error {
+	failure := c.failureFromResponseOrDefault(response, body, defaultMessage)
+	failureErr := c.options.FailureConverter.FailureToError(failure)
+	return failureErr
+}
+
+func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
 	switch response.StatusCode {
 	case http.StatusBadRequest:
-		failure := failureFromResponseOrDefault(response, body, "bad request")
-		return &HandlerError{Type: HandlerErrorTypeBadRequest, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "bad request")
+		return &HandlerError{Type: HandlerErrorTypeBadRequest, Cause: failureErr}
 	case http.StatusUnauthorized:
-		failure := failureFromResponseOrDefault(response, body, "unauthenticated")
-		return &HandlerError{Type: HandlerErrorTypeUnauthenticated, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthenticated")
+		return &HandlerError{Type: HandlerErrorTypeUnauthenticated, Cause: failureErr}
 	case http.StatusForbidden:
-		failure := failureFromResponseOrDefault(response, body, "unauthorized")
-		return &HandlerError{Type: HandlerErrorTypeUnauthorized, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthorized")
+		return &HandlerError{Type: HandlerErrorTypeUnauthorized, Cause: failureErr}
 	case http.StatusNotFound:
-		failure := failureFromResponseOrDefault(response, body, "not found")
-		return &HandlerError{Type: HandlerErrorTypeNotFound, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not found")
+		return &HandlerError{Type: HandlerErrorTypeNotFound, Cause: failureErr}
 	case http.StatusTooManyRequests:
-		failure := failureFromResponseOrDefault(response, body, "resource exhausted")
-		return &HandlerError{Type: HandlerErrorTypeResourceExhausted, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "resource exhausted")
+		return &HandlerError{Type: HandlerErrorTypeResourceExhausted, Cause: failureErr}
 	case http.StatusInternalServerError:
-		failure := failureFromResponseOrDefault(response, body, "internal error")
-		return &HandlerError{Type: HandlerErrorTypeInternal, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "internal error")
+		return &HandlerError{Type: HandlerErrorTypeInternal, Cause: failureErr}
 	case http.StatusNotImplemented:
-		failure := failureFromResponseOrDefault(response, body, "not implemented")
-		return &HandlerError{Type: HandlerErrorTypeNotImplemented, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not implemented")
+		return &HandlerError{Type: HandlerErrorTypeNotImplemented, Cause: failureErr}
 	case http.StatusServiceUnavailable:
-		failure := failureFromResponseOrDefault(response, body, "unavailable")
-		return &HandlerError{Type: HandlerErrorTypeUnavailable, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unavailable")
+		return &HandlerError{Type: HandlerErrorTypeUnavailable, Cause: failureErr}
 	case StatusUpstreamTimeout:
-		failure := failureFromResponseOrDefault(response, body, "upstream timeout")
-		return &HandlerError{Type: HandlerErrorTypeUpstreamTimeout, Failure: &failure}
+		failureErr := c.failureErrorFromResponseOrDefault(response, body, "upstream timeout")
+		return &HandlerError{Type: HandlerErrorTypeUpstreamTimeout, Cause: failureErr}
 	default:
 		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
 	}

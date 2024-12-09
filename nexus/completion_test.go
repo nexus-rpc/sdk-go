@@ -2,6 +2,7 @@ package nexus
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -30,8 +31,8 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if completion.OperationID != "test-operation-id" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
 	}
-	if len(completion.StartLinks) == 0 {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartLinks to be set on CompletionRequest")
+	if len(completion.Links) == 0 {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
 	var result int
 	err := completion.Result.Consume(&result)
@@ -45,7 +46,7 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 }
 
 func TestSuccessfulCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil)
+	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil, nil)
 	defer teardown()
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
@@ -76,7 +77,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 
 func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 	serializer := &customSerializer{}
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer)
+	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer, nil)
 	defer teardown()
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
@@ -109,14 +110,15 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 }
 
 type failureExpectingCompletionHandler struct {
+	errorChecker func(error) error
 }
 
 func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Context, completion *CompletionRequest) error {
 	if completion.State != OperationStateCanceled {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected completion state: %q", completion.State)
 	}
-	if completion.Failure.Message != "expected message" {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure: %v", completion.Failure)
+	if err := h.errorChecker(completion.Error); err != nil {
+		return err
 	}
 	if completion.HTTPRequest.Header.Get("foo") != "bar" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'foo' header: %q", completion.HTTPRequest.Header.Get("foo"))
@@ -124,20 +126,25 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if completion.OperationID != "test-operation-id" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
 	}
-	if len(completion.StartLinks) == 0 {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartLinks to be set on CompletionRequest")
+	if len(completion.Links) == 0 {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
 
 	return nil
 }
 
 func TestFailureCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{}, nil)
+	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
+		errorChecker: func(err error) error {
+			if err.Error() != "expected message" {
+				return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure: %v", err)
+			}
+			return nil
+		},
+	}, nil, nil)
 	defer teardown()
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, &OperationCompletionUnsuccessful{
-		Header:      Header{"foo": "bar"},
-		State:       OperationStateCanceled,
+	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		OperationID: "test-operation-id",
 		StartTime:   time.Now(),
 		Links: []Link{{
@@ -149,10 +156,48 @@ func TestFailureCompletion(t *testing.T) {
 			},
 			Type: "url",
 		}},
-		Failure: &Failure{
-			Message: "expected message",
-		},
 	})
+	require.NoError(t, err)
+	completion.Header.Set("foo", "bar")
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
+	require.NoError(t, err)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	_, err = io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
+	fc := customFailureConverter{}
+	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
+		errorChecker: func(err error) error {
+			if !errors.Is(err, errCustom) {
+				return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure, expected a custom error: %v", err)
+			}
+			return nil
+		},
+	}, nil, fc)
+	defer teardown()
+
+	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
+		FailureConverter: fc,
+		OperationID:      "test-operation-id",
+		StartTime:        time.Now(),
+		Links: []Link{{
+			URL: &url.URL{
+				Scheme:   "https",
+				Host:     "example.com",
+				Path:     "/path/to/something",
+				RawQuery: "param=value",
+			},
+			Type: "url",
+		}},
+	})
+	require.NoError(t, err)
+	completion.Header.Set("foo", "bar")
+	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
@@ -170,7 +215,7 @@ func (h *failingCompletionHandler) CompleteOperation(ctx context.Context, comple
 }
 
 func TestBadRequestCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil)
+	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil, nil)
 	defer teardown()
 
 	completion, err := NewOperationCompletionSuccessful([]byte("success"), OperationCompletionSuccessfulOptions{})
