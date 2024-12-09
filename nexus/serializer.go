@@ -241,12 +241,21 @@ var defaultSerializer Serializer = compositeSerializer{
 	serializerChain([]Serializer{nilSerializer{}, byteSliceSerializer{}, jsonSerializer{}}),
 }
 
-type errorMessageFailureConverter struct{}
+// DefaultSerializer returns the SDK's default [Serializer] that handles serialization to and from JSONables, byte
+// slices, and nil.
+func DefaultSerializer() Serializer {
+	return defaultSerializer
+}
+
+type failureErrorFailureConverter struct{}
 
 // ErrorToFailure implements FailureConverter.
-func (e errorMessageFailureConverter) ErrorToFailure(err error) Failure {
+func (e failureErrorFailureConverter) ErrorToFailure(err error) Failure {
 	if err == nil {
 		return Failure{}
+	}
+	if fe, ok := err.(*FailureError); ok {
+		return fe.Failure
 	}
 	return Failure{
 		Message: err.Error(),
@@ -254,8 +263,16 @@ func (e errorMessageFailureConverter) ErrorToFailure(err error) Failure {
 }
 
 // FailureToError implements FailureConverter.
-func (e errorMessageFailureConverter) FailureToError(f Failure) error {
-	return errors.New(f.Message)
+func (e failureErrorFailureConverter) FailureToError(f Failure) error {
+	return &FailureError{f}
 }
 
-var defaultFailureConverter FailureConverter = errorMessageFailureConverter{}
+var defaultFailureConverter FailureConverter = failureErrorFailureConverter{}
+
+// DefaultFailureConverter returns the SDK's default [FailureConverter] implementation. Arbitrary errors are converted
+// to a simple [Failure] object with just the Message popluated and [FailureError] instances to their underlying
+// [Failure] instance. [Failure] instances are converted to [FailureError] to allow access to the full failure metadata
+// and details if available.
+func DefaultFailureConverter() FailureConverter {
+	return defaultFailureConverter
+}

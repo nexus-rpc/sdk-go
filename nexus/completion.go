@@ -147,8 +147,8 @@ type OperationCompletionUnsuccessful struct {
 
 // OperationCompletionUnsuccessfulOptions are options for [NewOperationCompletionUnsuccessful].
 type OperationCompletionUnsuccessfulOptions struct {
-	// Optional failure converter for converting errors to [Failure] objects. Defaults to the SDK's default
-	// FailureConverter, which translates only error messages losing type information and struct fields.
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
 	FailureConverter FailureConverter
 	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
 	OperationID string
@@ -238,8 +238,8 @@ type CompletionHandlerOptions struct {
 	// A [Serializer] to customize handler serialization behavior.
 	// By default the handler handles, JSONables, byte slices, and nil.
 	Serializer Serializer
-	// A [FailureConverter] to convert a [Failure] instance to and from an [error].
-	// By default the client translates only error messages, losing type information and struct fields.
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
 	FailureConverter FailureConverter
 }
 

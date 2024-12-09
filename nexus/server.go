@@ -443,7 +443,7 @@ type HandlerOptions struct {
 	// By default the handler handles JSONables, byte slices, and nil.
 	Serializer Serializer
 	// A [FailureConverter] to convert a [Failure] instance to and from an [error].
-	// By default the client translates only error messages, losing type information and struct fields.
+	// Defaults to [DefaultFailureConverter].
 	FailureConverter FailureConverter
 }
 

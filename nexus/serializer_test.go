@@ -161,8 +161,24 @@ func TestCustomSerializer(t *testing.T) {
 	require.Equal(t, 4, c.encoded)
 }
 
-func TestDefaultFailureConverter(t *testing.T) {
+func TestDefaultFailureConverterArbitraryError(t *testing.T) {
 	sourceErr := errors.New("test")
+	var f Failure
+	conv := defaultFailureConverter
+
+	f = conv.ErrorToFailure(sourceErr)
+	convErr := conv.FailureToError(f)
+	require.Equal(t, sourceErr.Error(), convErr.Error())
+}
+
+func TestDefaultFailureConverterFailureError(t *testing.T) {
+	sourceErr := &FailureError{
+		Failure: Failure{
+			Message:  "test",
+			Metadata: map[string]string{"key": "value"},
+			Details:  []byte(`"details"`),
+		},
+	}
 	var f Failure
 	conv := defaultFailureConverter
 

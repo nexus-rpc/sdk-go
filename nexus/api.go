@@ -65,6 +65,18 @@ type Failure struct {
 	Details json.RawMessage `json:"details,omitempty"`
 }
 
+// An error that directly represents a wire representation of [Failure].
+// The SDK will convert to this error by default unless the [FailureConverter] instance is customized.
+type FailureError struct {
+	// The underlying Failure object this error represents.
+	Failure Failure
+}
+
+// Error implements the error interface.
+func (e *FailureError) Error() string {
+	return e.Failure.Message
+}
+
 // UnsuccessfulOperationError represents "failed" and "canceled" operation results.
 type UnsuccessfulOperationError struct {
 	// State of the operation. Only [OperationStateFailed] and [OperationStateCanceled] are valid.

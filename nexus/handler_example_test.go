@@ -77,7 +77,7 @@ func (h *myHandler) peekOperation(ctx context.Context) (*MyResult, error) {
 	panic("unimplemented")
 }
 
-func (h *myHandler) authorize(ctx context.Context, header nexus.Header) error {
+func (h *myHandler) authorize(_ context.Context, header nexus.Header) error {
 	// Authorization for demo purposes
 	if header.Get("Authorization") != "Bearer top-secret" {
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnauthorized, "unauthorized")
