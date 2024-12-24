@@ -25,3 +25,12 @@ jobs:
           args: --verbose --timeout 3m --fix=false
       - name: Test
         run: go test -v  ./...
+      - name: Lint nexusproto
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.54
+          args: --verbose --timeout 3m --fix=false
+          working-directory: ./contrib/nexusproto
+      - name: Test nexusproto
+        run: go test -v  ./...
+        working-directory: ./contrib/nexusproto
