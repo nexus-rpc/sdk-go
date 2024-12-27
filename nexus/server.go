@@ -25,9 +25,16 @@ type HandlerStartOperationResult[T any] interface {
 // HandlerStartOperationResultSync indicates that an operation completed successfully.
 type HandlerStartOperationResultSync[T any] struct {
 	Value T
+	// If not empty, the operation has multiple stages, the next stage is another operation with this identifier.
+	NextStage *OperationInfo
 }
 
 func (r *HandlerStartOperationResultSync[T]) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
+	if r.NextStage != nil {
+		writer.Header().Set("Nexus-Next-Operation-Name", r.NextStage.Name)
+		writer.Header().Set("Nexus-Next-Operation-Id", r.NextStage.ID)
+		writer.Header().Set("Nexus-Next-Operation-State", string(r.NextStage.State))
+	}
 	handler.writeResult(writer, r.Value)
 }
 

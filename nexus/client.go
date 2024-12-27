@@ -135,11 +135,36 @@ type ClientStartOperationResult[T any] struct {
 	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close it to
 	// free up the underlying connection.
 	Successful T
+
+	nextStageInput *nextStageInput
+
 	// Set when the handler indicates that it started an asynchronous operation.
 	// The attached handle can be used to perform actions such as cancel the operation or get its result.
 	Pending *OperationHandle[T]
 	// Links contain information about the operations done by the handler.
 	Links []Link
+}
+
+type nextStageInput struct {
+	operationInfo OperationInfo
+	client        *HTTPClient
+}
+
+type UntypedClientStartOperationResult interface {
+	nextStage() *nextStageInput
+}
+
+func NextStage[I, O any](r UntypedClientStartOperationResult, _ Operation[I, O]) *OperationHandle[O] {
+	i := r.nextStage()
+	if i == nil {
+		return nil
+	}
+	// TODO: operation has a name already, verify match?
+	return &OperationHandle[O]{client: i.client, Operation: i.operationInfo.Name, ID: i.operationInfo.ID}
+}
+
+func (r *ClientStartOperationResult[T]) nextStage() *nextStageInput {
+	return r.nextStageInput
 }
 
 // StartOperation calls the configured Nexus endpoint to start an operation.
@@ -221,7 +246,7 @@ func (c *HTTPClient) StartOperation(
 	}
 	// Do not close response body here to allow successful result to read it.
 	if response.StatusCode == http.StatusOK {
-		return &ClientStartOperationResult[*LazyValue]{
+		result := &ClientStartOperationResult[*LazyValue]{
 			Successful: &LazyValue{
 				serializer: c.options.Serializer,
 				Reader: &Reader{
@@ -229,7 +254,19 @@ func (c *HTTPClient) StartOperation(
 					prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
 				},
 			},
-		}, nil
+		}
+		var nextStage OperationInfo
+		nextStage.Name = response.Header.Get("Nexus-Next-Operation-Name")
+		nextStage.ID = response.Header.Get("Nexus-Next-Operation-Id")
+		nextStage.State = OperationState(response.Header.Get("Nexus-Next-Operation-State"))
+		if nextStage.Name != "" && nextStage.ID != "" {
+			result.nextStageInput = &nextStageInput{
+				operationInfo: nextStage,
+				client:        c,
+			}
+		}
+
+		return result, nil
 	}
 
 	// Do this once here and make sure it doesn't leak.

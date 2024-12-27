@@ -121,6 +121,10 @@ var ErrOperationStillRunning = errors.New("operation still running")
 
 // OperationInfo conveys information about an operation.
 type OperationInfo struct {
+	// Name of the operation.
+	// TODO: should this always be filled in? Seems like it can be optional just if redirecting to the next stage.
+	Name string `json:"name"`
+
 	// ID of the operation.
 	ID string `json:"id"`
 	// State of the operation.
