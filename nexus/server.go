@@ -25,26 +25,36 @@ type HandlerStartOperationResult[T any] interface {
 // HandlerStartOperationResultSync indicates that an operation completed successfully.
 type HandlerStartOperationResultSync[T any] struct {
 	Value T
-	// If not empty, the operation has multiple stages, the next stage is another operation with this identifier.
-	NextStage *OperationInfo
 }
 
 func (r *HandlerStartOperationResultSync[T]) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
-	if r.NextStage != nil {
-		writer.Header().Set("Nexus-Next-Operation-Name", r.NextStage.Name)
-		writer.Header().Set("Nexus-Next-Operation-Id", r.NextStage.ID)
-		writer.Header().Set("Nexus-Next-Operation-State", string(r.NextStage.State))
-	}
-	handler.writeResult(writer, r.Value)
+	handler.writeResult(writer, r.Value, http.StatusOK)
 }
 
 // HandlerStartOperationResultAsync indicates that an operation has been accepted and will complete asynchronously.
 type HandlerStartOperationResultAsync struct {
 	OperationID string
 	Links       []Link
+	StartResult any
 }
 
 func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
+	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
+		handler.logger.Error("failed to serialize links into header", "error", err)
+		// clear any previous links already written to the header
+		writer.Header().Del(headerLink)
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Newer result format, this should eventually replace the old format completely.
+	if r.StartResult != nil {
+		writer.Header().Set(HeaderOperationID, r.OperationID)
+		writer.Header().Set(headerOperationState, string(OperationStateRunning))
+		handler.writeResult(writer, r.StartResult, http.StatusCreated)
+		return
+	}
+
 	info := OperationInfo{
 		ID:    r.OperationID,
 		State: OperationStateRunning,
@@ -52,14 +62,6 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 	bytes, err := json.Marshal(info)
 	if err != nil {
 		handler.logger.Error("failed to serialize operation info", "error", err)
-		writer.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
-		handler.logger.Error("failed to serialize links into header", "error", err)
-		// clear any previous links already written to the header
-		writer.Header().Del(headerLink)
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -179,7 +181,7 @@ type httpHandler struct {
 	options HandlerOptions
 }
 
-func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
+func (h *httpHandler) writeResult(writer http.ResponseWriter, result any, status int) {
 	var reader *Reader
 	if r, ok := result.(*Reader); ok {
 		// Close the request body in case we error before sending the HTTP request (which may double close but
@@ -210,6 +212,7 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 	if reader.ReadCloser == nil {
 		return
 	}
+	writer.WriteHeader(status)
 	if _, err := io.Copy(writer, reader); err != nil {
 		h.logger.Error("failed to write response body", "error", err)
 	}
@@ -357,7 +360,7 @@ func (h *httpHandler) getOperationResult(service, operation, operationID string,
 		}
 		return
 	}
-	h.writeResult(writer, result)
+	h.writeResult(writer, result, http.StatusOK)
 }
 
 func (h *httpHandler) getOperationInfo(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {

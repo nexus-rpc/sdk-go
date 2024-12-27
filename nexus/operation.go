@@ -344,12 +344,13 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 		if err := result.Successful.Consume(&o); err != nil {
 			return nil, err
 		}
-		return &ClientStartOperationResult[O]{Successful: o, nextStageInput: result.nextStageInput}, nil
+		return &ClientStartOperationResult[O]{Successful: o}, nil
 	}
 	handle := OperationHandle[O]{client: client, Operation: operation.Name(), ID: result.Pending.ID}
 	return &ClientStartOperationResult[O]{
-		Pending: &handle,
-		Links:   result.Links,
+		Pending:     &handle,
+		Links:       result.Links,
+		StartResult: result.StartResult,
 	}, nil
 }
 

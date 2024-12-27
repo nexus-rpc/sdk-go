@@ -136,35 +136,14 @@ type ClientStartOperationResult[T any] struct {
 	// free up the underlying connection.
 	Successful T
 
-	nextStageInput *nextStageInput
+	// If set, additional result from the StartOperation handler can be extracted here.
+	StartResult *LazyValue
 
 	// Set when the handler indicates that it started an asynchronous operation.
 	// The attached handle can be used to perform actions such as cancel the operation or get its result.
 	Pending *OperationHandle[T]
 	// Links contain information about the operations done by the handler.
 	Links []Link
-}
-
-type nextStageInput struct {
-	operationInfo OperationInfo
-	client        *HTTPClient
-}
-
-type UntypedClientStartOperationResult interface {
-	nextStage() *nextStageInput
-}
-
-func NextStage[I, O any](r UntypedClientStartOperationResult, _ Operation[I, O]) *OperationHandle[O] {
-	i := r.nextStage()
-	if i == nil {
-		return nil
-	}
-	// TODO: operation has a name already, verify match?
-	return &OperationHandle[O]{client: i.client, Operation: i.operationInfo.Name, ID: i.operationInfo.ID}
-}
-
-func (r *ClientStartOperationResult[T]) nextStage() *nextStageInput {
-	return r.nextStageInput
 }
 
 // StartOperation calls the configured Nexus endpoint to start an operation.
@@ -246,7 +225,7 @@ func (c *HTTPClient) StartOperation(
 	}
 	// Do not close response body here to allow successful result to read it.
 	if response.StatusCode == http.StatusOK {
-		result := &ClientStartOperationResult[*LazyValue]{
+		return &ClientStartOperationResult[*LazyValue]{
 			Successful: &LazyValue{
 				serializer: c.options.Serializer,
 				Reader: &Reader{
@@ -254,38 +233,14 @@ func (c *HTTPClient) StartOperation(
 					prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
 				},
 			},
-		}
-		var nextStage OperationInfo
-		nextStage.Name = response.Header.Get("Nexus-Next-Operation-Name")
-		nextStage.ID = response.Header.Get("Nexus-Next-Operation-Id")
-		nextStage.State = OperationState(response.Header.Get("Nexus-Next-Operation-State"))
-		if nextStage.Name != "" && nextStage.ID != "" {
-			result.nextStageInput = &nextStageInput{
-				operationInfo: nextStage,
-				client:        c,
-			}
-		}
-
-		return result, nil
-	}
-
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return nil, err
-	}
-
-	switch response.StatusCode {
-	case http.StatusCreated:
-		info, err := operationInfoFromResponse(response, body)
-		if err != nil {
-			return nil, err
-		}
-		if info.State != OperationStateRunning {
-			return nil, newUnexpectedResponseError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
-		}
+		}, nil
+	} else if response.StatusCode == http.StatusCreated {
 		links, err := getLinksFromHeader(response.Header)
 		if err != nil {
+			body, err := readAndReplaceBody(response)
+			if err != nil {
+				return nil, err
+			}
 			return nil, fmt.Errorf(
 				"%w: %w",
 				newUnexpectedResponseError(
@@ -296,6 +251,37 @@ func (c *HTTPClient) StartOperation(
 				err,
 			)
 		}
+
+		operationID := response.Header.Get(HeaderOperationID)
+		if operationID != "" {
+			return &ClientStartOperationResult[*LazyValue]{
+				Pending: &OperationHandle[*LazyValue]{
+					Operation: operation,
+					ID:        operationID,
+					client:    c,
+				},
+				StartResult: &LazyValue{
+					serializer: c.options.Serializer,
+					Reader: &Reader{
+						response.Body,
+						prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
+					},
+				},
+				Links: links,
+			}, nil
+		}
+
+		body, err := readAndReplaceBody(response)
+		if err != nil {
+			return nil, err
+		}
+		info, err := operationInfoFromResponse(response, body)
+		if err != nil {
+			return nil, err
+		}
+		if info.State != OperationStateRunning {
+			return nil, newUnexpectedResponseError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
+		}
 		return &ClientStartOperationResult[*LazyValue]{
 			Pending: &OperationHandle[*LazyValue]{
 				Operation: operation,
@@ -304,6 +290,15 @@ func (c *HTTPClient) StartOperation(
 			},
 			Links: links,
 		}, nil
+	}
+
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return nil, err
+	}
+
+	switch response.StatusCode {
 	case statusOperationFailed:
 		state, err := getUnsuccessfulStateFromHeader(response, body)
 		if err != nil {
