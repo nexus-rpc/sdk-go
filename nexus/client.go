@@ -219,6 +219,25 @@ func (c *HTTPClient) StartOperation(
 	if err != nil {
 		return nil, err
 	}
+
+	links, err := getLinksFromHeader(response.Header)
+	if err != nil {
+		// Have to read body here to check if it is a Failure.
+		body, err := readAndReplaceBody(response)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf(
+			"%w: %w",
+			newUnexpectedResponseError(
+				fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLink)),
+				response,
+				body,
+			),
+			err,
+		)
+	}
+
 	// Do not close response body here to allow successful result to read it.
 	if response.StatusCode == http.StatusOK {
 		return &ClientStartOperationResult[*LazyValue]{
@@ -229,6 +248,7 @@ func (c *HTTPClient) StartOperation(
 					prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
 				},
 			},
+			Links: links,
 		}, nil
 	}
 
@@ -246,18 +266,6 @@ func (c *HTTPClient) StartOperation(
 		}
 		if info.State != OperationStateRunning {
 			return nil, newUnexpectedResponseError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
-		}
-		links, err := getLinksFromHeader(response.Header)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"%w: %w",
-				newUnexpectedResponseError(
-					fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLink)),
-					response,
-					body,
-				),
-				err,
-			)
 		}
 		return &ClientStartOperationResult[*LazyValue]{
 			Pending: &OperationHandle[*LazyValue]{

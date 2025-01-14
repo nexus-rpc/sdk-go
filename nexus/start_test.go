@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func (h *successHandler) StartOperation(ctx context.Context, service, operation 
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
 	}
 
-	return &HandlerStartOperationResultSync[any]{Value: body, Links: options.Links}, nil
+	return &HandlerStartOperationResultSync[any]{Value: body}, nil
 }
 
 func TestSuccess(t *testing.T) {
@@ -110,6 +111,7 @@ func TestClientRequestID(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			result, err := client.StartOperation(ctx, "foo", nil, c.request)
 			require.NoError(t, err)
+			require.Equal(t, c.request.Links, result.Links)
 			response := result.Successful
 			require.NotNil(t, response)
 			var responseBody []byte
@@ -165,7 +167,7 @@ func (h *echoHandler) StartOperation(ctx context.Context, service, operation str
 			Data:   data,
 		}
 	}
-	return &HandlerStartOperationResultSync[any]{Value: output}, nil
+	return &HandlerStartOperationResultSync[any]{Value: output, Links: options.Links}, nil
 }
 
 func TestReaderIO(t *testing.T) {
@@ -182,6 +184,7 @@ func TestReaderIO(t *testing.T) {
 		name   string
 		input  any
 		header Header
+		links  []Link
 	}{
 		{
 			name:   "content",
@@ -192,14 +195,24 @@ func TestReaderIO(t *testing.T) {
 			name:   "reader",
 			input:  reader,
 			header: Header{"input-type": "reader"},
+			links: []Link{{
+				URL: &url.URL{
+					Scheme:   "https",
+					Host:     "example.com",
+					Path:     "/path/to/something",
+					RawQuery: "param=value",
+				},
+				Type: "url",
+			}},
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header})
+			result, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header, Links: tc.links})
 			require.NoError(t, err)
+			require.Equal(t, tc.links, result.Links)
 			response := result.Successful
 			require.NotNil(t, response)
 			var operationResult string
