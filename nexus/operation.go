@@ -125,7 +125,7 @@ func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartO
 	if err != nil {
 		return nil, err
 	}
-	return &HandlerStartOperationResultSync[O]{Value: o, Links: options.Links}, err
+	return &HandlerStartOperationResultSync[O]{Value: o}, err
 }
 
 // A Service is a container for a group of operations.
@@ -344,7 +344,10 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 		if err := result.Successful.Consume(&o); err != nil {
 			return nil, err
 		}
-		return &ClientStartOperationResult[O]{Successful: o}, nil
+		return &ClientStartOperationResult[O]{
+			Successful: o,
+			Links:      result.Links,
+		}, nil
 	}
 	handle := OperationHandle[O]{client: client, Operation: operation.Name(), ID: result.Pending.ID}
 	return &ClientStartOperationResult[O]{

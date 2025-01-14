@@ -47,7 +47,7 @@ func (h *successHandler) StartOperation(ctx context.Context, service, operation 
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
 	}
 
-	return &HandlerStartOperationResultSync[any]{Value: body, Links: options.Links}, nil
+	return &HandlerStartOperationResultSync[any]{Value: body}, nil
 }
 
 func TestSuccess(t *testing.T) {
