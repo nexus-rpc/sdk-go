@@ -125,7 +125,7 @@ func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartO
 	if err != nil {
 		return nil, err
 	}
-	return &HandlerStartOperationResultSync[O]{o}, err
+	return &HandlerStartOperationResultSync[O]{Value: o, Links: options.Links}, err
 }
 
 // A Service is a container for a group of operations.
