@@ -24,17 +24,30 @@ type HandlerStartOperationResult[T any] interface {
 
 // HandlerStartOperationResultSync indicates that an operation completed successfully.
 type HandlerStartOperationResultSync[T any] struct {
+	// Value is the output of the operation.
 	Value T
+	// Links to be associated with the operation.
+	Links []Link
 }
 
 func (r *HandlerStartOperationResultSync[T]) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
+	if err := addLinksToHTTPHeader(r.Links, writer.Header()); err != nil {
+		handler.logger.Error("failed to serialize links into header", "error", err)
+		// clear any previous links already written to the header
+		writer.Header().Del(headerLink)
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	handler.writeResult(writer, r.Value)
 }
 
 // HandlerStartOperationResultAsync indicates that an operation has been accepted and will complete asynchronously.
 type HandlerStartOperationResultAsync struct {
+	// OperationID is a unique ID to identify the operation.
 	OperationID string
-	Links       []Link
+	// Links to be associated with the operation.
+	Links []Link
 }
 
 func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
