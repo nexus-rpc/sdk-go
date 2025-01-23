@@ -150,7 +150,7 @@ func (h *OperationHandle[T]) sendGetOperationResultRequest(request *http.Request
 			return nil, err
 		}
 		failureErr := h.client.options.FailureConverter.FailureToError(failure)
-		return nil, &UnsuccessfulOperationError{
+		return nil, &OperationError{
 			State: state,
 			Cause: failureErr,
 		}

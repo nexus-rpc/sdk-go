@@ -159,7 +159,7 @@ type OperationCompletionUnsuccessfulOptions struct {
 }
 
 // NewOperationCompletionUnsuccessful constructs an [OperationCompletionUnsuccessful] from a given error.
-func NewOperationCompletionUnsuccessful(error *UnsuccessfulOperationError, options OperationCompletionUnsuccessfulOptions) (*OperationCompletionUnsuccessful, error) {
+func NewOperationCompletionUnsuccessful(error *OperationError, options OperationCompletionUnsuccessfulOptions) (*OperationCompletionUnsuccessful, error) {
 	if options.FailureConverter == nil {
 		options.FailureConverter = defaultFailureConverter
 	}

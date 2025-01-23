@@ -154,7 +154,7 @@ type ClientStartOperationResult[T any] struct {
 //     such as getting its result.
 //
 //  3. The operation was unsuccessful. The returned result will be nil and error will be an
-//     [UnsuccessfulOperationError].
+//     [OperationError].
 //
 //  4. Any other error.
 func (c *HTTPClient) StartOperation(
@@ -287,7 +287,7 @@ func (c *HTTPClient) StartOperation(
 		}
 
 		failureErr := c.options.FailureConverter.FailureToError(failure)
-		return nil, &UnsuccessfulOperationError{
+		return nil, &OperationError{
 			State: state,
 			Cause: failureErr,
 		}
