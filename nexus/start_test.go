@@ -247,7 +247,7 @@ type unsuccessfulHandler struct {
 }
 
 func (h *unsuccessfulHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	return nil, &UnsuccessfulOperationError{
+	return nil, &OperationError{
 		// We're passing the desired state via request ID in this test.
 		State: OperationState(options.RequestID),
 		Cause: fmt.Errorf("intentional"),
@@ -261,7 +261,7 @@ func TestUnsuccessful(t *testing.T) {
 	cases := []string{"canceled", "failed"}
 	for _, c := range cases {
 		_, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{RequestID: c})
-		var unsuccessfulError *UnsuccessfulOperationError
+		var unsuccessfulError *OperationError
 		require.ErrorAs(t, err, &unsuccessfulError)
 		require.Equal(t, OperationState(c), unsuccessfulError.State)
 	}

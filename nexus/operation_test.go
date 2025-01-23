@@ -106,7 +106,7 @@ func TestExecuteOperation(t *testing.T) {
 	require.Equal(t, 3, result)
 
 	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
-	var unsuccessfulError *UnsuccessfulOperationError
+	var unsuccessfulError *OperationError
 	require.ErrorAs(t, err, &unsuccessfulError)
 
 	bResult, err := ExecuteOperation(ctx, client, bytesIOOperation, []byte("hello"), ExecuteOperationOptions{})

@@ -45,7 +45,7 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 	require.Equal(t, "foo", failure.Message)
 }
 
-func TestWriteFailure_UnsuccessfulOperationError(t *testing.T) {
+func TestWriteFailure_OperationError(t *testing.T) {
 	h := baseHTTPHandler{
 		logger:           slog.Default(),
 		failureConverter: defaultFailureConverter,

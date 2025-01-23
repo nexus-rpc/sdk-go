@@ -184,13 +184,13 @@ func TestPeekResult_Success(t *testing.T) {
 }
 
 func TestPeekResult_Canceled(t *testing.T) {
-	ctx, client, teardown := setup(t, &asyncWithResultHandler{resultError: &UnsuccessfulOperationError{State: OperationStateCanceled}})
+	ctx, client, teardown := setup(t, &asyncWithResultHandler{resultError: &OperationError{State: OperationStateCanceled}})
 	defer teardown()
 
 	handle, err := client.NewHandle("foo", "a/sync")
 	require.NoError(t, err)
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
-	var unsuccessfulOperationError *UnsuccessfulOperationError
-	require.ErrorAs(t, err, &unsuccessfulOperationError)
-	require.Equal(t, OperationStateCanceled, unsuccessfulOperationError.State)
+	var OperationError *OperationError
+	require.ErrorAs(t, err, &OperationError)
+	require.Equal(t, OperationStateCanceled, OperationError.State)
 }

@@ -90,12 +90,12 @@ func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.Respo
 type Handler interface {
 	// StartOperation handles requests for starting an operation. Return [HandlerStartOperationResultSync] to
 	// respond successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous
-	// operation was started. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
+	// operation was started. Return an [OperationError] to indicate that an operation completed as
 	// failed or canceled.
 	StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error)
 	// GetOperationResult handles requests to get the result of an asynchronous operation. Return non error result
 	// to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous
-	// operation is still running. Return an [UnsuccessfulOperationError] to indicate that an operation completed as
+	// operation is still running. Return an [OperationError] to indicate that an operation completed as
 	// failed or canceled.
 	//
 	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
@@ -115,64 +115,6 @@ type Handler interface {
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
 	CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error
 	mustEmbedUnimplementedHandler()
-}
-
-type HandlerErrorType string
-
-const (
-	// The server cannot or will not process the request due to an apparent client error.
-	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
-	// The client did not supply valid authentication credentials for this request.
-	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
-	// The caller does not have permission to execute the specified operation.
-	HandlerErrorTypeUnauthorized HandlerErrorType = "UNAUTHORIZED"
-	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
-	// are permissible.
-	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
-	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
-	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
-	// An internal error occured.
-	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
-	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
-	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
-	// The service is currently unavailable.
-	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
-	// Used by gateways to report that a request to an upstream server has timed out.
-	HandlerErrorTypeUpstreamTimeout HandlerErrorType = "UPSTREAM_TIMEOUT"
-)
-
-// HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
-// status code and failure message.
-type HandlerError struct {
-	// Error Type. Defaults to HandlerErrorTypeInternal.
-	Type HandlerErrorType
-	// The underlying cause for this error.
-	Cause error
-}
-
-// HandlerErrorf creates a [HandlerError] with the given type using [fmt.Errorf] to construct the cause.
-func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerError {
-	return &HandlerError{
-		Type:  typ,
-		Cause: fmt.Errorf(format, args...),
-	}
-}
-
-// Error implements the error interface.
-func (e *HandlerError) Error() string {
-	typ := e.Type
-	if len(typ) == 0 {
-		typ = HandlerErrorTypeInternal
-	}
-	if e.Cause == nil {
-		return fmt.Sprintf("handler error (%s)", typ)
-	}
-	return fmt.Sprintf("handler error (%s): %s", typ, e.Cause.Error())
-}
-
-// Unwrap returns the cause for use with utilities in the errors package.
-func (e *HandlerError) Unwrap() error {
-	return e.Cause
 }
 
 type baseHTTPHandler struct {
@@ -223,7 +165,7 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 
 func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	var failure Failure
-	var unsuccessfulError *UnsuccessfulOperationError
+	var unsuccessfulError *OperationError
 	var handlerError *HandlerError
 	var operationState OperationState
 	statusCode := http.StatusInternalServerError

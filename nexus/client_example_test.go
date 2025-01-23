@@ -18,9 +18,9 @@ var client *nexus.HTTPClient
 func ExampleHTTPClient_StartOperation() {
 	result, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
 	if err != nil {
-		var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
-		if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Cause.Error())
+		var OperationError *nexus.OperationError
+		if errors.As(err, &OperationError) { // operation failed or canceled
+			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", OperationError.State, OperationError.Cause.Error())
 		}
 		var handlerError *nexus.HandlerError
 		if errors.As(err, &handlerError) {
@@ -43,7 +43,7 @@ func ExampleHTTPClient_StartOperation() {
 func ExampleHTTPClient_ExecuteOperation() {
 	response, err := client.ExecuteOperation(ctx, "operation name", MyStruct{Field: "value"}, nexus.ExecuteOperationOptions{})
 	if err != nil {
-		// handle nexus.UnsuccessfulOperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
+		// handle nexus.OperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
 	}
 	// must close the returned response body and read it until EOF to free up the underlying connection
 	var output MyStruct

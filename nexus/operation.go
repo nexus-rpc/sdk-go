@@ -73,12 +73,12 @@ type Operation[I, O any] interface {
 
 	// Start handles requests for starting an operation. Return [HandlerStartOperationResultSync] to respond
 	// successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous operation was
-	// started. Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or
+	// started. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
 	Start(context.Context, I, StartOperationOptions) (HandlerStartOperationResult[O], error)
 	// GetResult handles requests to get the result of an asynchronous operation. Return non error result to respond
 	// successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous operation is
-	// still running. Return an [UnsuccessfulOperationError] to indicate that an operation completed as failed or
+	// still running. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
 	//
 	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.

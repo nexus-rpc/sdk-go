@@ -58,9 +58,9 @@ operation := nexus.NewOperationReference[MyInput, MyOutput]("example")
 // StartOperationOptions can be used to explicitly set a request ID, headers, and callback URL.
 result, err := nexus.StartOperation(ctx, client, operation, MyInput{Field: "value"}, nexus.StartOperationOptions{})
 if err != nil {
-	var unsuccessfulOperationError *nexus.UnsuccessfulOperationError
-	if errors.As(err, &unsuccessfulOperationError) { // operation failed or canceled
-		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", unsuccessfulOperationError.State, unsuccessfulOperationError.Cause.Error())
+	var OperationError *nexus.OperationError
+	if errors.As(err, &OperationError) { // operation failed or canceled
+		fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", OperationError.State, OperationError.Cause.Error())
 	}
 	var handlerError *nexus.HandlerError
 	if errors.As(err, &handlerError) {
@@ -94,7 +94,7 @@ in case the operation is asynchronous.
 // Set ExecuteOperationOptions.Wait to change the wait duration.
 output, err := nexus.ExecuteOperation(ctx, client, operation, MyInput{}, nexus.ExecuteOperationOptions{})
 if err != nil {
-	// handle nexus.UnsuccessfulOperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
+	// handle nexus.OperationError, nexus.ErrOperationStillRunning, and context.DeadlineExceeded
 }
 fmt.Printf("Operation succeeded: %v\n", output) // output is of type MyOutput
 ```
@@ -160,7 +160,7 @@ connection.
 ```go
 result, err := handle.GetResult(ctx, nexus.GetOperationResultOptions{})
 if err != nil {
-	// handle nexus.UnsuccessfulOperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded
+	// handle nexus.OperationError, nexus.ErrOperationStillRunning, and context.DeadlineExceeded
 }
 // result's type is the Handle's generic type T.
 ```
@@ -295,7 +295,7 @@ func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, o
 #### Get Operation Result
 
 The `GetResult` method is used to deliver an operation's result inline. If this method does not return an error, the
-operation is considered as successfully completed. Return an `UnsuccessfulOperationError` to indicate completion or an
+operation is considered as successfully completed. Return an `OperationError` to indicate completion or an
 `ErrOperationStillRunning` error to indicate that the operation is still running.
 
 When `GetOperationResultOptions.Wait` is greater than zero, this request should be treated as a long poll. Long poll

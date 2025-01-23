@@ -77,34 +77,46 @@ func (e *FailureError) Error() string {
 	return e.Failure.Message
 }
 
-// UnsuccessfulOperationError represents "failed" and "canceled" operation results.
-type UnsuccessfulOperationError struct {
+// OperationError represents "failed" and "canceled" operation results.
+type OperationError struct {
 	// State of the operation. Only [OperationStateFailed] and [OperationStateCanceled] are valid.
 	State OperationState
 	// The underlying cause for this error.
 	Cause error
 }
 
-// NewFailedOperationError is shorthand for constructing an [UnsuccessfulOperationError] with State set to
+// UnsuccessfulOperationError represents "failed" and "canceled" operation results.
+// Deprecated: Use [OperationError] instead.
+type UnsuccessfulOperationError = OperationError
+
+// NewFailedOperationError is shorthand for constructing an [OperationError] with State set to
 // [OperationStateFailed] and the given err as the Cause.
-func NewFailedOperationError(err error) *UnsuccessfulOperationError {
-	return &UnsuccessfulOperationError{
+func NewFailedOperationError(err error) *OperationError {
+	return &OperationError{
 		State: OperationStateFailed,
 		Cause: err,
 	}
 }
 
-// NewFailedOperationError is shorthand for constructing an [UnsuccessfulOperationError] with State set to
+// NewFailedOperationError is shorthand for constructing an [OperationError] with State set to
 // [OperationStateCanceled] and the given err as the Cause.
-func NewCanceledOperationError(err error) *UnsuccessfulOperationError {
-	return &UnsuccessfulOperationError{
+func NewCanceledOperationError(err error) *OperationError {
+	return &OperationError{
 		State: OperationStateCanceled,
 		Cause: err,
 	}
 }
 
+// OperationErrorf creates a [OperationError] with the given state, using [fmt.Errorf] to construct the cause.
+func OperationErrorf(state OperationState, format string, args ...any) *OperationError {
+	return &OperationError{
+		State: state,
+		Cause: fmt.Errorf(format, args...),
+	}
+}
+
 // Error implements the error interface.
-func (e *UnsuccessfulOperationError) Error() string {
+func (e *OperationError) Error() string {
 	if e.Cause == nil {
 		return fmt.Sprintf("operation %s", e.State)
 	}
@@ -112,7 +124,67 @@ func (e *UnsuccessfulOperationError) Error() string {
 }
 
 // Unwrap returns the cause for use with utilities in the errors package.
-func (e *UnsuccessfulOperationError) Unwrap() error {
+func (e *OperationError) Unwrap() error {
+	return e.Cause
+}
+
+// HandlerErrorType is an error type associated with a [HandlerError], defined according to the Nexus specification.
+// Only the types defined as consts in this package are valid. Do not use other values.
+type HandlerErrorType string
+
+const (
+	// The server cannot or will not process the request due to an apparent client error.
+	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
+	// The client did not supply valid authentication credentials for this request.
+	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
+	// The caller does not have permission to execute the specified operation.
+	HandlerErrorTypeUnauthorized HandlerErrorType = "UNAUTHORIZED"
+	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
+	// are permissible.
+	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
+	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
+	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
+	// An internal error occured.
+	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
+	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
+	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
+	// The service is currently unavailable.
+	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
+	// Used by gateways to report that a request to an upstream server has timed out.
+	HandlerErrorTypeUpstreamTimeout HandlerErrorType = "UPSTREAM_TIMEOUT"
+)
+
+// HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
+// status code and failure message.
+type HandlerError struct {
+	// Error Type. Defaults to HandlerErrorTypeInternal.
+	Type HandlerErrorType
+	// The underlying cause for this error.
+	Cause error
+}
+
+// HandlerErrorf creates a [HandlerError] with the given type, using [fmt.Errorf] to construct the cause.
+func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerError {
+	return &HandlerError{
+		Type:  typ,
+		Cause: fmt.Errorf(format, args...),
+	}
+}
+
+// Error implements the error interface.
+func (e *HandlerError) Error() string {
+	typ := e.Type
+	if len(typ) == 0 {
+		typ = HandlerErrorTypeInternal
+	}
+	if e.Cause == nil {
+		return fmt.Sprintf("handler error (%s)", typ)
+	}
+	return fmt.Sprintf("handler error (%s): %s", typ, e.Cause.Error())
+}
+
+// Unwrap returns the cause for use with utilities in the errors package.
+func (e *HandlerError) Unwrap() error {
 	return e.Cause
 }
 
