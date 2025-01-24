@@ -166,6 +166,17 @@ func (s *Service) Register(operations ...RegisterableOperation) error {
 	return nil
 }
 
+// MustRegister registers one or more operations.
+// Panics if duplicate operations were registered with the same name or when trying to register an operation with no
+// name.
+//
+// Can be called multiple times and is not thread safe.
+func (s *Service) MustRegister(operations ...RegisterableOperation) {
+	if err := s.Register(operations...); err != nil {
+		panic(err)
+	}
+}
+
 // Operation returns an operation by name or nil if not found.
 func (s *Service) Operation(name string) RegisterableOperation {
 	return s.operations[name]
