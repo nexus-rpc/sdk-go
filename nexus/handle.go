@@ -19,8 +19,8 @@ type OperationHandle[T any] struct {
 	client *HTTPClient
 }
 
-// GetInfo gets operation information, issuing a network request to the service handler.
-func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
+// Info gets operation information, issuing a network request to the service handler.
+func (h *OperationHandle[T]) Info(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), url.PathEscape(h.ID))
 	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
@@ -48,9 +48,9 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 	return operationInfoFromResponse(response, body)
 }
 
-// GetResult gets the result of an operation, issuing a network request to the service handler.
+// Result gets the result of an operation, issuing a network request to the service handler.
 //
-// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
+// By default, Result returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
 // not yet completed.
 //
 // Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client
@@ -64,7 +64,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 // context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
-func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
+func (h *OperationHandle[T]) Result(ctx context.Context, options GetOperationResultOptions) (T, error) {
 	var result T
 	url := h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), url.PathEscape(h.ID), "result")
 	request, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)

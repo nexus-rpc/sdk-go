@@ -362,7 +362,7 @@ func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, inp
 	} else {
 		gro.Wait = options.Wait
 	}
-	return handle.GetResult(ctx, gro)
+	return handle.Result(ctx, gro)
 }
 
 // NewHandle gets a handle to an asynchronous operation by name and ID.

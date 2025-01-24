@@ -49,7 +49,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{
+	info, err := handle.Info(ctx, GetOperationInfoOptions{
 		Header: Header{"test": "ok"},
 	})
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 
 	handle, err := client.NewHandle("escape/me", "needs /URL/ escaping")
 	require.NoError(t, err)
-	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
+	info, err := handle.Info(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, OperationStateCanceled, info.State)
@@ -105,7 +105,7 @@ func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	_, err = handle.Info(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
 }
 
@@ -117,7 +117,7 @@ func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
+	_, err = handle.Info(ctx, GetOperationInfoOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.NoError(t, err)
 }
 
@@ -127,6 +127,6 @@ func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(context.Background(), GetOperationInfoOptions{})
+	_, err = handle.Info(context.Background(), GetOperationInfoOptions{})
 	require.NoError(t, err)
 }

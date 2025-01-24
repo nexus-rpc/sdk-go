@@ -37,7 +37,7 @@ func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, op
 	return &HandlerStartOperationResultAsync{OperationID: fmt.Sprintf("%d", input)}, nil
 }
 
-func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (int, error) {
+func (h *asyncNumberValidatorOperation) Result(ctx context.Context, id string, options GetOperationResultOptions) (int, error) {
 	if id == "0" {
 		return 0, NewFailedOperationError(fmt.Errorf("cannot process 0"))
 	}
@@ -51,7 +51,7 @@ func (h *asyncNumberValidatorOperation) Cancel(ctx context.Context, id string, o
 	return nil
 }
 
-func (h *asyncNumberValidatorOperation) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncNumberValidatorOperation) Info(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	if options.Header.Get("fail") != "" {
 		return nil, fmt.Errorf("intentionally failed")
 	}
@@ -139,12 +139,12 @@ func TestStartOperation(t *testing.T) {
 
 	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
+	value, err := result.Pending.Result(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
 	handle, err := NewHandle(client, asyncNumberValidatorOperationInstance, result.Pending.ID)
 	require.NoError(t, err)
-	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	value, err = handle.Result(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
 }
@@ -188,10 +188,10 @@ func TestGetOperationInfo(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
+	info, err := result.Pending.Info(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, &OperationInfo{ID: "3", State: OperationStateRunning}, info)
-	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
+	_, err = result.Pending.Info(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
 	var handlerError *HandlerError
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
@@ -210,7 +210,7 @@ func (h *authRejectionHandler) Start(ctx context.Context, input NoValue, options
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (NoValue, error) {
+func (h *authRejectionHandler) Result(ctx context.Context, id string, options GetOperationResultOptions) (NoValue, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
@@ -218,7 +218,7 @@ func (h *authRejectionHandler) Cancel(ctx context.Context, id string, options Ca
 	return HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *authRejectionHandler) Info(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
@@ -244,7 +244,7 @@ func TestHandlerError(t *testing.T) {
 	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
 	require.NoError(t, err)
 
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	_, err = handle.Info(ctx, GetOperationInfoOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
@@ -254,7 +254,7 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	_, err = handle.Result(ctx, GetOperationResultOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())

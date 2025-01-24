@@ -56,13 +56,13 @@ func (*UnimplementedOperation[I, O]) Cancel(context.Context, string, CancelOpera
 	return HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetInfo implements Operation.
-func (*UnimplementedOperation[I, O]) GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error) {
+// Info implements Operation.
+func (*UnimplementedOperation[I, O]) Info(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetResult implements Operation.
-func (*UnimplementedOperation[I, O]) GetResult(context.Context, string, GetOperationResultOptions) (O, error) {
+// Result implements Operation.
+func (*UnimplementedOperation[I, O]) Result(context.Context, string, GetOperationResultOptions) (O, error) {
 	var empty O
 	return empty, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }

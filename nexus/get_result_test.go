@@ -114,7 +114,7 @@ func TestWaitResult_StillRunning(t *testing.T) {
 	require.NotNil(t, handle)
 
 	ctx = context.Background()
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Millisecond * 200})
+	_, err = handle.Result(ctx, GetOperationResultOptions{Wait: time.Millisecond * 200})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 }
 
@@ -131,7 +131,7 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second})
+	_, err = handle.Result(ctx, GetOperationResultOptions{Wait: time.Second})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	// Allow up to 10 ms delay to account for slow CI.
 	// This test is inherently flaky, and should be rewritten.
@@ -150,7 +150,7 @@ func TestWaitResult_RequestTimeout(t *testing.T) {
 
 	timeout := 200 * time.Millisecond
 	deadline := time.Now().Add(timeout)
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
+	_, err = handle.Result(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
 }
@@ -162,7 +162,7 @@ func TestPeekResult_StillRunning(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "a/sync")
 	require.NoError(t, err)
-	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
+	response, err := handle.Result(ctx, GetOperationResultOptions{})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 	require.Equal(t, 1, len(handler.requests))
@@ -175,7 +175,7 @@ func TestPeekResult_Success(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "a/sync")
 	require.NoError(t, err)
-	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
+	response, err := handle.Result(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	var body []byte
 	err = response.Consume(&body)
@@ -189,7 +189,7 @@ func TestPeekResult_Canceled(t *testing.T) {
 
 	handle, err := client.NewHandle("foo", "a/sync")
 	require.NoError(t, err)
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	_, err = handle.Result(ctx, GetOperationResultOptions{})
 	var OperationError *OperationError
 	require.ErrorAs(t, err, &OperationError)
 	require.Equal(t, OperationStateCanceled, OperationError.State)

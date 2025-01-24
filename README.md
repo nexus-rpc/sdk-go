@@ -86,8 +86,8 @@ result, err := client.StartOperation(ctx, "example", MyInput{Field: "value"}, ne
 
 #### Start an Operation and Await its Completion
 
-The HTTPClient provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and issuing a `GetResult`
-in case the operation is asynchronous.
+The HTTPClient provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and calling the
+`Result` method on the returned handler in case the operation is asynchronous.
 
 ```go
 // By default ExecuteOperation will long poll until the context deadline for the operation to complete.
@@ -135,10 +135,10 @@ Handles expose a couple of readonly attributes: `Operation` and `ID`.
 
 #### Get the Result of an Operation
 
-The `GetResult` method is used to get the result of an operation, issuing a network request to the handle's client's
+The `Result` method is used to get the result of an operation, issuing a network request to the handle's client's
 configured endpoint.
 
-By default, GetResult returns (nil, `ErrOperationStillRunning`) immediately after issuing a call if the operation has
+By default, Result returns (nil, `ErrOperationStillRunning`) immediately after issuing a call if the operation has
 not yet completed.
 
 Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to
@@ -153,12 +153,12 @@ context deadline to the max allowed wait period to ensure this call returns in a
 
 Custom request headers may be provided via `GetOperationResultOptions`.
 
-When a handle is created from an OperationReference, `GetResult` returns a result of the reference's output type. When a
-handle is created from a name, `GetResult` returns a `LazyValue` which must be `Consume`d to free up the underlying
+When a handle is created from an OperationReference, `Result` returns a result of the reference's output type. When a
+handle is created from a name, `Result` returns a `LazyValue` which must be `Consume`d to free up the underlying
 connection.
 
 ```go
-result, err := handle.GetResult(ctx, nexus.GetOperationResultOptions{})
+result, err := handle.Result(ctx, nexus.GetOperationResultOptions{})
 if err != nil {
 	// handle nexus.OperationError, nexus.ErrOperationStillRunning, and context.DeadlineExceeded
 }
@@ -167,13 +167,13 @@ if err != nil {
 
 #### Get Operation Information
 
-The `GetInfo` method is used to get operation information (currently only the operation's state) issuing a network
+The `Info` method is used to get operation information (currently only the operation's state) issuing a network
 request to the service handler.
 
 Custom request headers may be provided via `GetOperationInfoOptions`.
 
 ```go
-info, _ := handle.GetInfo(ctx, nexus.GetOperationInfoOptions{})
+info, _ := handle.Info(ctx, nexus.GetOperationInfoOptions{})
 ```
 
 #### Cancel an Operation
@@ -251,7 +251,7 @@ func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, o
 	return &HandlerStartOperationResultAsync{OperationID: "some-meaningful-id"}, nil
 }
 
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) Result(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
 	return MyOutput{}, nil
 }
 
@@ -260,7 +260,7 @@ func (h *myArbitraryLengthOperation) Cancel(ctx context.Context, id string, opti
 	return nil
 }
 
-func (h *myArbitraryLengthOperation) GetInfo(ctx context.Context, id string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+func (h *myArbitraryLengthOperation) Info(ctx context.Context, id string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
 	return &nexus.OperationInfo{ID: id, State: nexus.OperationStateRunning}, nil
 }
 ```
@@ -294,7 +294,7 @@ func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, o
 
 #### Get Operation Result
 
-The `GetResult` method is used to deliver an operation's result inline. If this method does not return an error, the
+The `Result` method is used to deliver an operation's result inline. If this method does not return an error, the
 operation is considered as successfully completed. Return an `OperationError` to indicate completion or an
 `ErrOperationStillRunning` error to indicate that the operation is still running.
 
@@ -307,7 +307,7 @@ Consider using a derived context that enforces the wait timeout when implementin
 `ErrOperationStillRunning` when that context expires as shown in the example.
 
 ```go
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) Result(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
 	if options.Wait > 0 { // request is a long poll
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, options.Wait)

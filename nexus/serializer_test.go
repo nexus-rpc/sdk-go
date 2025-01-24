@@ -152,7 +152,7 @@ func TestCustomSerializer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, result)
 
-	// Async triggers GetResult, test this too.
+	// Async triggers Result, test this too.
 	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, ExecuteOperationOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, result)
@@ -227,7 +227,7 @@ func TestCustomFailureConverter(t *testing.T) {
 	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
 	require.ErrorIs(t, err, errCustom)
 
-	// Async triggers GetResult, test this too.
+	// Async triggers Result, test this too.
 	_, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 0, ExecuteOperationOptions{})
 	require.ErrorIs(t, err, errCustom)
 }

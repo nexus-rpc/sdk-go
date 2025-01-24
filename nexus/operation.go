@@ -76,7 +76,7 @@ type Operation[I, O any] interface {
 	// started. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
 	Start(context.Context, I, StartOperationOptions) (HandlerStartOperationResult[O], error)
-	// GetResult handles requests to get the result of an asynchronous operation. Return non error result to respond
+	// Result handles requests to get the result of an asynchronous operation. Return non error result to respond
 	// successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous operation is
 	// still running. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
@@ -88,9 +88,9 @@ type Operation[I, O any] interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the [Handler] example.
-	GetResult(context.Context, string, GetOperationResultOptions) (O, error)
-	// GetInfo handles requests to get information about an asynchronous operation.
-	GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error)
+	Result(context.Context, string, GetOperationResultOptions) (O, error)
+	// Info handles requests to get information about an asynchronous operation.
+	Info(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error)
 	// Cancel handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
@@ -164,6 +164,17 @@ func (s *Service) Register(operations ...RegisterableOperation) error {
 		return fmt.Errorf("duplicate operations: %s", strings.Join(dups, ", "))
 	}
 	return nil
+}
+
+// Register one or more operations.
+// Panics if duplicate operations were registered with the same name or when trying to register an operation with no
+// name.
+//
+// Can be called multiple times and is not thread safe.
+func (s *Service) MustRegister(operations ...RegisterableOperation) {
+	if err := s.Register(operations...); err != nil {
+		panic(err)
+	}
 }
 
 // Operation returns an operation by name or nil if not found.
@@ -257,7 +268,7 @@ func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operati
 
 	// NOTE: We could avoid reflection here if we put the Cancel method on RegisterableOperation but it doesn't seem
 	// worth it since we need reflection for the generic methods.
-	m, _ := reflect.TypeOf(h).MethodByName("GetInfo")
+	m, _ := reflect.TypeOf(h).MethodByName("Info")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
@@ -277,7 +288,7 @@ func (r *registryHandler) GetOperationResult(ctx context.Context, service, opera
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
-	m, _ := reflect.TypeOf(h).MethodByName("GetResult")
+	m, _ := reflect.TypeOf(h).MethodByName("Result")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
@@ -357,7 +368,7 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 }
 
 // NewHandle is the type safe version of [HTTPClient.NewHandle].
-// The [Handle.GetResult] method will return an output of type O.
+// The [Handle.Result] method will return an output of type O.
 func NewHandle[I, O any](client *HTTPClient, operation OperationReference[I, O], operationID string) (*OperationHandle[O], error) {
 	if operationID == "" {
 		return nil, errEmptyOperationID
