@@ -86,11 +86,14 @@ type OperationError struct {
 }
 
 // UnsuccessfulOperationError represents "failed" and "canceled" operation results.
+//
 // Deprecated: Use [OperationError] instead.
 type UnsuccessfulOperationError = OperationError
 
-// NewFailedOperationError is shorthand for constructing an [OperationError] with State set to
-// [OperationStateFailed] and the given err as the Cause.
+// NewFailedOperationError is shorthand for constructing an [OperationError] with state set to
+// [OperationStateFailed] and the given err as the cause.
+//
+// Deprecated: Use [NewOperationFailedError] or construct an [OperationError] directly instead.
 func NewFailedOperationError(err error) *OperationError {
 	return &OperationError{
 		State: OperationStateFailed,
@@ -98,8 +101,28 @@ func NewFailedOperationError(err error) *OperationError {
 	}
 }
 
-// NewFailedOperationError is shorthand for constructing an [OperationError] with State set to
-// [OperationStateCanceled] and the given err as the Cause.
+// NewOperationFailedError is shorthand for constructing an [OperationError] with state set to
+// [OperationStateFailed] and the given error message as the cause.
+func NewOperationFailedError(message string) *OperationError {
+	return &OperationError{
+		State: OperationStateFailed,
+		Cause: errors.New(message),
+	}
+}
+
+// OperationFailedErrorf creates an [OperationError] with state set to [OperationStateFailed], using [fmt.Errorf] to
+// construct the cause.
+func OperationFailedErrorf(format string, args ...any) *OperationError {
+	return &OperationError{
+		State: OperationStateFailed,
+		Cause: fmt.Errorf(format, args...),
+	}
+}
+
+// NewCanceledOperationError is shorthand for constructing an [OperationError] with state set to
+// [OperationStateCanceled] and the given err as the cause.
+//
+// Deprecated: Use [NewOperationCanceledError] or construct an [OperationError] directly instead.
 func NewCanceledOperationError(err error) *OperationError {
 	return &OperationError{
 		State: OperationStateCanceled,
@@ -107,7 +130,25 @@ func NewCanceledOperationError(err error) *OperationError {
 	}
 }
 
-// OperationErrorf creates a [OperationError] with the given state, using [fmt.Errorf] to construct the cause.
+// NewOperationCanceledError is shorthand for constructing an [OperationError] with state set to
+// [OperationStateCanceled] and the given error message as the cause.
+func NewOperationCanceledError(message string) *OperationError {
+	return &OperationError{
+		State: OperationStateCanceled,
+		Cause: errors.New(message),
+	}
+}
+
+// OperationCanceledErrorf creates an [OperationError] with state set to [OperationStateCanceled], using [fmt.Errorf] to
+// construct the cause.
+func OperationCanceledErrorf(format string, args ...any) *OperationError {
+	return &OperationError{
+		State: OperationStateCanceled,
+		Cause: fmt.Errorf(format, args...),
+	}
+}
+
+// OperationErrorf creates an [OperationError] with the given state, using [fmt.Errorf] to construct the cause.
 func OperationErrorf(state OperationState, format string, args ...any) *OperationError {
 	return &OperationError{
 		State: state,
