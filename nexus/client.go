@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -434,34 +435,72 @@ func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, 
 func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
 	switch response.StatusCode {
 	case http.StatusBadRequest:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "bad request")
-		return &HandlerError{Type: HandlerErrorTypeBadRequest, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeBadRequest,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "bad request"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusUnauthorized:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthenticated")
-		return &HandlerError{Type: HandlerErrorTypeUnauthenticated, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeUnauthenticated,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unauthenticated"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusForbidden:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unauthorized")
-		return &HandlerError{Type: HandlerErrorTypeUnauthorized, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeUnauthorized,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unauthorized"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusNotFound:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not found")
-		return &HandlerError{Type: HandlerErrorTypeNotFound, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeNotFound,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "not found"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusTooManyRequests:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "resource exhausted")
-		return &HandlerError{Type: HandlerErrorTypeResourceExhausted, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeResourceExhausted,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "resource exhausted"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusInternalServerError:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "internal error")
-		return &HandlerError{Type: HandlerErrorTypeInternal, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeInternal,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "internal error"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusNotImplemented:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "not implemented")
-		return &HandlerError{Type: HandlerErrorTypeNotImplemented, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeNotImplemented,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "not implemented"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case http.StatusServiceUnavailable:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "unavailable")
-		return &HandlerError{Type: HandlerErrorTypeUnavailable, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeUnavailable,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unavailable"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	case StatusUpstreamTimeout:
-		failureErr := c.failureErrorFromResponseOrDefault(response, body, "upstream timeout")
-		return &HandlerError{Type: HandlerErrorTypeUpstreamTimeout, Cause: failureErr}
+		return &HandlerError{
+			Type:          HandlerErrorTypeUpstreamTimeout,
+			Cause:         c.failureErrorFromResponseOrDefault(response, body, "upstream timeout"),
+			RetryBehavior: retryBehaviorFromHeader(response.Header),
+		}
 	default:
 		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+	}
+}
+
+func retryBehaviorFromHeader(header http.Header) HandlerErrorRetryBehavior {
+	switch strings.ToLower(header.Get(headerRetryable)) {
+	case "true":
+		return HandlerErrorRetryBehaviorRetryable
+	case "false":
+		return HandlerErrorRetryBehaviorNonRetryable
+	default:
+		return HandlerErrorRetryBehaviorUnspecified
 	}
 }
 
