@@ -3,6 +3,7 @@ package nexus
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -67,6 +68,28 @@ func TestSuccess(t *testing.T) {
 	err = response.Consume(&responseBody)
 	require.NoError(t, err)
 	require.Equal(t, requestBody, responseBody)
+}
+
+type errorHandler struct {
+	UnimplementedHandler
+}
+
+func (h *errorHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	return nil, &HandlerError{
+		Type:          HandlerErrorTypeInternal,
+		Cause:         errors.New("Some error"),
+		RetryBehavior: HandlerErrorRetryBehaviorNonRetryable,
+	}
+}
+
+func TestHandlerErrorRetryBehavior(t *testing.T) {
+	ctx, client, teardown := setup(t, &errorHandler{})
+	defer teardown()
+
+	_, err := client.ExecuteOperation(ctx, "op", nil, ExecuteOperationOptions{})
+	var handlerErr *HandlerError
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 }
 
 type requestIDEchoHandler struct {

@@ -26,6 +26,7 @@ const (
 	headerRequestID          = "nexus-request-id"
 	headerLink               = "nexus-link"
 	headerOperationStartTime = "nexus-operation-start-time"
+	headerRetryable          = "nexus-request-retryable"
 	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
 	// Must be set on callback headers to support completing operations before the start response is received.
 	HeaderOperationID = "nexus-operation-id"
@@ -174,25 +175,48 @@ func (e *OperationError) Unwrap() error {
 type HandlerErrorType string
 
 const (
-	// The server cannot or will not process the request due to an apparent client error.
+	// The server cannot or will not process the request due to an apparent client error. Clients should not retry
+	// this request unless advised otherwise.
 	HandlerErrorTypeBadRequest HandlerErrorType = "BAD_REQUEST"
-	// The client did not supply valid authentication credentials for this request.
+	// The client did not supply valid authentication credentials for this request. Clients should not retry
+	// this request unless advised otherwise.
 	HandlerErrorTypeUnauthenticated HandlerErrorType = "UNAUTHENTICATED"
-	// The caller does not have permission to execute the specified operation.
+	// The caller does not have permission to execute the specified operation. Clients should not retry this
+	// request unless advised otherwise.
 	HandlerErrorTypeUnauthorized HandlerErrorType = "UNAUTHORIZED"
-	// The requested resource could not be found but may be available in the future. Subsequent requests by the client
-	// are permissible.
+	// The requested resource could not be found but may be available in the future. Subsequent requests by the
+	// client are permissible but not advised.
 	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
-	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of space.
+	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of
+	// space. Subsequent requests by the client are permissible.
 	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
-	// An internal error occured.
+	// An internal error occured. Clients should not retry this request unless advised otherwise.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
 	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
+	// Clients should not retry this request unless advised otherwise.
 	HandlerErrorTypeNotImplemented HandlerErrorType = "NOT_IMPLEMENTED"
-	// The service is currently unavailable.
+	// The service is currently unavailable. Subsequent requests by the client are permissible.
 	HandlerErrorTypeUnavailable HandlerErrorType = "UNAVAILABLE"
-	// Used by gateways to report that a request to an upstream server has timed out.
+	// Used by gateways to report that a request to an upstream server has timed out. Subsequent requests by the
+	// client are permissible.
 	HandlerErrorTypeUpstreamTimeout HandlerErrorType = "UPSTREAM_TIMEOUT"
+)
+
+// HandlerErrorRetryBehavior allows handlers to explicity set the retry behavior of a [HandlerError]. If not specified,
+// retry behavior is determined from the error type. For example [HandlerErrorTypeInternal] is not retryable by default
+// unless specified otherwise.
+type HandlerErrorRetryBehavior int
+
+const (
+	// HandlerErrorRetryBehaviorUnspecified indicates that the retry behavior for a [HandlerError] is determined
+	// from the [HandlerErrorType].
+	HandlerErrorRetryBehaviorUnspecified HandlerErrorRetryBehavior = iota
+	// HandlerErrorRetryBehaviorRetryable explicitly indicates that a [HandlerError] should be retried, overriding
+	// the default retry behavior of the [HandlerErrorType].
+	HandlerErrorRetryBehaviorRetryable
+	// HandlerErrorRetryBehaviorNonRetryable explicitly indicates that a [HandlerError] should not be retried,
+	// overriding the default retry behavior of the [HandlerErrorType].
+	HandlerErrorRetryBehaviorNonRetryable
 )
 
 // HandlerError is a special error that can be returned from [Handler] methods for failing a request with a custom
@@ -202,6 +226,8 @@ type HandlerError struct {
 	Type HandlerErrorType
 	// The underlying cause for this error.
 	Cause error
+	// RetryBehavior of this error. If not specified, retry behavior is determined from the error type.
+	RetryBehavior HandlerErrorRetryBehavior
 }
 
 // HandlerErrorf creates a [HandlerError] with the given type, using [fmt.Errorf] to construct the cause.
@@ -209,6 +235,32 @@ func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerErr
 	return &HandlerError{
 		Type:  typ,
 		Cause: fmt.Errorf(format, args...),
+	}
+}
+
+// Retryable returns a boolean indicating whether or not this error is retryable based on the error's RetryBehavior and
+// Type.
+func (e *HandlerError) Retryable() bool {
+	switch e.RetryBehavior {
+	case HandlerErrorRetryBehaviorNonRetryable:
+		return false
+	case HandlerErrorRetryBehaviorRetryable:
+		return true
+	}
+	switch e.Type {
+	case HandlerErrorTypeBadRequest,
+		HandlerErrorTypeUnauthenticated,
+		HandlerErrorTypeUnauthorized,
+		HandlerErrorTypeNotFound,
+		HandlerErrorTypeNotImplemented:
+		return false
+	case HandlerErrorTypeResourceExhausted,
+		HandlerErrorTypeInternal,
+		HandlerErrorTypeUnavailable,
+		HandlerErrorTypeUpstreamTimeout:
+		return true
+	default:
+		return true
 	}
 }
 

@@ -221,6 +221,17 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	}
 	writer.Header().Set("Content-Type", contentTypeJSON)
 
+	// Set the retry header here after ensuring that we don't fail with internal error due to failed marshaling to
+	// preserve the user's intent.
+	if handlerError != nil {
+		switch handlerError.RetryBehavior {
+		case HandlerErrorRetryBehaviorNonRetryable:
+			writer.Header().Set(headerRetryable, "false")
+		case HandlerErrorRetryBehaviorRetryable:
+			writer.Header().Set(headerRetryable, "true")
+		}
+	}
+
 	writer.WriteHeader(statusCode)
 
 	if _, err := writer.Write(bytes); err != nil {
