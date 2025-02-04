@@ -28,8 +28,11 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if completion.HTTPRequest.Header.Get("User-Agent") != userAgent {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", completion.HTTPRequest.Header.Get("User-Agent"))
 	}
-	if completion.OperationID != "test-operation-id" {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
+	if completion.OperationID != "test-operation-token" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid operation ID: %q", completion.OperationID)
+	}
+	if completion.OperationToken != "test-operation-token" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid operation token: %q", completion.OperationToken)
 	}
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
@@ -50,8 +53,8 @@ func TestSuccessfulCompletion(t *testing.T) {
 	defer teardown()
 
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
-		OperationID: "test-operation-id",
-		StartTime:   time.Now(),
+		OperationToken: "test-operation-token",
+		StartTime:      time.Now(),
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -93,7 +96,7 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 		}},
 	})
 	completion.Header.Set("foo", "bar")
-	completion.Header.Set(HeaderOperationID, "test-operation-id")
+	completion.Header.Set(HeaderOperationToken, "test-operation-token")
 	require.NoError(t, err)
 
 	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
@@ -123,8 +126,11 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if completion.HTTPRequest.Header.Get("foo") != "bar" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'foo' header: %q", completion.HTTPRequest.Header.Get("foo"))
 	}
-	if completion.OperationID != "test-operation-id" {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid %q header: %q", HeaderOperationID, completion.HTTPRequest.Header.Get(HeaderOperationID))
+	if completion.OperationID != "test-operation-token" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid operation ID: %q", completion.OperationID)
+	}
+	if completion.OperationToken != "test-operation-token" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid operation token: %q", completion.OperationToken)
 	}
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
@@ -145,8 +151,8 @@ func TestFailureCompletion(t *testing.T) {
 	defer teardown()
 
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
-		OperationID: "test-operation-id",
-		StartTime:   time.Now(),
+		OperationToken: "test-operation-token",
+		StartTime:      time.Now(),
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -183,7 +189,7 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		FailureConverter: fc,
-		OperationID:      "test-operation-id",
+		OperationToken:   "test-operation-token",
 		StartTime:        time.Now(),
 		Links: []Link{{
 			URL: &url.URL{

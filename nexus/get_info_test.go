@@ -15,19 +15,19 @@ type asyncWithInfoHandler struct {
 
 func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "needs /URL/ escaping",
+		OperationToken: "just-a-token",
 	}, nil
 }
 
-func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	if service != testService {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
 	}
 	if operation != "escape/me" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to be 'escape me', got: %s", operation)
 	}
-	if operationID != "needs /URL/ escaping" {
-		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation ID to be 'needs URL escaping', got: %s", operationID)
+	if token != "just-a-token" {
+		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation token to be 'just-a-token', got: %s", token)
 	}
 	if h.expectHeader && options.Header.Get("test") != "ok" {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'test' request header")
@@ -36,7 +36,7 @@ func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, service, op
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'User-Agent' header: %q", options.Header.Get("User-Agent"))
 	}
 	return &OperationInfo{
-		ID:    operationID,
+		ID:    token,
 		State: OperationStateCanceled,
 	}, nil
 }
@@ -61,7 +61,7 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("escape/me", "needs /URL/ escaping")
+	handle, err := client.NewHandle("escape/me", "just-a-token")
 	require.NoError(t, err)
 	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
@@ -76,11 +76,11 @@ type asyncWithInfoTimeoutHandler struct {
 
 func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "timeout",
+		OperationToken: "timeout",
 	}, nil
 }
 
-func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	deadline, set := ctx.Deadline()
 	if h.expectedTimeout > 0 && !set {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
@@ -94,7 +94,7 @@ func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, serv
 	}
 
 	return &OperationInfo{
-		ID:    operationID,
+		ID:    token,
 		State: OperationStateCanceled,
 	}, nil
 }

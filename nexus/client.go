@@ -33,6 +33,12 @@ type HTTPClientOptions struct {
 	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
 	// [DefaultFailureConverter].
 	FailureConverter FailureConverter
+	// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
+	// as part of the URL path.
+	// This flag will be removed in a future release.
+	//
+	// NOTE: Experimental
+	UseOperationID bool
 }
 
 // User-Agent header set on HTTP requests.
@@ -42,7 +48,7 @@ const headerUserAgent = "User-Agent"
 
 var errEmptyOperationName = errors.New("empty operation name")
 
-var errEmptyOperationID = errors.New("empty operation ID")
+var errEmptyOperationToken = errors.New("empty operation token")
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
 
@@ -268,13 +274,16 @@ func (c *HTTPClient) StartOperation(
 		if info.State != OperationStateRunning {
 			return nil, newUnexpectedResponseError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
 		}
+		if info.Token == "" && info.ID != "" {
+			info.Token = info.ID
+		}
+		handle, err := c.NewHandle(operation, info.Token)
+		if err != nil {
+			return nil, newUnexpectedResponseError("empty operation token in response", response, body)
+		}
 		return &ClientStartOperationResult[*LazyValue]{
-			Pending: &OperationHandle[*LazyValue]{
-				Operation: operation,
-				ID:        info.ID,
-				client:    c,
-			},
-			Links: links,
+			Pending: handle,
+			Links:   links,
 		}, nil
 	case statusOperationFailed:
 		state, err := getUnsuccessfulStateFromHeader(response, body)
@@ -366,16 +375,16 @@ func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, inp
 	return handle.GetResult(ctx, gro)
 }
 
-// NewHandle gets a handle to an asynchronous operation by name and ID.
+// NewHandle gets a handle to an asynchronous operation by name and token.
 // Does not incur a trip to the server.
-// Fails if provided an empty operation or ID.
-func (c *HTTPClient) NewHandle(operation string, operationID string) (*OperationHandle[*LazyValue], error) {
+// Fails if provided an empty operation or token.
+func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle[*LazyValue], error) {
 	var es []error
 	if operation == "" {
 		es = append(es, errEmptyOperationName)
 	}
-	if operationID == "" {
-		es = append(es, errEmptyOperationID)
+	if token == "" {
+		es = append(es, errEmptyOperationToken)
 	}
 	if len(es) > 0 {
 		return nil, errors.Join(es...)
@@ -383,7 +392,8 @@ func (c *HTTPClient) NewHandle(operation string, operationID string) (*Operation
 	return &OperationHandle[*LazyValue]{
 		client:    c,
 		Operation: operation,
-		ID:        operationID,
+		ID:        token, // Duplicate token as ID for the deprecation period.
+		Token:     token,
 	}, nil
 }
 

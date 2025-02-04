@@ -15,19 +15,19 @@ type asyncWithCancelHandler struct {
 
 func (h *asyncWithCancelHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "a/sync",
+		OperationToken: "a/sync",
 	}, nil
 }
 
-func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error {
+func (h *asyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error {
 	if service != testService {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
 	}
 	if operation != "f/o/o" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to be 'foo', got: %s", operation)
 	}
-	if operationID != "a/sync" {
-		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation ID to be 'async', got: %s", operationID)
+	if token != "a/sync" {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation ID to be 'async', got: %s", token)
 	}
 	if h.expectHeader && options.Header.Get("foo") != "bar" {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid 'foo' request header")
@@ -69,11 +69,11 @@ type echoTimeoutAsyncWithCancelHandler struct {
 
 func (h *echoTimeoutAsyncWithCancelHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "timeout",
+		OperationToken: "timeout",
 	}, nil
 }
 
-func (h *echoTimeoutAsyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error {
+func (h *echoTimeoutAsyncWithCancelHandler) CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error {
 	deadline, set := ctx.Deadline()
 	if h.expectedTimeout > 0 && !set {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")

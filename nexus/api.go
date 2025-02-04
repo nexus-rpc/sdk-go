@@ -29,7 +29,13 @@ const (
 	headerRetryable          = "nexus-request-retryable"
 	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
 	// Must be set on callback headers to support completing operations before the start response is received.
+	//
+	// Deprecated: Use HeaderOperationToken instead.
 	HeaderOperationID = "nexus-operation-id"
+
+	// HeaderOperationToken is the unique token returned by the StartOperation response for async operations.
+	// Must be set on callback headers to support completing operations before the start response is received.
+	HeaderOperationToken = "nexus-operation-token"
 
 	// HeaderRequestTimeout is the total time to complete a Nexus HTTP request.
 	HeaderRequestTimeout = "request-timeout"
@@ -184,13 +190,13 @@ const (
 	// The caller does not have permission to execute the specified operation. Clients should not retry this
 	// request unless advised otherwise.
 	HandlerErrorTypeUnauthorized HandlerErrorType = "UNAUTHORIZED"
-	// The requested resource could not be found but may be available in the future. Subsequent requests by the
-	// client are permissible but not advised.
+	// The requested resource could not be found but may be available in the future. Clients should not retry this
+	// request unless advised otherwise.
 	HandlerErrorTypeNotFound HandlerErrorType = "NOT_FOUND"
 	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of
 	// space. Subsequent requests by the client are permissible.
 	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
-	// An internal error occured. Clients should not retry this request unless advised otherwise.
+	// An internal error occured. Subsequent requests by the client are permissible.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
 	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
 	// Clients should not retry this request unless advised otherwise.
@@ -287,7 +293,11 @@ var ErrOperationStillRunning = errors.New("operation still running")
 // OperationInfo conveys information about an operation.
 type OperationInfo struct {
 	// ID of the operation.
+	//
+	// Deprecated: Use Token instead.
 	ID string `json:"id"`
+	// Token for the operation.
+	Token string `json:"token"`
 	// State of the operation.
 	State OperationState `json:"state"`
 }
