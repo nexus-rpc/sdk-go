@@ -45,14 +45,24 @@ func (r *HandlerStartOperationResultSync[T]) applyToHTTPResponse(writer http.Res
 // HandlerStartOperationResultAsync indicates that an operation has been accepted and will complete asynchronously.
 type HandlerStartOperationResultAsync struct {
 	// OperationID is a unique ID to identify the operation.
+	//
+	// Deprecated: Use OperationToken instead.
 	OperationID string
+	// OperationToken is a unique token to identify the operation.
+	OperationToken string
 	// Links to be associated with the operation.
 	Links []Link
 }
 
 func (r *HandlerStartOperationResultAsync) applyToHTTPResponse(writer http.ResponseWriter, handler *httpHandler) {
+	if r.OperationToken == "" && r.OperationID != "" {
+		r.OperationToken = r.OperationID
+	} else if r.OperationToken != "" && r.OperationID == "" {
+		r.OperationID = r.OperationToken
+	}
 	info := OperationInfo{
 		ID:    r.OperationID,
+		Token: r.OperationToken,
 		State: OperationStateRunning,
 	}
 	bytes, err := json.Marshal(info)
@@ -105,15 +115,15 @@ type Handler interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the example.
-	GetOperationResult(ctx context.Context, service, operation, operationID string, options GetOperationResultOptions) (any, error)
+	GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error)
 	// GetOperationInfo handles requests to get information about an asynchronous operation.
-	GetOperationInfo(ctx context.Context, service, operation, operationID string, options GetOperationInfoOptions) (*OperationInfo, error)
+	GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
 	//  ignored by the underlying operation implemention.
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
-	CancelOperation(ctx context.Context, service, operation, operationID string, options CancelOperationOptions) error
+	CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error
 	mustEmbedUnimplementedHandler()
 }
 
@@ -274,7 +284,7 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	}
 }
 
-func (h *httpHandler) getOperationResult(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
+func (h *httpHandler) getOperationResult(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
 	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	// If both Request-Timeout http header and wait query string are set, the minimum of the Request-Timeout header
@@ -305,7 +315,7 @@ func (h *httpHandler) getOperationResult(service, operation, operationID string,
 		defer cancel()
 	}
 
-	result, err := h.options.Handler.GetOperationResult(ctx, service, operation, operationID, options)
+	result, err := h.options.Handler.GetOperationResult(ctx, service, operation, token, options)
 	if err != nil {
 		if options.Wait > 0 && ctx.Err() != nil {
 			writer.WriteHeader(http.StatusRequestTimeout)
@@ -319,7 +329,7 @@ func (h *httpHandler) getOperationResult(service, operation, operationID string,
 	h.writeResult(writer, result)
 }
 
-func (h *httpHandler) getOperationInfo(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
+func (h *httpHandler) getOperationInfo(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
 	options := GetOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
@@ -328,10 +338,15 @@ func (h *httpHandler) getOperationInfo(service, operation, operationID string, w
 	}
 	defer cancel()
 
-	info, err := h.options.Handler.GetOperationInfo(ctx, service, operation, operationID, options)
+	info, err := h.options.Handler.GetOperationInfo(ctx, service, operation, token, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 		return
+	}
+	if info.ID == "" && info.Token != "" {
+		info.ID = info.Token
+	} else if info.ID != "" && info.Token == "" {
+		info.Token = info.ID
 	}
 
 	bytes, err := json.Marshal(info)
@@ -345,7 +360,7 @@ func (h *httpHandler) getOperationInfo(service, operation, operationID string, w
 	}
 }
 
-func (h *httpHandler) cancelOperation(service, operation, operationID string, writer http.ResponseWriter, request *http.Request) {
+func (h *httpHandler) cancelOperation(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
 	options := CancelOperationOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
@@ -354,7 +369,7 @@ func (h *httpHandler) cancelOperation(service, operation, operationID string, wr
 	}
 	defer cancel()
 
-	if err := h.options.Handler.CancelOperation(ctx, service, operation, operationID, options); err != nil {
+	if err := h.options.Handler.CancelOperation(ctx, service, operation, token, options); err != nil {
 		h.writeFailure(writer, err)
 		return
 	}
@@ -430,47 +445,78 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
-	var operationID string
-	if len(parts) > 3 {
-		operationID, err = url.PathUnescape(parts[3])
-		if err != nil {
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-			return
-		}
-	}
-
-	switch len(parts) {
-	case 3: // /{service}/{operation}
-		if request.Method != "POST" {
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
-			return
-		}
-		h.startOperation(service, operation, writer, request)
-	case 4: // /{service}/{operation}/{operation_id}
-		if request.Method != "GET" {
-			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
-			return
-		}
-		h.getOperationInfo(service, operation, operationID, writer, request)
-	case 5:
-		switch parts[4] {
-		case "result": // /{service}/{operation}/{operation_id}/result
+	if token := request.Header.Get(HeaderOperationToken); token != "" {
+		switch len(parts) {
+		case 3: // /{service}/{operation}
 			if request.Method != "GET" {
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
 				return
 			}
-			h.getOperationResult(service, operation, operationID, writer, request)
-		case "cancel": // /{service}/{operation}/{operation_id}/cancel
+			h.getOperationInfo(service, operation, token, writer, request)
+		case 4:
+			switch parts[3] {
+			case "result": // /{service}/{operation}/result
+				if request.Method != "GET" {
+					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
+					return
+				}
+				h.getOperationResult(service, operation, token, writer, request)
+			case "cancel": // /{service}/{operation}/cancel
+				if request.Method != "POST" {
+					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
+					return
+				}
+				h.cancelOperation(service, operation, token, writer, request)
+			default:
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+			}
+		default:
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+		}
+	} else {
+		var token string
+
+		if len(parts) > 3 {
+			token, err = url.PathUnescape(parts[3])
+			if err != nil {
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+				return
+			}
+		}
+
+		switch len(parts) {
+		case 3: // /{service}/{operation}
 			if request.Method != "POST" {
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
 				return
 			}
-			h.cancelOperation(service, operation, operationID, writer, request)
+			h.startOperation(service, operation, writer, request)
+		case 4: // /{service}/{operation}/{operation_id}
+			if request.Method != "GET" {
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
+				return
+			}
+			h.getOperationInfo(service, operation, token, writer, request)
+		case 5:
+			switch parts[4] {
+			case "result": // /{service}/{operation}/{operation_id}/result
+				if request.Method != "GET" {
+					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
+					return
+				}
+				h.getOperationResult(service, operation, token, writer, request)
+			case "cancel": // /{service}/{operation}/{operation_id}/cancel
+				if request.Method != "POST" {
+					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
+					return
+				}
+				h.cancelOperation(service, operation, token, writer, request)
+			default:
+				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
+			}
 		default:
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 		}
-	default:
-		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 	}
 }
 

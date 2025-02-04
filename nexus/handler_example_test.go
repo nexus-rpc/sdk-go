@@ -22,11 +22,11 @@ func (h *myHandler) StartOperation(ctx context.Context, service, operation strin
 	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
-	return &nexus.HandlerStartOperationResultAsync{OperationID: "meaningful-id"}, nil
+	return &nexus.HandlerStartOperationResultAsync{OperationToken: "some-token"}, nil
 }
 
 // GetOperationResult implements the Handler interface.
-func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, operationID string, options nexus.GetOperationResultOptions) (any, error) {
+func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, token string, options nexus.GetOperationResultOptions) (any, error) {
 	if err := h.authorize(ctx, options.Header); err != nil {
 		return nil, err
 	}
@@ -59,12 +59,12 @@ func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, 
 	}
 }
 
-func (h *myHandler) CancelOperation(ctx context.Context, service, operation, operationID string, options nexus.CancelOperationOptions) error {
+func (h *myHandler) CancelOperation(ctx context.Context, service, operation, token string, options nexus.CancelOperationOptions) error {
 	// Handlers must implement this.
 	panic("unimplemented")
 }
 
-func (h *myHandler) GetOperationInfo(ctx context.Context, service, operation, operationID string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+func (h *myHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
 	// Handlers must implement this.
 	panic("unimplemented")
 }

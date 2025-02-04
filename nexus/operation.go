@@ -75,7 +75,7 @@ type Operation[I, O any] interface {
 	// successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous operation was
 	// started. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
-	Start(context.Context, I, StartOperationOptions) (HandlerStartOperationResult[O], error)
+	Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error)
 	// GetResult handles requests to get the result of an asynchronous operation. Return non error result to respond
 	// successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous operation is
 	// still running. Return an [OperationError] to indicate that an operation completed as failed or
@@ -88,15 +88,15 @@ type Operation[I, O any] interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the [Handler] example.
-	GetResult(context.Context, string, GetOperationResultOptions) (O, error)
+	GetResult(ctx context.Context, token string, options GetOperationResultOptions) (O, error)
 	// GetInfo handles requests to get information about an asynchronous operation.
-	GetInfo(context.Context, string, GetOperationInfoOptions) (*OperationInfo, error)
+	GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// Cancel handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
 	//  ignored by the underlying operation implemention.
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
-	Cancel(context.Context, string, CancelOperationOptions) error
+	Cancel(ctx context.Context, token string, options CancelOperationOptions) error
 }
 
 type syncOperation[I, O any] struct {
@@ -235,7 +235,7 @@ type registryHandler struct {
 }
 
 // CancelOperation implements Handler.
-func (r *registryHandler) CancelOperation(ctx context.Context, service, operation string, operationID string, options CancelOperationOptions) error {
+func (r *registryHandler) CancelOperation(ctx context.Context, service, operation string, token string, options CancelOperationOptions) error {
 	s, ok := r.services[service]
 	if !ok {
 		return HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
@@ -248,7 +248,7 @@ func (r *registryHandler) CancelOperation(ctx context.Context, service, operatio
 	// NOTE: We could avoid reflection here if we put the Cancel method on RegisterableOperation but it doesn't seem
 	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("Cancel")
-	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
+	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(token), reflect.ValueOf(options)})
 	if values[0].IsNil() {
 		return nil
 	}
@@ -256,7 +256,7 @@ func (r *registryHandler) CancelOperation(ctx context.Context, service, operatio
 }
 
 // GetOperationInfo implements Handler.
-func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operation string, operationID string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operation string, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	s, ok := r.services[service]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
@@ -269,7 +269,7 @@ func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operati
 	// NOTE: We could avoid reflection here if we put the Cancel method on RegisterableOperation but it doesn't seem
 	// worth it since we need reflection for the generic methods.
 	m, _ := reflect.TypeOf(h).MethodByName("GetInfo")
-	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
+	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(token), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
 	}
@@ -278,7 +278,7 @@ func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operati
 }
 
 // GetOperationResult implements Handler.
-func (r *registryHandler) GetOperationResult(ctx context.Context, service, operation string, operationID string, options GetOperationResultOptions) (any, error) {
+func (r *registryHandler) GetOperationResult(ctx context.Context, service, operation string, token string, options GetOperationResultOptions) (any, error) {
 	s, ok := r.services[service]
 	if !ok {
 		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
@@ -289,7 +289,7 @@ func (r *registryHandler) GetOperationResult(ctx context.Context, service, opera
 	}
 
 	m, _ := reflect.TypeOf(h).MethodByName("GetResult")
-	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(operationID), reflect.ValueOf(options)})
+	values := m.Func.Call([]reflect.Value{reflect.ValueOf(h), reflect.ValueOf(ctx), reflect.ValueOf(token), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
 	}
@@ -360,7 +360,12 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 			Links:      result.Links,
 		}, nil
 	}
-	handle := OperationHandle[O]{client: client, Operation: operation.Name(), ID: result.Pending.ID}
+	handle := OperationHandle[O]{
+		client:    client,
+		Operation: operation.Name(),
+		ID:        result.Pending.ID,
+		Token:     result.Pending.Token,
+	}
 	return &ClientStartOperationResult[O]{
 		Pending: &handle,
 		Links:   result.Links,
@@ -369,9 +374,14 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 
 // NewHandle is the type safe version of [HTTPClient.NewHandle].
 // The [Handle.GetResult] method will return an output of type O.
-func NewHandle[I, O any](client *HTTPClient, operation OperationReference[I, O], operationID string) (*OperationHandle[O], error) {
-	if operationID == "" {
-		return nil, errEmptyOperationID
+func NewHandle[I, O any](client *HTTPClient, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
+	if token == "" {
+		return nil, errEmptyOperationToken
 	}
-	return &OperationHandle[O]{client: client, Operation: operation.Name(), ID: operationID}, nil
+	return &OperationHandle[O]{
+		client:    client,
+		Operation: operation.Name(),
+		ID:        token, // Duplicate token as ID for the deprecation period.
+		Token:     token,
+	}, nil
 }

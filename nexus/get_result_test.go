@@ -9,10 +9,10 @@ import (
 )
 
 type request struct {
-	options     GetOperationResultOptions
-	operation   string
-	operationID string
-	deadline    time.Time
+	options   GetOperationResultOptions
+	operation string
+	token     string
+	deadline  time.Time
 }
 
 type asyncWithResultHandler struct {
@@ -29,7 +29,7 @@ func (h *asyncWithResultHandler) StartOperation(ctx context.Context, service, op
 	}
 
 	return &HandlerStartOperationResultAsync{
-		OperationID: "a/sync",
+		OperationToken: "async",
 	}, nil
 }
 
@@ -40,8 +40,8 @@ func (h *asyncWithResultHandler) getResult() (any, error) {
 	return []byte("body"), nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service, operation, operationID string, options GetOperationResultOptions) (any, error) {
-	req := request{options: options, operation: operation, operationID: operationID}
+func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error) {
+	req := request{options: options, operation: operation, token: token}
 	deadline, set := ctx.Deadline()
 	if set {
 		req.deadline = deadline
@@ -101,7 +101,7 @@ func TestWaitResult(t *testing.T) {
 	require.InDelta(t, testTimeout+getResultContextPadding, handler.requests[0].options.Wait, float64(time.Millisecond*50))
 	require.InDelta(t, testTimeout+getResultContextPadding-getResultMaxTimeout, handler.requests[1].options.Wait, float64(time.Millisecond*50))
 	require.Equal(t, "f/o/o", handler.requests[0].operation)
-	require.Equal(t, "a/sync", handler.requests[0].operationID)
+	require.Equal(t, "async", handler.requests[0].token)
 }
 
 func TestWaitResult_StillRunning(t *testing.T) {

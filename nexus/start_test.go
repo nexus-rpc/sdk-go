@@ -252,7 +252,7 @@ type asyncHandler struct {
 
 func (h *asyncHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	return &HandlerStartOperationResultAsync{
-		OperationID: "async",
+		OperationToken: "async",
 	}, nil
 }
 
