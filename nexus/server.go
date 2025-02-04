@@ -445,7 +445,12 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
-	if token := request.Header.Get(HeaderOperationToken); token != "" {
+	token := request.Header.Get(HeaderOperationToken)
+	if token == "" {
+		token = request.URL.Query().Get("token")
+	}
+
+	if token != "" {
 		switch len(parts) {
 		case 3: // /{service}/{operation}
 			if request.Method != "GET" {
@@ -474,8 +479,6 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 		}
 	} else {
-		var token string
-
 		if len(parts) > 3 {
 			token, err = url.PathUnescape(parts[3])
 			if err != nil {
