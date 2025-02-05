@@ -449,9 +449,19 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
+
+	// First handle StartOperation at /{service}/{operation}
+	if len(parts) == 3 && request.Method == "POST" {
+		h.startOperation(service, operation, writer, request)
+		return
+	}
+
 	token := request.Header.Get(HeaderOperationToken)
 	if token == "" {
 		token = request.URL.Query().Get("token")
+	} else {
+		// Sanitize this header as it is explicitly passed in as an argument.
+		request.Header.Del(HeaderOperationToken)
 	}
 
 	if token != "" {
@@ -483,21 +493,13 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 		}
 	} else {
-		if len(parts) > 3 {
-			token, err = url.PathUnescape(parts[3])
-			if err != nil {
-				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-				return
-			}
+		token, err = url.PathUnescape(parts[3])
+		if err != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+			return
 		}
 
 		switch len(parts) {
-		case 3: // /{service}/{operation}
-			if request.Method != "POST" {
-				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
-				return
-			}
-			h.startOperation(service, operation, writer, request)
 		case 4: // /{service}/{operation}/{operation_id}
 			if request.Method != "GET" {
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
