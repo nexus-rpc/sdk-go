@@ -5,8 +5,6 @@
 
 Client and server package for working with the Nexus [HTTP API](https://github.com/nexus-rpc/api).
 
-**⚠️ EXPERIMENTAL ⚠️**
-
 ## What is Nexus?
 
 Nexus is a synchronous RPC protocol. Arbitrary length operations are modelled on top of a set of pre-defined synchronous

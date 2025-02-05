@@ -88,8 +88,12 @@ type Operation[I, O any] interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the [Handler] example.
+	//
+	// NOTE: Experimental
 	GetResult(ctx context.Context, token string, options GetOperationResultOptions) (O, error)
 	// GetInfo handles requests to get information about an asynchronous operation.
+	//
+	// NOTE: Experimental
 	GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// Cancel handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:

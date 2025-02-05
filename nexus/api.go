@@ -288,6 +288,8 @@ func (e *HandlerError) Unwrap() error {
 }
 
 // ErrOperationStillRunning indicates that an operation is still running while trying to get its result.
+//
+// NOTE: Experimental
 var ErrOperationStillRunning = errors.New("operation still running")
 
 // OperationInfo conveys information about an operation.
