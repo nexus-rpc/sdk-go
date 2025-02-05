@@ -21,22 +21,35 @@ type handlerCtxKeyType struct{}
 
 var handlerCtxKey = handlerCtxKeyType{}
 
+// HandlerInfo contains the general information for an operation invocation, across different handler methods.
+//
+// NOTE: Experimental
+type HandlerInfo struct {
+	// Service is the name of the service that contains the operation.
+	Service string
+	// Operation is the name of the operation.
+	Operation string
+	// Header contains the request header fields received by the server.
+	Header Header
+}
+
 type handlerCtx struct {
 	mu    sync.Mutex
 	links []Link
+	info  HandlerInfo
 }
 
 // WithHandlerContext returns a new context from a given context setting it up for being used for handler methods.
 // Meant to be used by frameworks, not directly by applications.
 //
 // NOTE: Experimental
-func WithHandlerContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, handlerCtxKey, &handlerCtx{})
+func WithHandlerContext(ctx context.Context, info HandlerInfo) context.Context {
+	return context.WithValue(ctx, handlerCtxKey, &handlerCtx{info: info})
 }
 
-// IsHandlerContext returns true if the given context is a handler context where [AddHandlerLinks] and [HandlerLinks]
-// can be called. It will only return true when called from an [Operation] handler Start method or from a [Handler]
-// StartOperation method.
+// IsHandlerContext returns true if the given context is a handler context where [ExtractHandlerInfo], [AddHandlerLinks]
+// and [HandlerLinks] can be called. It returns true when called from any [OperationHandler] or [Handler] method or a
+// [MiddlewareFunc].
 //
 // NOTE: Experimental
 func IsHandlerContext(ctx context.Context) bool {
@@ -44,8 +57,9 @@ func IsHandlerContext(ctx context.Context) bool {
 }
 
 // HandlerLinks retrieves the attached links on the given handler context. The returned slice should not be mutated.
-// The context provided must be the context passed to the handler or this method will panic, [IsHandlerContext] can be
-// used to verify the context is valid.
+// Links are only attached on successful responses to the StartOperation [Handler] and Start [OperationHandler] methods.
+// The context provided must be the context passed to any [OperationHandler] or [Handler] method or a [MiddlewareFunc]
+// or this method will panic, [IsHandlerContext] can be used to verify the context is valid.
 //
 // NOTE: Experimental
 func HandlerLinks(ctx context.Context) []Link {
@@ -57,11 +71,11 @@ func HandlerLinks(ctx context.Context) []Link {
 	return cpy
 }
 
-// AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method
-// Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
-// provided must be the context passed to the handler or this method will panic, [IsHandlerContext] can be used to
-// verify the context is valid. This method may be called multiple times for a given handler, each call appending
-// additional links. Links will only be attached on successful responses.
+// AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method may be
+// called multiple times for a given handler, each call appending additional links. Links are only attached on
+// successful responses to the StartOperation [Handler] and Start [OperationHandler] methods. The context provided must
+// be the context passed to any [OperationHandler] or [Handler] method or a [MiddlewareFunc] or this method will panic,
+// [IsHandlerContext] can be used to verify the context is valid.
 //
 // NOTE: Experimental
 func AddHandlerLinks(ctx context.Context, links ...Link) {
@@ -71,11 +85,11 @@ func AddHandlerLinks(ctx context.Context, links ...Link) {
 	hctx.mu.Unlock()
 }
 
-// SetHandlerLinks associates links with the current operation to be propagated back to the caller. This method
-// Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
-// provided must be the context passed to the handler or this method will panic, [IsHandlerContext] can be used to
-// verify the context is valid. This method replaces any previously associated links, it is recommended to use
-// [AddHandlerLinks] to avoid accidental override. Links will only be attached on successful responses.
+// SetHandlerLinks associates links with the current operation to be propagated back to the caller. This method replaces
+// any previously associated links, it is recommended to use [AddHandlerLinks] to avoid accidental override. Links are
+// only attached on successful responses to the StartOperation [Handler] and Start [OperationHandler] methods. The
+// context provided must be the context passed to any [OperationHandler] or [Handler] method or a [MiddlewareFunc] or
+// this method will panic, [IsHandlerContext] can be used to verify the context is valid.
 //
 // NOTE: Experimental
 func SetHandlerLinks(ctx context.Context, links ...Link) {
@@ -83,6 +97,16 @@ func SetHandlerLinks(ctx context.Context, links ...Link) {
 	hctx.mu.Lock()
 	hctx.links = links
 	hctx.mu.Unlock()
+}
+
+// ExtractHandlerInfo extracts the [HandlerInfo] from a given context. The context provided must be the context passed
+// to any [OperationHandler] or [Handler] method or a [MiddlewareFunc] or this method will panic, [IsHandlerContext] can
+// be used to verify the context is valid.
+//
+// NOTE: Experimental
+func ExtractHandlerInfo(ctx context.Context) HandlerInfo {
+	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
+	return hctx.info
 }
 
 // An HandlerStartOperationResult is the return type from the [Handler] StartOperation and [Operation] Start methods. It
@@ -348,18 +372,21 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
-	hctx := &handlerCtx{}
-	ctx = context.WithValue(ctx, handlerCtxKey, hctx)
 	if !ok {
 		return
 	}
 	defer cancel()
 
+	ctx = WithHandlerContext(ctx, HandlerInfo{
+		Service:   service,
+		Operation: operation,
+		Header:    options.Header,
+	})
 	response, err := h.options.Handler.StartOperation(ctx, service, operation, value, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
-		if err := addLinksToHTTPHeader(hctx.links, writer.Header()); err != nil {
+		if err := addLinksToHTTPHeader(HandlerLinks(ctx), writer.Header()); err != nil {
 			h.logger.Error("failed to serialize links into header", "error", err)
 			// clear any previous links already written to the header
 			writer.Header().Del(headerLink)
@@ -372,10 +399,9 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 
 func (h *httpHandler) getOperationResult(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
 	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
-
+	ctx := request.Context()
 	// If both Request-Timeout http header and wait query string are set, the minimum of the Request-Timeout header
 	// and h.options.GetResultTimeout will be used.
-	ctx := request.Context()
 	requestTimeout, ok := h.parseRequestTimeoutHeader(writer, request)
 	if !ok {
 		return
@@ -401,6 +427,11 @@ func (h *httpHandler) getOperationResult(service, operation, token string, write
 		defer cancel()
 	}
 
+	ctx = WithHandlerContext(ctx, HandlerInfo{
+		Service:   service,
+		Operation: operation,
+		Header:    options.Header,
+	})
 	result, err := h.options.Handler.GetOperationResult(ctx, service, operation, token, options)
 	if err != nil {
 		if options.Wait > 0 && ctx.Err() != nil {
@@ -424,6 +455,11 @@ func (h *httpHandler) getOperationInfo(service, operation, token string, writer 
 	}
 	defer cancel()
 
+	ctx = WithHandlerContext(ctx, HandlerInfo{
+		Service:   service,
+		Operation: operation,
+		Header:    options.Header,
+	})
 	info, err := h.options.Handler.GetOperationInfo(ctx, service, operation, token, options)
 	if err != nil {
 		h.writeFailure(writer, err)
@@ -455,6 +491,11 @@ func (h *httpHandler) cancelOperation(service, operation, token string, writer h
 	}
 	defer cancel()
 
+	ctx = WithHandlerContext(ctx, HandlerInfo{
+		Service:   service,
+		Operation: operation,
+		Header:    options.Header,
+	})
 	if err := h.options.Handler.CancelOperation(ctx, service, operation, token, options); err != nil {
 		h.writeFailure(writer, err)
 		return

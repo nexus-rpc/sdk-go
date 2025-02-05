@@ -422,6 +422,52 @@ result, _ := nexus.StartOperation(ctx, client, operation, MyInput{Field: "value"
 fmt.Println("got result with backlinks", result.Links)
 ```
 
+### Middleware
+
+The ServiceRegistry supports middleware registration via the `Use` method. The registry's handler will invoke every
+registered middleware in registration order. Typical use cases for middleware include global enforcement of
+authorization and logging.
+
+Middleware is implemented as a function that takes the current context and the next handler in the invocation chain and
+returns a new handler to invoke. The function can pass through the given handler or return an error to abort the
+execution. The registered middleware function has access to common handler information such as the current service,
+operation, and request headers. To get access to more specific handler method information, such as inputs and operation
+tokens, wrap the given handler.
+
+**Example**
+
+```go
+type loggingOperation struct {
+	nexus.UnimplementedOperation[any, any] // All OperationHandlers must embed this.
+	next nexus.OperationHandler[any, any]
+}
+
+func (lo *loggingOperation) Start(ctx context.Context, input any, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
+	log.Println("starting operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.Start(ctx, input, options)
+}
+
+func (lo *loggingOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (any, error) {
+	log.Println("getting result for operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.GetResult(ctx, token, options)
+}
+
+func (lo *loggingOperation) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
+	log.Printf("canceling operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.Cancel(ctx, token, options)
+}
+
+func (lo *loggingOperation) GetInfo(ctx context.Context, token string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+	log.Println("getting info for operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.GetInfo(ctx, token, options)
+}
+
+registry.Use(func(ctx context.Context, next nexus.OperationHandler[any, any]) (nexus.OperationHandler[any, any], error) {
+	// Optionally call ExtractHandlerInfo(ctx) here.
+	return &loggingOperation{next: next}, nil
+})
+```
+
 ## Contributing
 
 ### Prerequisites

@@ -9,7 +9,7 @@ import (
 )
 
 func TestHandlerContext(t *testing.T) {
-	ctx := nexus.WithHandlerContext(context.Background())
+	ctx := nexus.WithHandlerContext(context.Background(), nexus.HandlerInfo{Operation: "test"})
 	require.True(t, nexus.IsHandlerContext(ctx))
 	initial := []nexus.Link{{Type: "foo"}, {Type: "bar"}}
 	nexus.AddHandlerLinks(ctx, initial...)
@@ -18,4 +18,5 @@ func TestHandlerContext(t *testing.T) {
 	require.Equal(t, append(initial, additional), nexus.HandlerLinks(ctx))
 	nexus.SetHandlerLinks(ctx, initial...)
 	require.Equal(t, initial, nexus.HandlerLinks(ctx))
+	require.Equal(t, nexus.HandlerInfo{Operation: "test"}, nexus.ExtractHandlerInfo(ctx))
 }
