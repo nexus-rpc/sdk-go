@@ -391,6 +391,37 @@ operation failures and framework level HTTP request errors.
 
 The `Details` field is encoded and it is up to the library user to encode to and decode from it.
 
+A failure can be either directly attached to `HandlerError` and `OperationError` instances by providing `FailureError`
+as the `Cause`, or indirectly by implementing the `FailureConverter` interface, which can translate arbitrary user
+defined errors to `Failure` instances and back.
+
+### Links
+
+Nexus operations can bi-directionally link the caller and handler for tracing the execution path. A caller may provide
+a set of `Link` objects via `StartOperationOptions` that the handler may log or attach to any underlying resources
+backing the operation. A handler may attach backlinks when responding to a `StartOperation` request via the a
+`AddHandlerLinks` method.
+
+#### Handler
+
+```go
+func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
+	output, backlinks, _ := createMyBackingResourceAndAttachCallerLinks(ctx, input, options.Links)
+	nexus.AddHandlerLinks(ctx, backlinks)
+	return output, nil
+}
+
+result, _ := nexus.StartOperation(ctx, client, operation, MyInput{Field: "value"}, nexus.StartOperationOptions{
+	Links: []nexus.Link{
+		{
+			Type: "org.my.MyResource",
+			URL:  &url.URL{/* ... */},
+		},
+	},
+})
+fmt.Println("got result with backlinks", result.Links)
+```
+
 ## Contributing
 
 ### Prerequisites
