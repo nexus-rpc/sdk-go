@@ -73,7 +73,7 @@ if result.Successful != nil { // operation successful
 	fmt.Printf("Operation succeeded synchronously: %v\n", output)
 } else { // operation started asynchronously
 	handle := result.Pending
-	fmt.Printf("Started asynchronous operation with ID: %s\n", handle.ID)
+	fmt.Printf("Started asynchronous operation with token: %s\n", handle.Token)
 }
 ```
 
@@ -112,26 +112,26 @@ Getting a handle does not incur a trip to the server.
 
 ```go
 // Get a handle from an OperationReference
-handle, _ := nexus.NewHandle(client, operation, "operation ID")
+handle, _ := nexus.NewHandle(client, operation, "operation token")
 
 // Get a handle from a string name
-handle, _ := client.NewHandle("operation name", "operation ID")
+handle, _ := client.NewHandle("operation name", "operation token")
 ```
 
 ### OperationHandle
 
 `OperationHandle`s are used to cancel and get the result and status of an operation.
 
-Handles expose a couple of readonly attributes: `Operation` and `ID`.
+Handles expose a couple of readonly attributes: `Operation` and `Token`.
 
 #### Operation
 
 `Operation` is the name of the operation this handle represents.
 
-#### ID
+#### Token
 
-`ID` is the operation ID as returned by a Nexus handler in the response to `StartOperation` or set by the client in the
-`NewHandle` method.
+`Token` is the operation token as returned by a Nexus handler in the response to `StartOperation` or set by the client
+in the `NewHandle` method.
 
 #### Get the Result of an Operation
 
@@ -215,7 +215,7 @@ To deliver failed and canceled completions, pass a `OperationCompletionUnsuccess
 Custom HTTP headers may be provided via `OperationCompletionUnsuccessful.Header`.
 
 ```go
-completion := nexus.NewOperationCompletionUnsuccessful(nexus.NewOperationFailedError(fmt.Errorf("some error")), nexus.OperationCompletionUnsuccessfulOptions{})
+completion := nexus.NewOperationCompletionUnsuccessful(nexus.NewOperationFailedError("some error"), nexus.OperationCompletionUnsuccessfulOptions{})
 request, _ := nexus.NewCompletionHTTPRequest(ctx, callbackURL, completion)
 // ...
 ```
@@ -248,20 +248,20 @@ func (h *myArbitraryLengthOperation) Name() string {
 
 func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
 	// alternatively return &HandlerStartOperationResultSync{Value: MyOutput{}}, nil
-	return &HandlerStartOperationResultAsync{OperationID: "some-meaningful-id"}, nil
+	return &HandlerStartOperationResultAsync{OperationToken: "BASE64_ENCODED_DATA"}, nil
 }
 
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (MyOutput, error) {
 	return MyOutput{}, nil
 }
 
-func (h *myArbitraryLengthOperation) Cancel(ctx context.Context, id string, options nexus.CancelOperationOptions) error {
-	fmt.Println("Canceling", h.Name(), "with ID:", request.OperationID)
+func (h *myArbitraryLengthOperation) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
+	fmt.Println("Canceling", h.Name(), "with token:", token)
 	return nil
 }
 
-func (h *myArbitraryLengthOperation) GetInfo(ctx context.Context, id string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
-	return &nexus.OperationInfo{ID: id, State: nexus.OperationStateRunning}, nil
+func (h *myArbitraryLengthOperation) GetInfo(ctx context.Context, token string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+	return &nexus.OperationInfo{Token: token, State: nexus.OperationStateRunning}, nil
 }
 ```
 
@@ -288,7 +288,7 @@ _ = http.Serve(listener, httpHandler)
 ```go
 func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
 	// Alternatively use NewCanceledOperationError to resolve an operation as canceled.
-	return nil, nexus.NewFailedOperationError(errors.New("Do or do not, there is not try"))
+	return nil, nexus.NewOperationFailedError("Do or do not, there is not try")
 }
 ```
 
@@ -307,7 +307,7 @@ Consider using a derived context that enforces the wait timeout when implementin
 `ErrOperationStillRunning` when that context expires as shown in the example.
 
 ```go
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (MyOutput, error) {
 	if options.Wait > 0 { // request is a long poll
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, options.Wait)
@@ -324,14 +324,20 @@ func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, id string, o
 			}
 			// Optionally translate to operation failure (could also result in canceled state).
 			// Optionally expose the error details to the caller.
-			return nil, nexus.NewFailedOperationError(err)
+			return nil, &nexus.OperationError{
+				State: nexus.OperationStateFailed,
+				Cause: err,
+			}
 		}
 		return result, nil
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
-			return nil, nexus.NewFailedOperationError(err)
+			return nil, &nexus.OperationError{
+				State: nexus.OperationStateFailed,
+				Cause: err,
+			}
 		}
 		return result, nil
 	}
