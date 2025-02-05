@@ -25,6 +25,8 @@ type OperationHandle[T any] struct {
 }
 
 // GetInfo gets operation information, issuing a network request to the service handler.
+//
+// NOTE: Experimental
 func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
 	var u *url.URL
 	if h.client.options.UseOperationID {
@@ -77,6 +79,8 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 // context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
+//
+// NOTE: Experimental
 func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
 	var result T
 	var u *url.URL

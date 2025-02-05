@@ -13,8 +13,29 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+type handlerCtxKeyType struct{}
+
+var handlerCtxKey = handlerCtxKeyType{}
+
+type handlerCtx struct {
+	mu    sync.Mutex
+	links []Link
+}
+
+// AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method
+// Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
+// provided must be the context passed to the handler. This method may be called multiple times for a given handler,
+// each call appending additional links. Links will only be attached on successful responses.
+func AddHandlerLinks(ctx context.Context, links ...Link) {
+	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
+	hctx.mu.Lock()
+	hctx.links = append(hctx.links, links...)
+	hctx.mu.Unlock()
+}
 
 // An HandlerStartOperationResult is the return type from the [Handler] StartOperation and [Operation] Start methods. It
 // has two implementations: [HandlerStartOperationResultSync] and [HandlerStartOperationResultAsync].
@@ -27,6 +48,8 @@ type HandlerStartOperationResultSync[T any] struct {
 	// Value is the output of the operation.
 	Value T
 	// Links to be associated with the operation.
+	//
+	// Deprecated: Use AddHandlerLinks instead.
 	Links []Link
 }
 
@@ -51,6 +74,8 @@ type HandlerStartOperationResultAsync struct {
 	// OperationToken is a unique token to identify the operation.
 	OperationToken string
 	// Links to be associated with the operation.
+	//
+	// Deprecated: Use AddHandlerLinks instead.
 	Links []Link
 }
 
@@ -115,8 +140,12 @@ type Handler interface {
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
 	// Consider using a derived context that enforces the wait timeout when implementing this method and return
 	// [ErrOperationStillRunning] when that context expires as shown in the example.
+	//
+	// NOTE: Experimental
 	GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error)
 	// GetOperationInfo handles requests to get information about an asynchronous operation.
+	//
+	// NOTE: Experimental
 	GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
@@ -271,6 +300,8 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
+	hctx := &handlerCtx{}
+	ctx = context.WithValue(ctx, handlerCtxKey, hctx)
 	if !ok {
 		return
 	}
@@ -280,6 +311,13 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
+		if err := addLinksToHTTPHeader(hctx.links, writer.Header()); err != nil {
+			h.logger.Error("failed to serialize links into header", "error", err)
+			// clear any previous links already written to the header
+			writer.Header().Del(headerLink)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		response.applyToHTTPResponse(writer, h)
 	}
 }
@@ -445,9 +483,19 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 		h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
 		return
 	}
+
+	// First handle StartOperation at /{service}/{operation}
+	if len(parts) == 3 && request.Method == "POST" {
+		h.startOperation(service, operation, writer, request)
+		return
+	}
+
 	token := request.Header.Get(HeaderOperationToken)
 	if token == "" {
 		token = request.URL.Query().Get("token")
+	} else {
+		// Sanitize this header as it is explicitly passed in as an argument.
+		request.Header.Del(HeaderOperationToken)
 	}
 
 	if token != "" {
@@ -479,21 +527,13 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeNotFound, "not found"))
 		}
 	} else {
-		if len(parts) > 3 {
-			token, err = url.PathUnescape(parts[3])
-			if err != nil {
-				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
-				return
-			}
+		token, err = url.PathUnescape(parts[3])
+		if err != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse URL path"))
+			return
 		}
 
 		switch len(parts) {
-		case 3: // /{service}/{operation}
-			if request.Method != "POST" {
-				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
-				return
-			}
-			h.startOperation(service, operation, writer, request)
 		case 4: // /{service}/{operation}/{operation_id}
 			if request.Method != "GET" {
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
