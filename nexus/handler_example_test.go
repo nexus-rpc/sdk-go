@@ -46,14 +46,20 @@ func (h *myHandler) GetOperationResult(ctx context.Context, service, operation, 
 			}
 			// Optionally translate to operation failure (could also result in canceled state).
 			// Optionally expose the error details to the caller.
-			return nil, nexus.NewFailedOperationError(err)
+			return nil, &nexus.OperationError{
+				State: nexus.OperationStateFailed,
+				Cause: err,
+			}
 		}
 		return result, nil
 	} else {
 		result, err := h.peekOperation(ctx)
 		if err != nil {
 			// Optionally translate to operation failure (could also result in canceled state).
-			return nil, nexus.NewFailedOperationError(err)
+			return nil, &nexus.OperationError{
+				State: nexus.OperationStateFailed,
+				Cause: err,
+			}
 		}
 		return result, nil
 	}

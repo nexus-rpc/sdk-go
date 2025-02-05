@@ -20,7 +20,7 @@ var noValueOperation = NewSyncOperation("no-value", func(ctx context.Context, in
 
 var numberValidatorOperation = NewSyncOperation("number-validator", func(ctx context.Context, input int, options StartOperationOptions) (int, error) {
 	if input == 0 {
-		return 0, NewFailedOperationError(fmt.Errorf("cannot process 0"))
+		return 0, NewOperationFailedError("cannot process 0")
 	}
 	return input, nil
 })
@@ -39,7 +39,7 @@ func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, op
 
 func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (int, error) {
 	if token == "0" {
-		return 0, NewFailedOperationError(fmt.Errorf("cannot process 0"))
+		return 0, NewOperationFailedError("cannot process 0")
 	}
 	return strconv.Atoi(token)
 }
