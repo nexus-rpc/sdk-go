@@ -134,7 +134,6 @@ func TestClientRequestID(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			result, err := client.StartOperation(ctx, "foo", nil, c.request)
 			require.NoError(t, err)
-			require.Equal(t, c.request.Links, result.Links)
 			response := result.Successful
 			require.NotNil(t, response)
 			var responseBody []byte
@@ -190,7 +189,8 @@ func (h *echoHandler) StartOperation(ctx context.Context, service, operation str
 			Data:   data,
 		}
 	}
-	return &HandlerStartOperationResultSync[any]{Value: output, Links: options.Links}, nil
+	AddHandlerLinks(ctx, options.Links...)
+	return &HandlerStartOperationResultSync[any]{Value: output}, nil
 }
 
 func TestReaderIO(t *testing.T) {

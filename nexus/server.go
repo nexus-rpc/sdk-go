@@ -13,8 +13,29 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+type handlerCtxKeyType struct{}
+
+var handlerCtxKey = handlerCtxKeyType{}
+
+type handlerCtx struct {
+	mu    sync.Mutex
+	links []Link
+}
+
+// AddHandlerLinks associates a link to with the current operation, which is propagated back to the caller. This method
+// Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
+// provided must be the context passed to the handler. This method may be called multiple times for a given handler,
+// each call appending additional links. Links will only be attached on successful responses.
+func AddHandlerLinks(ctx context.Context, links ...Link) {
+	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
+	hctx.mu.Lock()
+	hctx.links = append(hctx.links, links...)
+	hctx.mu.Unlock()
+}
 
 // An HandlerStartOperationResult is the return type from the [Handler] StartOperation and [Operation] Start methods. It
 // has two implementations: [HandlerStartOperationResultSync] and [HandlerStartOperationResultAsync].
@@ -27,6 +48,8 @@ type HandlerStartOperationResultSync[T any] struct {
 	// Value is the output of the operation.
 	Value T
 	// Links to be associated with the operation.
+	//
+	// Deprecated: Use AddHandlerLinks instead.
 	Links []Link
 }
 
@@ -51,6 +74,8 @@ type HandlerStartOperationResultAsync struct {
 	// OperationToken is a unique token to identify the operation.
 	OperationToken string
 	// Links to be associated with the operation.
+	//
+	// Deprecated: Use AddHandlerLinks instead.
 	Links []Link
 }
 
@@ -275,6 +300,8 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
+	hctx := &handlerCtx{}
+	ctx = context.WithValue(ctx, handlerCtxKey, hctx)
 	if !ok {
 		return
 	}
@@ -284,6 +311,13 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	if err != nil {
 		h.writeFailure(writer, err)
 	} else {
+		if err := addLinksToHTTPHeader(hctx.links, writer.Header()); err != nil {
+			h.logger.Error("failed to serialize links into header", "error", err)
+			// clear any previous links already written to the header
+			writer.Header().Del(headerLink)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		response.applyToHTTPResponse(writer, h)
 	}
 }
