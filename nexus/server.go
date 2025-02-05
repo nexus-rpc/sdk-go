@@ -26,7 +26,7 @@ type handlerCtx struct {
 	links []Link
 }
 
-// AddHandlerLinks associates a link to with the current operation, which is propagated back to the caller. This method
+// AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method
 // Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
 // provided must be the context passed to the handler. This method may be called multiple times for a given handler,
 // each call appending additional links. Links will only be attached on successful responses.
