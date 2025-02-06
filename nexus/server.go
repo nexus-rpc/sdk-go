@@ -28,12 +28,26 @@ type handlerCtx struct {
 
 // WithHandlerContext returns a new context from a given context setting it up for being used for handler methods.
 // Meant to be used by frameworks, not directly by applications.
+//
+// NOTE: Experimental
 func WithHandlerContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, handlerCtxKey, &handlerCtx{})
 }
 
+// InHandlerContext returns true if the given context is a handler context where [AddHandlerLinks] and [HandlerLinks]
+// can be called. It will only return true when called from an [Operation] handler Start method or from a [Handler]
+// StartOperation method.
+//
+// NOTE: Experimental
+func InHandlerContext(ctx context.Context) bool {
+	return ctx.Value(handlerCtxKey) != nil
+}
+
 // HandlerLinks retrieves the attached links on the given handler context. The returned slice should not be mutated.
-// The context provided must be the context passed to the handler.
+// The context provided must be the context passed to the handler or this method will panic, [InHandlerContext] can be
+// used to verify the context is valid.
+//
+// NOTE: Experimental
 func HandlerLinks(ctx context.Context) []Link {
 	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
 	hctx.mu.Lock()
@@ -43,12 +57,29 @@ func HandlerLinks(ctx context.Context) []Link {
 
 // AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method
 // Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
-// provided must be the context passed to the handler. This method may be called multiple times for a given handler,
-// each call appending additional links. Links will only be attached on successful responses.
+// provided must be the context passed to the handler or this method will panic, [InHandlerContext] can be used to
+// verify the context is valid. This method may be called multiple times for a given handler, each call appending
+// additional links. Links will only be attached on successful responses.
+//
+// NOTE: Experimental
 func AddHandlerLinks(ctx context.Context, links ...Link) {
 	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
 	hctx.mu.Lock()
 	hctx.links = append(hctx.links, links...)
+	hctx.mu.Unlock()
+}
+
+// SetHandlerLinks associates links with the current operation to be propagated back to the caller. This method
+// Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
+// provided must be the context passed to the handler or this method will panic, [InHandlerContext] can be used to
+// verify the context is valid. This method replaces any previously associated links, it is recommended to use
+// [AddHandlerLinks] to avoid accidental override. Links will only be attached on successful responses.
+//
+// NOTE: Experimental
+func SetHandlerLinks(ctx context.Context, links ...Link) {
+	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
+	hctx.mu.Lock()
+	hctx.links = links
 	hctx.mu.Unlock()
 }
 
