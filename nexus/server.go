@@ -26,6 +26,21 @@ type handlerCtx struct {
 	links []Link
 }
 
+// WithHandlerContext returns a new context from a given context setting it up for being used for handler methods.
+// Meant to be used by frameworks, not directly by applications.
+func WithHandlerContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, handlerCtxKey, &handlerCtx{})
+}
+
+// HandlerLinks retrieves the attached links on the given handler context. The returned slice should not be mutated.
+// The context provided must be the context passed to the handler.
+func HandlerLinks(ctx context.Context) []Link {
+	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
+	hctx.mu.Lock()
+	defer hctx.mu.Unlock()
+	return hctx.links
+}
+
 // AddHandlerLinks associates links with the current operation to be propagated back to the caller. This method
 // Can be called from an [Operation] handler Start method or from a [Handler] StartOperation method. The context
 // provided must be the context passed to the handler. This method may be called multiple times for a given handler,
