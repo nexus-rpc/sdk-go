@@ -51,10 +51,9 @@ func IsHandlerContext(ctx context.Context) bool {
 func HandlerLinks(ctx context.Context) []Link {
 	hctx := ctx.Value(handlerCtxKey).(*handlerCtx)
 	hctx.mu.Lock()
-	links := hctx.links
+	cpy := make([]Link, len(hctx.links))
+	copy(cpy, hctx.links)
 	hctx.mu.Unlock()
-	cpy := make([]Link, len(links))
-	copy(cpy, links)
 	return cpy
 }
 
