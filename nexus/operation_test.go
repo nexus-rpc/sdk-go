@@ -267,3 +267,89 @@ func TestInputOutputType(t *testing.T) {
 	require.True(t, reflect.TypeOf(3).AssignableTo(numberValidatorOperation.OutputType()))
 	require.False(t, reflect.TypeOf("s").AssignableTo(numberValidatorOperation.OutputType()))
 }
+
+func TestOperationInterceptor(t *testing.T) {
+	registry := NewServiceRegistry()
+	svc := NewService(testService)
+	require.NoError(t, svc.Register(
+		asyncNumberValidatorOperationInstance,
+	))
+
+	var logs []string
+	// Register the logging middleware after the auth middleware to ensure the auth middleware is called first.
+	// any middleware that returns an error will prevent the operation from being called.
+	registry.Use(newAuthMiddleware("auth-key"), newLoggingMiddleware(func(log string) {
+		logs = append(logs, log)
+	}))
+	require.NoError(t, registry.Register(svc))
+
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	ctx, client, teardown := setup(t, handler)
+	defer teardown()
+
+	_, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
+	require.ErrorContains(t, err, "unauthorized")
+
+	authHeader := map[string]string{"authorization": "auth-key"}
+	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{
+		Header: authHeader,
+	})
+	require.NoError(t, err)
+	require.ErrorContains(t, result.Pending.Cancel(ctx, CancelOperationOptions{}), "unauthorized")
+	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: authHeader}))
+	// Assert the logger  only contains calls from successful operations.
+	require.Len(t, logs, 2)
+	require.Contains(t, logs[0], "starting operation async-number-validator")
+	require.Contains(t, logs[1], "cancel operation async-number-validator")
+}
+
+func newAuthMiddleware(authKey string) MiddlewareFunc {
+	return func(ctx context.Context, next OperationHandler[any, any]) (OperationHandler[any, any], error) {
+		info := ExtractHandlerInfo(ctx)
+		if info.Header.Get("authorization") != authKey {
+			return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized")
+		}
+		return next, nil
+	}
+}
+
+type loggingOperation struct {
+	UnimplementedOperation[any, any]
+	Operation OperationHandler[any, any]
+	name      string
+	output    func(string)
+}
+
+func (lo *loggingOperation) Start(ctx context.Context, input any, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
+	lo.output(fmt.Sprintf("starting operation %s", lo.name))
+	return lo.Operation.Start(ctx, input, options)
+}
+
+func (lo *loggingOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (any, error) {
+	lo.output(fmt.Sprintf("getting result for operation %s", lo.name))
+	return lo.Operation.GetResult(ctx, id, options)
+}
+
+func (lo *loggingOperation) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
+	lo.output(fmt.Sprintf("cancel operation %s", lo.name))
+	return lo.Operation.Cancel(ctx, id, options)
+}
+
+func (lo *loggingOperation) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	lo.output(fmt.Sprintf("getting info for operation %s", lo.name))
+	return lo.Operation.GetInfo(ctx, id, options)
+}
+
+func newLoggingMiddleware(output func(string)) MiddlewareFunc {
+	return func(ctx context.Context, next OperationHandler[any, any]) (OperationHandler[any, any], error) {
+		info := ExtractHandlerInfo(ctx)
+
+		return &loggingOperation{
+			Operation: next,
+			name:      info.Operation,
+			output:    output,
+		}, nil
+	}
+}
