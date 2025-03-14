@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// NewCompletionHTTPRequest creates an HTTP request deliver an operation completion to a given URL.
+// NewCompletionHTTPRequest creates an HTTP request that delivers an operation completion to a given URL.
 //
 // NOTE: Experimental
 func NewCompletionHTTPRequest(ctx context.Context, url string, completion OperationCompletion) (*http.Request, error) {
