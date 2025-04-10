@@ -57,6 +57,8 @@ func (operationReference[I, O]) inferType(I, O) {} //nolint:unused
 type RegisterableOperation interface {
 	// Name of the operation. Used for invocation and registration.
 	Name() string
+	InputType() reflect.Type
+	OutputType() reflect.Type
 	mustEmbedUnimplementedOperation()
 }
 
@@ -194,6 +196,14 @@ func (s *Service) MustRegister(operations ...RegisterableOperation) {
 // Operation returns an operation by name or nil if not found.
 func (s *Service) Operation(name string) RegisterableOperation {
 	return s.operations[name]
+}
+
+func (s *Service) Operations() []RegisterableOperation {
+	result := make([]RegisterableOperation, 0, len(s.operations))
+	for _, op := range s.operations {
+		result = append(result, op)
+	}
+	return result
 }
 
 // MiddlewareFunc is a function which receives an OperationHandler and returns another OperationHandler.
