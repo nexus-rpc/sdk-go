@@ -105,7 +105,7 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 	for {
 		if wait > 0 {
 			if deadline, set := ctx.Deadline(); set {
-				// Ensure we don't wait longer than the deadline but give some buffer prevent racing between wait and
+				// Ensure we don't wait longer than the deadline but give some buffer to prevent racing between wait and
 				// context deadline.
 				wait = min(wait, time.Until(deadline)+getResultContextPadding)
 			}
