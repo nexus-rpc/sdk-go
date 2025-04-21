@@ -19,16 +19,16 @@ jobs:
         with:
           go-version: "1.21"
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.54
+          version: v1.64
           args: --verbose --timeout 3m --fix=false
       - name: Test
         run: go test -v  ./...
       - name: Lint nexusproto
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.54
+          version: v1.64
           args: --verbose --timeout 3m --fix=false
           working-directory: ./contrib/nexusproto
       - name: Test nexusproto
