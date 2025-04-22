@@ -1,7 +1,6 @@
 package nexusproto
 
 import (
-	"errors"
 	"fmt"
 	"mime"
 	"reflect"
@@ -14,7 +13,7 @@ import (
 func messageFromAny(v any) (proto.Message, error) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("%w: type: %T", ErrInvalidProtoObject, v)
+		return nil, fmt.Errorf("invalid protobuf object: type: %T", v)
 	}
 	elem := rv.Type().Elem()
 
@@ -30,7 +29,7 @@ func messageFromAny(v any) (proto.Message, error) {
 
 	msg, ok := rv.Interface().(proto.Message)
 	if !ok {
-		return nil, nexus.ErrSerializerIncompatible
+		return nil, fmt.Errorf("%w: value is not a proto.Message or a pointer to one", nexus.ErrSerializerIncompatible)
 	}
 
 	return msg, nil
@@ -38,21 +37,30 @@ func messageFromAny(v any) (proto.Message, error) {
 
 type protoJsonSerializer struct{}
 
-func (protoJsonSerializer) isValidContentType(contentType string) bool {
+func (protoJsonSerializer) extractMessageType(contentType string) string {
 	if contentType == "" {
-		return false
+		return ""
 	}
 	mediaType, params, err := mime.ParseMediaType(contentType)
-	return err == nil && mediaType == "application/json" && len(params) == 2 && params["format"] == "protobuf" && params["message-type"] != ""
+	if err != nil || mediaType != "application/json" || len(params) != 2 || params["format"] != "protobuf" {
+		return ""
+	}
+	return params["message-type"]
 }
 
 func (s protoJsonSerializer) Deserialize(c *nexus.Content, v any) error {
-	if !s.isValidContentType(c.Header["type"]) {
-		return nexus.ErrSerializerIncompatible
+	messageTypeFromHeader := s.extractMessageType(c.Header["type"])
+	if messageTypeFromHeader == "" {
+		return fmt.Errorf("%w: incompatible content type header", nexus.ErrSerializerIncompatible)
 	}
 	msg, err := messageFromAny(v)
 	if err != nil {
 		return err
+	}
+	messageTypeFromValue := string(msg.ProtoReflect().Type().Descriptor().FullName())
+	if messageTypeFromHeader != messageTypeFromValue {
+		return fmt.Errorf("serialized message type: %q is different from the provided value: %q", messageTypeFromHeader, messageTypeFromValue)
+
 	}
 	return protojson.Unmarshal(c.Data, msg)
 }
@@ -60,7 +68,7 @@ func (s protoJsonSerializer) Deserialize(c *nexus.Content, v any) error {
 func (protoJsonSerializer) Serialize(v any) (*nexus.Content, error) {
 	msg, ok := v.(proto.Message)
 	if !ok {
-		return nil, nexus.ErrSerializerIncompatible
+		return nil, fmt.Errorf("%w: value is not a proto.Message", nexus.ErrSerializerIncompatible)
 	}
 	data, err := protojson.Marshal(msg)
 	if err != nil {
@@ -80,23 +88,30 @@ func (protoJsonSerializer) Serialize(v any) (*nexus.Content, error) {
 
 type protoBinarySerializer struct{}
 
-var ErrInvalidProtoObject = errors.New("invalid protobuf object")
-
-func (protoBinarySerializer) isValidContentType(contentType string) bool {
+func (protoBinarySerializer) extractMessageType(contentType string) string {
 	if contentType == "" {
-		return false
+		return ""
 	}
 	mediaType, params, err := mime.ParseMediaType(contentType)
-	return err == nil && mediaType == "application/x-protobuf" && len(params) == 1 && params["message-type"] != ""
+	if err != nil || mediaType != "application/x-protobuf" || len(params) != 1 {
+		return ""
+	}
+	return params["message-type"]
 }
 
 func (s protoBinarySerializer) Deserialize(c *nexus.Content, v any) error {
-	if !s.isValidContentType(c.Header["type"]) {
-		return nexus.ErrSerializerIncompatible
+	messageTypeFromHeader := s.extractMessageType(c.Header["type"])
+	if messageTypeFromHeader == "" {
+		return fmt.Errorf("%w: incompatible content type header", nexus.ErrSerializerIncompatible)
 	}
 	msg, err := messageFromAny(v)
 	if err != nil {
 		return err
+	}
+	messageTypeFromValue := string(msg.ProtoReflect().Type().Descriptor().FullName())
+	if messageTypeFromHeader != messageTypeFromValue {
+		return fmt.Errorf("serialized message type: %q is different from the provided value: %q", messageTypeFromHeader, messageTypeFromValue)
+
 	}
 	return proto.Unmarshal(c.Data, msg)
 }
@@ -104,7 +119,7 @@ func (s protoBinarySerializer) Deserialize(c *nexus.Content, v any) error {
 func (protoBinarySerializer) Serialize(v any) (*nexus.Content, error) {
 	msg, ok := v.(proto.Message)
 	if !ok {
-		return nil, nexus.ErrSerializerIncompatible
+		return nil, fmt.Errorf("%w: value is not a proto.Message", nexus.ErrSerializerIncompatible)
 	}
 	data, err := proto.Marshal(msg)
 	if err != nil {
