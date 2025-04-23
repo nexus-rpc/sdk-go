@@ -25,9 +25,9 @@ func TestJSONSerializer(t *testing.T) {
 func TestNilSerializer(t *testing.T) {
 	var err error
 	var c *Content
-	s := nilSerializer{}
+	s := NilSerializer{}
 	_, err = s.Serialize(1)
-	require.ErrorIs(t, err, errSerializerIncompatible)
+	require.ErrorIs(t, err, ErrSerializerIncompatible)
 
 	c, err = s.Serialize(nil)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestByteSliceSerializer(t *testing.T) {
 	var c *Content
 	s := byteSliceSerializer{}
 	_, err = s.Serialize(1)
-	require.ErrorIs(t, err, errSerializerIncompatible)
+	require.ErrorIs(t, err, ErrSerializerIncompatible)
 
 	// decode into byte slice
 	c, err = s.Serialize([]byte("abc"))

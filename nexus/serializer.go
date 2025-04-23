@@ -94,46 +94,52 @@ type FailureConverter interface {
 
 var anyType = reflect.TypeOf((*any)(nil)).Elem()
 
-var errSerializerIncompatible = errors.New("incompatible serializer")
+// ErrSerializerIncompatible is a sentinel error emitted by [Serializer] implementations to signal that a serializer is
+// incompatible with a given value or [Content].
+var ErrSerializerIncompatible = errors.New("incompatible serializer")
 
-type serializerChain []Serializer
+// CompositeSerializer is a [Serializer] that composes multiple serializers together.
+// During serialization, it tries each serializer in sequence until it finds a compatible serializer for the given value.
+// During deserialization, it tries each serializer in reverse sequence until it finds a compatible serializer for the
+// given content.
+type CompositeSerializer []Serializer
 
-func (c serializerChain) Serialize(v any) (*Content, error) {
+func (c CompositeSerializer) Serialize(v any) (*Content, error) {
 	for _, l := range c {
 		p, err := l.Serialize(v)
 		if err != nil {
-			if errors.Is(err, errSerializerIncompatible) {
+			if errors.Is(err, ErrSerializerIncompatible) {
 				continue
 			}
 			return nil, err
 		}
 		return p, nil
 	}
-	return nil, errSerializerIncompatible
+	return nil, ErrSerializerIncompatible
 }
 
-func (c serializerChain) Deserialize(content *Content, v any) error {
+func (c CompositeSerializer) Deserialize(content *Content, v any) error {
 	lenc := len(c)
 	for i := range c {
 		l := c[lenc-i-1]
 		if err := l.Deserialize(content, v); err != nil {
-			if errors.Is(err, errSerializerIncompatible) {
+			if errors.Is(err, ErrSerializerIncompatible) {
 				continue
 			}
 			return err
 		}
 		return nil
 	}
-	return errSerializerIncompatible
+	return ErrSerializerIncompatible
 }
 
-var _ Serializer = serializerChain{}
+var _ Serializer = CompositeSerializer{}
 
 type jsonSerializer struct{}
 
 func (jsonSerializer) Deserialize(c *Content, v any) error {
 	if !isMediaTypeJSON(c.Header["type"]) {
-		return errSerializerIncompatible
+		return ErrSerializerIncompatible
 	}
 	return json.Unmarshal(c.Data, &v)
 }
@@ -153,11 +159,12 @@ func (jsonSerializer) Serialize(v any) (*Content, error) {
 
 var _ Serializer = jsonSerializer{}
 
-type nilSerializer struct{}
+// NilSerializer is a [Serializer] that supports serialization of nil values.
+type NilSerializer struct{}
 
-func (nilSerializer) Deserialize(c *Content, v any) error {
+func (NilSerializer) Deserialize(c *Content, v any) error {
 	if len(c.Data) > 0 {
-		return errSerializerIncompatible
+		return ErrSerializerIncompatible
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
@@ -176,11 +183,11 @@ func (nilSerializer) Deserialize(c *Content, v any) error {
 	return nil
 }
 
-func (nilSerializer) Serialize(v any) (*Content, error) {
+func (NilSerializer) Serialize(v any) (*Content, error) {
 	if v != nil {
 		rv := reflect.ValueOf(v)
 		if !(rv.Kind() == reflect.Pointer && rv.IsNil()) {
-			return nil, errSerializerIncompatible
+			return nil, ErrSerializerIncompatible
 		}
 	}
 	return &Content{
@@ -189,13 +196,13 @@ func (nilSerializer) Serialize(v any) (*Content, error) {
 	}, nil
 }
 
-var _ Serializer = nilSerializer{}
+var _ Serializer = NilSerializer{}
 
 type byteSliceSerializer struct{}
 
 func (byteSliceSerializer) Deserialize(c *Content, v any) error {
 	if !isMediaTypeOctetStream(c.Header["type"]) {
-		return errSerializerIncompatible
+		return ErrSerializerIncompatible
 	}
 	if bPtr, ok := v.(*[]byte); ok {
 		if bPtr == nil {
@@ -228,18 +235,12 @@ func (byteSliceSerializer) Serialize(v any) (*Content, error) {
 			Data: b,
 		}, nil
 	}
-	return nil, errSerializerIncompatible
+	return nil, ErrSerializerIncompatible
 }
 
 var _ Serializer = byteSliceSerializer{}
 
-type compositeSerializer struct {
-	serializerChain
-}
-
-var defaultSerializer Serializer = compositeSerializer{
-	serializerChain([]Serializer{nilSerializer{}, byteSliceSerializer{}, jsonSerializer{}}),
-}
+var defaultSerializer Serializer = CompositeSerializer([]Serializer{NilSerializer{}, byteSliceSerializer{}, jsonSerializer{}})
 
 // DefaultSerializer returns the SDK's default [Serializer] that handles serialization to and from JSONables, byte
 // slices, and nil.
