@@ -19,6 +19,8 @@ import (
 )
 
 // HTTPClientOptions are options for creating an [HTTPClient].
+//
+// NOTE: Experimental
 type HTTPClientOptions struct {
 	// Base URL for all requests. Required.
 	BaseURL string
@@ -93,6 +95,8 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 // OperationHandles can be obtained either by starting new operations or by calling [HTTPClient.NewHandle] for existing
 // operations.
 //
+// NOTE: Experimental
+//
 // [Nexus HTTP API]: https://github.com/nexus-rpc/api
 type HTTPClient struct {
 	// The options this client was created with after applying defaults.
@@ -102,6 +106,8 @@ type HTTPClient struct {
 
 // NewHTTPClient creates a new [HTTPClient] from provided [HTTPClientOptions].
 // BaseURL and Service are required.
+//
+// NOTE: Experimental
 func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 	if options.HTTPCaller == nil {
 		options.HTTPCaller = http.DefaultClient.Do
@@ -136,6 +142,8 @@ func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 
 // ClientStartOperationResult is the return type of [HTTPClient.StartOperation].
 // One and only one of Successful or Pending will be non-nil.
+//
+// NOTE: Experimental
 type ClientStartOperationResult[T any] struct {
 	// Set when start completes synchronously and successfully.
 	//
@@ -164,6 +172,8 @@ type ClientStartOperationResult[T any] struct {
 //     [OperationError].
 //
 //  4. Any other error.
+//
+// NOTE: Experimental
 func (c *HTTPClient) StartOperation(
 	ctx context.Context,
 	operation string,
@@ -307,6 +317,8 @@ func (c *HTTPClient) StartOperation(
 }
 
 // ExecuteOperationOptions are options for [HTTPClient.ExecuteOperation].
+//
+// NOTE: Experimental
 type ExecuteOperationOptions struct {
 	// Callback URL to provide to the handle for receiving async operation completions. Optional.
 	// Even though Client.ExecuteOperation waits for operation completion, some applications may want to set this
@@ -348,6 +360,8 @@ type ExecuteOperationOptions struct {
 //
 // ⚠️ If this method completes successfully, the returned response's body must be read in its entirety and closed to
 // free up the underlying connection.
+//
+// NOTE: Experimental
 func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, input any, options ExecuteOperationOptions) (*LazyValue, error) {
 	so := StartOperationOptions{
 		CallbackURL:    options.CallbackURL,
@@ -378,6 +392,8 @@ func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, inp
 // NewHandle gets a handle to an asynchronous operation by name and token.
 // Does not incur a trip to the server.
 // Fails if provided an empty operation or token.
+//
+// NOTE: Experimental
 func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle[*LazyValue], error) {
 	var es []error
 	if operation == "" {

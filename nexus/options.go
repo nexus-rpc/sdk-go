@@ -32,6 +32,8 @@ type StartOperationOptions struct {
 }
 
 // GetOperationResultOptions are options for the GetOperationResult client and server APIs.
+//
+// NOTE: Experimental
 type GetOperationResultOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
@@ -45,6 +47,8 @@ type GetOperationResultOptions struct {
 }
 
 // GetOperationInfoOptions are options for the GetOperationInfo client and server APIs.
+//
+// NOTE: Experimental
 type GetOperationInfoOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
