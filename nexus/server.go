@@ -536,6 +536,8 @@ func (h *httpHandler) contextWithTimeoutFromHTTPRequest(writer http.ResponseWrit
 }
 
 // HandlerOptions are options for [NewHTTPHandler].
+//
+// NOTE: Experimental
 type HandlerOptions struct {
 	// Handler for handling service requests.
 	Handler Handler
@@ -653,6 +655,8 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 }
 
 // NewHTTPHandler constructs an [http.Handler] from given options for handling Nexus service requests.
+//
+// NOTE: Experimental
 func NewHTTPHandler(options HandlerOptions) http.Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
