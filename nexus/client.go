@@ -18,35 +18,103 @@ import (
 	"github.com/google/uuid"
 )
 
-// HTTPClientOptions are options for creating an [HTTPClient].
-//
-// NOTE: Experimental
-type HTTPClientOptions struct {
-	// Base URL for all requests. Required.
-	BaseURL string
-	// Service name. Required.
-	Service string
-	// A function for making HTTP requests.
-	// Defaults to [http.DefaultClient.Do].
-	HTTPCaller func(*http.Request) (*http.Response, error)
-	// A [Serializer] to customize client serialization behavior.
-	// By default the client handles JSONables, byte slices, and nil.
-	Serializer Serializer
-	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
-	// [DefaultFailureConverter].
-	FailureConverter FailureConverter
-	// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
-	// as part of the URL path.
-	// This flag will be removed in a future release.
+type (
+	Client interface {
+		// StartOperation calls the configured Nexus endpoint to start an operation.
+		//
+		// This method has the following possible outcomes:
+		//
+		//  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
+		//     ClientStartOperationResult.Successful and must be consumed to free up the underlying connection.
+		//
+		//  2. The operation was started and the handler has indicated that it will complete asynchronously. An
+		//     [OperationHandle] will be returned as ClientStartOperationResult.Pending, which can be used to perform actions
+		//     such as getting its result.
+		//
+		//  3. The operation was unsuccessful. The returned result will be nil and error will be an
+		//     [OperationError].
+		//
+		//  4. Any other error.
+		//
+		// NOTE: Experimental
+		StartOperation(ctx context.Context, operation string, input any, options StartOperationOptions) (*ClientStartOperationResult[*LazyValue], error)
+		// ExecuteOperation is a helper for starting an operation and waiting for its completion.
+		//
+		// For asynchronous operations, the client will long poll for their result, issuing one or more requests until the
+		// wait period provided via [ExecuteOperationOptions] exceeds, in which case an [ErrOperationStillRunning] error is
+		// returned.
+		//
+		// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline errors and
+		// [ErrOperationStillRunning].
+		//
+		// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
+		// context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
+		//
+		// ⚠️ If this method completes successfully, the returned response's body must be read in its entirety and closed to
+		// free up the underlying connection.
+		//
+		// NOTE: Experimental
+		ExecuteOperation(ctx context.Context, operation string, input any, options ExecuteOperationOptions) (*LazyValue, error)
+
+		// NewHandle gets a handle to an asynchronous operation by name and token.
+		// Does not incur a trip to the server.
+		// Fails if provided an empty operation or token.
+		//
+		// NOTE: Experimental
+		NewHandle(operation string, token string) (*OperationHandle[*LazyValue], error)
+		// GetOperationClient returns an OperationClient which is used by an [OperationHandle] to make network calls
+		// for getting information and results for an operation.
+		GetOperationClient() OperationClient
+
+		Service() string
+	}
+
+	// ClientOptions are options for creating a [Client].
 	//
 	// NOTE: Experimental
-	UseOperationID bool
-}
+	ClientOptions struct {
+		// Base URL for all requests. Required.
+		BaseURL string
+		// Service name. Required.
+		Service string
+		// A [Serializer] to customize client serialization behavior.
+		// By default the client handles JSONables, byte slices, and nil.
+		Serializer Serializer
+		// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+		// [DefaultFailureConverter].
+		FailureConverter FailureConverter
+		// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
+		// as part of the URL path.
+		// This flag will be removed in a future release.
+		//
+		// NOTE: Experimental
+		UseOperationID bool
+	}
+
+	// ClientStartOperationResult is the return type of [Client.StartOperation].
+	// One and only one of Successful or Pending will be non-nil.
+	//
+	// NOTE: Experimental
+	ClientStartOperationResult[T any] struct {
+		// Set when start completes synchronously and successfully.
+		//
+		// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close it to
+		// free up the underlying connection.
+		Successful T
+		// Set when the handler indicates that it started an asynchronous operation.
+		// The attached handle can be used to perform actions such as cancel the operation or get its result.
+		Pending *OperationHandle[T]
+		// Links contain information about the operations done by the handler.
+		Links []Link
+	}
+)
 
 // User-Agent header set on HTTP requests.
 const userAgent = "Nexus-go-sdk/" + version
 
 const headerUserAgent = "User-Agent"
+
+const getResultContextPadding = time.Second * 5
 
 var errEmptyOperationName = errors.New("empty operation name")
 
@@ -54,7 +122,7 @@ var errEmptyOperationToken = errors.New("empty operation token")
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
 
-// Error that indicates a client encountered something unexpected in the server's response.
+// UnexpectedResponseError indicates a client encountered something unexpected in the server's response.
 type UnexpectedResponseError struct {
 	// Error message.
 	Message string
@@ -86,23 +154,38 @@ func newUnexpectedResponseError(message string, response *http.Response, body []
 	}
 }
 
-// An HTTPClient makes Nexus service requests as defined in the [Nexus HTTP API].
-//
-// It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
-//
-// Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
-//
-// OperationHandles can be obtained either by starting new operations or by calling [HTTPClient.NewHandle] for existing
-// operations.
-//
-// NOTE: Experimental
-//
-// [Nexus HTTP API]: https://github.com/nexus-rpc/api
-type HTTPClient struct {
-	// The options this client was created with after applying defaults.
-	options        HTTPClientOptions
-	serviceBaseURL *url.URL
-}
+type (
+	// HTTPClientOptions are options for creating an [HTTPClient].
+	//
+	// NOTE: Experimental
+	HTTPClientOptions struct {
+		ClientOptions
+		// A function for making HTTP requests.
+		// Defaults to [http.DefaultClient.Do].
+		HTTPCaller func(*http.Request) (*http.Response, error)
+	}
+
+	// An HTTPClient makes Nexus service requests as defined in the [Nexus HTTP API].
+	//
+	// It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
+	//
+	// Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
+	//
+	// OperationHandles can be obtained either by starting new operations or by calling [HTTPClient.NewHandle] for existing
+	// operations.
+	//
+	// NOTE: Experimental
+	//
+	// [Nexus HTTP API]: https://github.com/nexus-rpc/api
+	HTTPClient struct {
+		// The options this client was created with after applying defaults.
+		options        HTTPClientOptions
+		serviceBaseURL *url.URL
+		// A function for making HTTP requests.
+		// Defaults to [http.DefaultClient.Do].
+		httpCaller func(*http.Request) (*http.Response, error)
+	}
+)
 
 // NewHTTPClient creates a new [HTTPClient] from provided [HTTPClientOptions].
 // BaseURL and Service are required.
@@ -140,40 +223,10 @@ func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 	}, nil
 }
 
-// ClientStartOperationResult is the return type of [HTTPClient.StartOperation].
-// One and only one of Successful or Pending will be non-nil.
-//
-// NOTE: Experimental
-type ClientStartOperationResult[T any] struct {
-	// Set when start completes synchronously and successfully.
-	//
-	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close it to
-	// free up the underlying connection.
-	Successful T
-	// Set when the handler indicates that it started an asynchronous operation.
-	// The attached handle can be used to perform actions such as cancel the operation or get its result.
-	Pending *OperationHandle[T]
-	// Links contain information about the operations done by the handler.
-	Links []Link
+func (c *HTTPClient) Service() string {
+	return c.options.Service
 }
 
-// StartOperation calls the configured Nexus endpoint to start an operation.
-//
-// This method has the following possible outcomes:
-//
-//  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
-//     ClientStartOperationResult.Successful and must be consumed to free up the underlying connection.
-//
-//  2. The operation was started and the handler has indicated that it will complete asynchronously. An
-//     [OperationHandle] will be returned as ClientStartOperationResult.Pending, which can be used to perform actions
-//     such as getting its result.
-//
-//  3. The operation was unsuccessful. The returned result will be nil and error will be an
-//     [OperationError].
-//
-//  4. Any other error.
-//
-// NOTE: Experimental
 func (c *HTTPClient) StartOperation(
 	ctx context.Context,
 	operation string,
@@ -316,52 +369,6 @@ func (c *HTTPClient) StartOperation(
 	}
 }
 
-// ExecuteOperationOptions are options for [HTTPClient.ExecuteOperation].
-//
-// NOTE: Experimental
-type ExecuteOperationOptions struct {
-	// Callback URL to provide to the handle for receiving async operation completions. Optional.
-	// Even though Client.ExecuteOperation waits for operation completion, some applications may want to set this
-	// callback as a fallback mechanism.
-	CallbackURL string
-	// Optional header fields set by a client that are required to be attached to the callback request when an
-	// asynchronous operation completes.
-	CallbackHeader Header
-	// Request ID that may be used by the server handler to dedupe this start request.
-	// By default a v4 UUID will be generated by the client.
-	RequestID string
-	// Links contain arbitrary caller information. Handlers may use these links as
-	// metadata on resources associated with and operation.
-	Links []Link
-	// Header to attach to start and get-result requests. Optional.
-	//
-	// Header values set here will overwrite any SDK-provided values for the same key.
-	//
-	// Header keys with the "content-" prefix are reserved for [Serializer] headers and should not be set in the
-	// client API; they are not available to server [Handler] and [Operation] implementations.
-	Header Header
-	// Duration to wait for operation completion.
-	//
-	// ⚠ NOTE: unlike GetOperationResultOptions.Wait, zero and negative values are considered effectively infinite.
-	Wait time.Duration
-}
-
-// ExecuteOperation is a helper for starting an operation and waiting for its completion.
-//
-// For asynchronous operations, the client will long poll for their result, issuing one or more requests until the
-// wait period provided via [ExecuteOperationOptions] exceeds, in which case an [ErrOperationStillRunning] error is
-// returned.
-//
-// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline errors and
-// [ErrOperationStillRunning].
-//
-// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
-// context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
-//
-// ⚠️ If this method completes successfully, the returned response's body must be read in its entirety and closed to
-// free up the underlying connection.
-//
-// NOTE: Experimental
 func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, input any, options ExecuteOperationOptions) (*LazyValue, error) {
 	so := StartOperationOptions{
 		CallbackURL:    options.CallbackURL,
@@ -389,11 +396,6 @@ func (c *HTTPClient) ExecuteOperation(ctx context.Context, operation string, inp
 	return handle.GetResult(ctx, gro)
 }
 
-// NewHandle gets a handle to an asynchronous operation by name and token.
-// Does not incur a trip to the server.
-// Fails if provided an empty operation or token.
-//
-// NOTE: Experimental
 func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle[*LazyValue], error) {
 	var es []error
 	if operation == "" {
@@ -407,10 +409,192 @@ func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle
 	}
 	return &OperationHandle[*LazyValue]{
 		client:    c,
+		Service:   c.options.Service,
 		Operation: operation,
 		ID:        token, // Duplicate token as ID for the deprecation period.
 		Token:     token,
 	}, nil
+}
+
+func (c *HTTPClient) GetOperationClient() OperationClient {
+	return c
+}
+
+func (c *HTTPClient) GetOperationInfo(ctx context.Context, operation string, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+	var u *url.URL
+	if c.options.UseOperationID {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token))
+	} else {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation))
+	}
+	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if !c.options.UseOperationID {
+		request.Header.Set(HeaderOperationToken, token)
+	}
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+
+	request.Header.Set(headerUserAgent, userAgent)
+	response, err := c.options.HTTPCaller(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
+	}
+
+	return operationInfoFromResponse(response, body)
+}
+
+func (c *HTTPClient) GetOperationResult(ctx context.Context, operation string, token string, options GetOperationResultOptions) (*FullResult[*LazyValue], error) {
+	var u *url.URL
+	if c.options.UseOperationID {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token), "result")
+	} else {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), "result")
+	}
+	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if !c.options.UseOperationID {
+		request.Header.Set(HeaderOperationToken, token)
+	}
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
+	request.Header.Set(headerUserAgent, userAgent)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+
+	startTime := time.Now()
+	wait := options.Wait
+	for {
+		if wait > 0 {
+			if deadline, set := ctx.Deadline(); set {
+				// Ensure we don't wait longer than the deadline but give some buffer to prevent racing between wait and
+				// context deadline.
+				wait = min(wait, time.Until(deadline)+getResultContextPadding)
+			}
+
+			q := request.URL.Query()
+			q.Set(queryWait, formatDuration(wait))
+			request.URL.RawQuery = q.Encode()
+		} else {
+			// We may reuse the request object multiple times and will need to reset the query when wait becomes 0 or
+			// negative.
+			request.URL.RawQuery = ""
+		}
+
+		response, err := c.sendGetOperationResultRequest(request)
+		if err != nil {
+			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
+				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
+				// issue to avoid blowing it up with repeated calls.
+				wait = options.Wait - time.Since(startTime)
+				continue
+			}
+			return nil, err
+		}
+		links, err := getLinksFromHeader(response.Header)
+		if err != nil {
+			return nil, err
+		}
+		result := &LazyValue{
+			serializer: c.options.Serializer,
+			Reader: &Reader{
+				response.Body,
+				prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
+			},
+		}
+		return &FullResult[*LazyValue]{
+			Links:  links,
+			Result: result,
+		}, nil
+	}
+}
+
+func (c *HTTPClient) sendGetOperationResultRequest(request *http.Request) (*http.Response, error) {
+	response, err := c.options.HTTPCaller(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode == http.StatusOK {
+		return response, nil
+	}
+
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return nil, err
+	}
+
+	switch response.StatusCode {
+	case http.StatusRequestTimeout:
+		return nil, errOperationWaitTimeout
+	case statusOperationRunning:
+		return nil, ErrOperationStillRunning
+	case statusOperationFailed:
+		state, err := getUnsuccessfulStateFromHeader(response, body)
+		if err != nil {
+			return nil, err
+		}
+		failure, err := c.failureFromResponse(response, body)
+		if err != nil {
+			return nil, err
+		}
+		failureErr := c.options.FailureConverter.FailureToError(failure)
+		return nil, &OperationError{
+			State: state,
+			Cause: failureErr,
+		}
+	default:
+		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
+	}
+}
+
+func (c *HTTPClient) CancelOperation(ctx context.Context, operation string, token string, options CancelOperationOptions) error {
+	var u *url.URL
+	if c.options.UseOperationID {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token), "cancel")
+	} else {
+		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), "cancel")
+	}
+	request, err := http.NewRequestWithContext(ctx, "POST", u.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	if !c.options.UseOperationID {
+		request.Header.Set(HeaderOperationToken, token)
+	}
+
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
+	request.Header.Set(headerUserAgent, userAgent)
+	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	response, err := c.options.HTTPCaller(request)
+	if err != nil {
+		return err
+	}
+
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return err
+	}
+
+	if response.StatusCode != http.StatusAccepted {
+		return c.bestEffortHandlerErrorFromResponse(response, body)
+	}
+	return nil
 }
 
 // readAndReplaceBody reads the response body in its entirety and closes it, and then replaces the original response

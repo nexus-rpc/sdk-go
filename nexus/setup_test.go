@@ -28,10 +28,12 @@ func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureCo
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	client, err = NewHTTPClient(HTTPClientOptions{
-		BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
-		Service:          testService,
-		Serializer:       serializer,
-		FailureConverter: failureConverter,
+		ClientOptions: ClientOptions{
+			BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
+			Service:          testService,
+			Serializer:       serializer,
+			FailureConverter: failureConverter,
+		},
 	})
 	require.NoError(t, err)
 

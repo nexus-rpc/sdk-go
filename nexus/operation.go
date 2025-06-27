@@ -394,13 +394,13 @@ func (r *rootOperationHandler) Start(ctx context.Context, input any, options Sta
 	return ret.(HandlerStartOperationResult[any]), nil
 }
 
-// ExecuteOperation is the type safe version of [HTTPClient.ExecuteOperation].
+// ExecuteOperation is the type safe version of [Client.ExecuteOperation].
 // It accepts input of type I and returns output of type O, removing the need to consume the [LazyValue] returned by the
 // client method.
 //
 //	ref := NewOperationReference[MyInput, MyOutput]("my-operation")
 //	out, err := ExecuteOperation(ctx, client, ref, MyInput{}, options) // returns MyOutput, error
-func ExecuteOperation[I, O any](ctx context.Context, client *HTTPClient, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
+func ExecuteOperation[I, O any](ctx context.Context, client Client, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
 	var o O
 	value, err := client.ExecuteOperation(ctx, operation.Name(), input, request)
 	if err != nil {
@@ -409,10 +409,10 @@ func ExecuteOperation[I, O any](ctx context.Context, client *HTTPClient, operati
 	return o, value.Consume(&o)
 }
 
-// StartOperation is the type safe version of [HTTPClient.StartOperation].
+// StartOperation is the type safe version of [Client.StartOperation].
 // It accepts input of type I and returns a [ClientStartOperationResult] of type O, removing the need to consume the
 // [LazyValue] returned by the client method.
-func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResult[O], error) {
+func StartOperation[I, O any](ctx context.Context, client Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResult[O], error) {
 	result, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
@@ -428,7 +428,8 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 		}, nil
 	}
 	handle := OperationHandle[O]{
-		client:    client,
+		client:    client.GetOperationClient(),
+		Service:   client.Service(),
 		Operation: operation.Name(),
 		ID:        result.Pending.ID,
 		Token:     result.Pending.Token,
@@ -439,14 +440,15 @@ func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation
 	}, nil
 }
 
-// NewHandle is the type safe version of [HTTPClient.NewHandle].
+// NewHandle is the type safe version of [Client.NewHandle].
 // The [Handle.GetResult] method will return an output of type O.
-func NewHandle[I, O any](client *HTTPClient, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
+func NewHandle[I, O any](client Client, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
 	if token == "" {
 		return nil, errEmptyOperationToken
 	}
 	return &OperationHandle[O]{
-		client:    client,
+		client:    client.GetOperationClient(),
+		Service:   client.Service(),
 		Operation: operation.Name(),
 		ID:        token, // Duplicate token as ID for the deprecation period.
 		Token:     token,
