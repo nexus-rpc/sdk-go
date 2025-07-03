@@ -19,7 +19,7 @@ import (
 )
 
 type (
-	Client interface {
+	ServiceClient interface {
 		// StartOperation calls the configured Nexus endpoint to start an operation.
 		//
 		// This method has the following possible outcomes:
@@ -62,36 +62,11 @@ type (
 		//
 		// NOTE: Experimental
 		NewHandle(operation string, token string) (*OperationHandle[*LazyValue], error)
-		// GetOperationClient returns an OperationClient which is used by an [OperationHandle] to make network calls
-		// for getting information and results for an operation.
-		GetOperationClient() OperationClient
 
 		Service() string
 	}
 
-	// ClientOptions are options for creating a [Client].
-	//
-	// NOTE: Experimental
-	ClientOptions struct {
-		// Base URL for all requests. Required.
-		BaseURL string
-		// Service name. Required.
-		Service string
-		// A [Serializer] to customize client serialization behavior.
-		// By default the client handles JSONables, byte slices, and nil.
-		Serializer Serializer
-		// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
-		// [DefaultFailureConverter].
-		FailureConverter FailureConverter
-		// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
-		// as part of the URL path.
-		// This flag will be removed in a future release.
-		//
-		// NOTE: Experimental
-		UseOperationID bool
-	}
-
-	// ClientStartOperationResult is the return type of [Client.StartOperation].
+	// ClientStartOperationResult is the return type of [ServiceClient.StartOperation].
 	// One and only one of Successful or Pending will be non-nil.
 	//
 	// NOTE: Experimental
@@ -159,10 +134,25 @@ type (
 	//
 	// NOTE: Experimental
 	HTTPClientOptions struct {
-		ClientOptions
+		// Base URL for all requests. Required.
+		BaseURL string
+		// Service name. Required.
+		Service string
 		// A function for making HTTP requests.
 		// Defaults to [http.DefaultClient.Do].
 		HTTPCaller func(*http.Request) (*http.Response, error)
+		// A [Serializer] to customize client serialization behavior.
+		// By default the client handles JSONables, byte slices, and nil.
+		Serializer Serializer
+		// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+		// [DefaultFailureConverter].
+		FailureConverter FailureConverter
+		// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
+		// as part of the URL path.
+		// This flag will be removed in a future release.
+		//
+		// NOTE: Experimental
+		UseOperationID bool
 	}
 
 	// An HTTPClient makes Nexus service requests as defined in the [Nexus HTTP API].
@@ -179,11 +169,13 @@ type (
 	// [Nexus HTTP API]: https://github.com/nexus-rpc/api
 	HTTPClient struct {
 		// The options this client was created with after applying defaults.
-		options        HTTPClientOptions
-		serviceBaseURL *url.URL
-		// A function for making HTTP requests.
-		// Defaults to [http.DefaultClient.Do].
-		httpCaller func(*http.Request) (*http.Response, error)
+		options         HTTPClientOptions
+		serviceBaseURL  *url.URL
+		operationClient *httpOperationClient
+	}
+
+	httpOperationClient struct {
+		parent *HTTPClient
 	}
 )
 
@@ -217,10 +209,16 @@ func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 		options.FailureConverter = defaultFailureConverter
 	}
 
-	return &HTTPClient{
+	cl := &HTTPClient{
 		options:        options,
 		serviceBaseURL: baseURL,
-	}, nil
+	}
+	opClient := &httpOperationClient{
+		parent: cl,
+	}
+	cl.operationClient = opClient
+
+	return cl, nil
 }
 
 func (c *HTTPClient) Service() string {
@@ -408,7 +406,7 @@ func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle
 		return nil, errors.Join(es...)
 	}
 	return &OperationHandle[*LazyValue]{
-		client:    c,
+		client:    c.operationClient,
 		Service:   c.options.Service,
 		Operation: operation,
 		ID:        token, // Duplicate token as ID for the deprecation period.
@@ -416,29 +414,25 @@ func (c *HTTPClient) NewHandle(operation string, token string) (*OperationHandle
 	}, nil
 }
 
-func (c *HTTPClient) GetOperationClient() OperationClient {
-	return c
-}
-
-func (c *HTTPClient) GetOperationInfo(ctx context.Context, operation string, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (c *httpOperationClient) GetOperationInfo(ctx context.Context, operation string, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
 	var u *url.URL
-	if c.options.UseOperationID {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token))
+	if c.parent.options.UseOperationID {
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation), url.PathEscape(token))
 	} else {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation))
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation))
 	}
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	if !c.options.UseOperationID {
+	if !c.parent.options.UseOperationID {
 		request.Header.Set(HeaderOperationToken, token)
 	}
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	addNexusHeaderToHTTPHeader(options.Header, request.Header)
 
 	request.Header.Set(headerUserAgent, userAgent)
-	response, err := c.options.HTTPCaller(request)
+	response, err := c.parent.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err
 	}
@@ -450,24 +444,24 @@ func (c *HTTPClient) GetOperationInfo(ctx context.Context, operation string, tok
 	}
 
 	if response.StatusCode != http.StatusOK {
-		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
+		return nil, c.parent.bestEffortHandlerErrorFromResponse(response, body)
 	}
 
 	return operationInfoFromResponse(response, body)
 }
 
-func (c *HTTPClient) GetOperationResult(ctx context.Context, operation string, token string, options GetOperationResultOptions) (*FullResult[*LazyValue], error) {
+func (c *httpOperationClient) GetOperationResult(ctx context.Context, operation string, token string, options GetOperationResultOptions) (*FullResult[*LazyValue], error) {
 	var u *url.URL
-	if c.options.UseOperationID {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token), "result")
+	if c.parent.options.UseOperationID {
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation), url.PathEscape(token), "result")
 	} else {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), "result")
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation), "result")
 	}
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	if !c.options.UseOperationID {
+	if !c.parent.options.UseOperationID {
 		request.Header.Set(HeaderOperationToken, token)
 	}
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
@@ -508,7 +502,7 @@ func (c *HTTPClient) GetOperationResult(ctx context.Context, operation string, t
 			return nil, err
 		}
 		result := &LazyValue{
-			serializer: c.options.Serializer,
+			serializer: c.parent.options.Serializer,
 			Reader: &Reader{
 				response.Body,
 				prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
@@ -521,8 +515,8 @@ func (c *HTTPClient) GetOperationResult(ctx context.Context, operation string, t
 	}
 }
 
-func (c *HTTPClient) sendGetOperationResultRequest(request *http.Request) (*http.Response, error) {
-	response, err := c.options.HTTPCaller(request)
+func (c *httpOperationClient) sendGetOperationResultRequest(request *http.Request) (*http.Response, error) {
+	response, err := c.parent.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err
 	}
@@ -547,40 +541,40 @@ func (c *HTTPClient) sendGetOperationResultRequest(request *http.Request) (*http
 		if err != nil {
 			return nil, err
 		}
-		failure, err := c.failureFromResponse(response, body)
+		failure, err := c.parent.failureFromResponse(response, body)
 		if err != nil {
 			return nil, err
 		}
-		failureErr := c.options.FailureConverter.FailureToError(failure)
+		failureErr := c.parent.options.FailureConverter.FailureToError(failure)
 		return nil, &OperationError{
 			State: state,
 			Cause: failureErr,
 		}
 	default:
-		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
+		return nil, c.parent.bestEffortHandlerErrorFromResponse(response, body)
 	}
 }
 
-func (c *HTTPClient) CancelOperation(ctx context.Context, operation string, token string, options CancelOperationOptions) error {
+func (c *httpOperationClient) CancelOperation(ctx context.Context, operation string, token string, options CancelOperationOptions) error {
 	var u *url.URL
-	if c.options.UseOperationID {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), url.PathEscape(token), "cancel")
+	if c.parent.options.UseOperationID {
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation), url.PathEscape(token), "cancel")
 	} else {
-		u = c.serviceBaseURL.JoinPath(url.PathEscape(c.options.Service), url.PathEscape(operation), "cancel")
+		u = c.parent.serviceBaseURL.JoinPath(url.PathEscape(c.parent.options.Service), url.PathEscape(operation), "cancel")
 	}
 	request, err := http.NewRequestWithContext(ctx, "POST", u.String(), nil)
 	if err != nil {
 		return err
 	}
 
-	if !c.options.UseOperationID {
+	if !c.parent.options.UseOperationID {
 		request.Header.Set(HeaderOperationToken, token)
 	}
 
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
 	addNexusHeaderToHTTPHeader(options.Header, request.Header)
-	response, err := c.options.HTTPCaller(request)
+	response, err := c.parent.options.HTTPCaller(request)
 	if err != nil {
 		return err
 	}
@@ -592,7 +586,7 @@ func (c *HTTPClient) CancelOperation(ctx context.Context, operation string, toke
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		return c.bestEffortHandlerErrorFromResponse(response, body)
+		return c.parent.bestEffortHandlerErrorFromResponse(response, body)
 	}
 	return nil
 }
