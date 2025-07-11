@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewHandleFailureConditions(t *testing.T) {
-	client, err := NewHTTPClient(HTTPClientOptions{BaseURL: "http://foo.com", Service: "test"})
+	client, err := NewHTTPClient(ClientOptions{Service: "test"}, HTTPTransportOptions{BaseURL: "http://foo.com"})
 	require.NoError(t, err)
 	_, err = client.NewHandle("", "token")
 	require.ErrorIs(t, err, errEmptyOperationName)

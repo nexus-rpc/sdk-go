@@ -135,7 +135,9 @@ func TestStartOperation(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, numberValidatorOperation, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	require.Equal(t, 3, result.Successful)
+	val, err := result.Complete.Get()
+	require.NoError(t, err)
+	require.Equal(t, 3, val)
 
 	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)

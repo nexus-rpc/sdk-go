@@ -132,12 +132,13 @@ func TestClientRequestID(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			result, err := client.StartOperation(ctx, "foo", nil, c.request)
+			response, err := client.StartOperation(ctx, "foo", nil, c.request)
 			require.NoError(t, err)
-			response := result.Successful
-			require.NotNil(t, response)
+			result, err := response.Complete.Get()
+			require.NoError(t, err)
+			require.NotNil(t, result)
 			var responseBody []byte
-			err = response.Consume(&responseBody)
+			err = result.Consume(&responseBody)
 			require.NoError(t, err)
 			c.validator(t, responseBody)
 		})
@@ -160,12 +161,13 @@ func TestJSON(t *testing.T) {
 	ctx, client, teardown := setup(t, &jsonHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(ctx, "foo", "success", StartOperationOptions{})
+	response, err := client.StartOperation(ctx, "foo", "success", StartOperationOptions{})
 	require.NoError(t, err)
-	response := result.Successful
+	result, err := response.Complete.Get()
+	require.NoError(t, err)
 	require.NotNil(t, response)
 	var operationResult string
-	err = response.Consume(&operationResult)
+	err = result.Consume(&operationResult)
 	require.NoError(t, err)
 	require.Equal(t, "success", operationResult)
 }
@@ -233,13 +235,14 @@ func TestReaderIO(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header, Links: tc.links})
+			response, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header, Links: tc.links})
 			require.NoError(t, err)
-			require.Equal(t, tc.links, result.Links)
-			response := result.Successful
+			require.Equal(t, tc.links, response.Links)
+			result, err := response.Complete.Get()
+			require.NoError(t, err)
 			require.NotNil(t, response)
 			var operationResult string
-			err = response.Consume(&operationResult)
+			err = result.Consume(&operationResult)
 			require.NoError(t, err)
 			require.Equal(t, "success", operationResult)
 		})
@@ -330,11 +333,12 @@ func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	requireTimeoutPropagated(t, result, timeout)
 }
 
-func requireTimeoutPropagated(t *testing.T, result *ClientStartOperationResult[*LazyValue], expected time.Duration) {
-	response := result.Successful
-	require.NotNil(t, response)
+func requireTimeoutPropagated(t *testing.T, response *StartOperationResponse[*LazyValue], expected time.Duration) {
+	result, err := response.Complete.Get()
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	var responseBody []byte
-	err := response.Consume(&responseBody)
+	err = result.Consume(&responseBody)
 	require.NoError(t, err)
 	parsedTimeout, err := parseDuration(string(responseBody))
 	require.NoError(t, err)
@@ -346,13 +350,13 @@ func TestStart_TimeoutNotPropagated(t *testing.T) {
 	_, client, teardown := setup(t, &timeoutEchoHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(context.Background(), "foo", nil, StartOperationOptions{})
-
+	response, err := client.StartOperation(context.Background(), "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	response := result.Successful
-	require.NotNil(t, response)
+	result, err := response.Complete.Get()
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	var responseBody []byte
-	err = response.Consume(&responseBody)
+	err = result.Consume(&responseBody)
 	require.NoError(t, err)
 	require.Equal(t, []byte("not set"), responseBody)
 }
@@ -361,12 +365,12 @@ func TestStart_NilContentHeaderDoesNotPanic(t *testing.T) {
 	_, client, teardown := setup(t, &requestIDEchoHandler{})
 	defer teardown()
 
-	result, err := client.StartOperation(context.Background(), "op", &Content{Data: []byte("abc")}, StartOperationOptions{})
-
+	response, err := client.StartOperation(context.Background(), "op", &Content{Data: []byte("abc")}, StartOperationOptions{})
 	require.NoError(t, err)
-	response := result.Successful
-	require.NotNil(t, response)
+	result, err := response.Complete.Get()
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	var responseBody []byte
-	err = response.Consume(&responseBody)
+	err = result.Consume(&responseBody)
 	require.NoError(t, err)
 }

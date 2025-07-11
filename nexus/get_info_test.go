@@ -53,7 +53,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 		Header: Header{"test": "ok"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, handle.ID, info.ID)
+	require.Equal(t, handle.Token, info.Token)
 	require.Equal(t, OperationStateCanceled, info.State)
 }
 

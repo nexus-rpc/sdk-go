@@ -400,7 +400,7 @@ func (r *rootOperationHandler) Start(ctx context.Context, input any, options Sta
 //
 //	ref := NewOperationReference[MyInput, MyOutput]("my-operation")
 //	out, err := ExecuteOperation(ctx, client, ref, MyInput{}, options) // returns MyOutput, error
-func ExecuteOperation[I, O any](ctx context.Context, client *HTTPClient, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
+func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
 	var o O
 	value, err := client.ExecuteOperation(ctx, operation.Name(), input, request)
 	if err != nil {
@@ -412,41 +412,56 @@ func ExecuteOperation[I, O any](ctx context.Context, client *HTTPClient, operati
 // StartOperation is the type safe version of [HTTPClient.StartOperation].
 // It accepts input of type I and returns a [ClientStartOperationResult] of type O, removing the need to consume the
 // [LazyValue] returned by the client method.
-func StartOperation[I, O any](ctx context.Context, client *HTTPClient, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResult[O], error) {
-	result, err := client.StartOperation(ctx, operation.Name(), input, request)
+func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*StartOperationResponse[O], error) {
+	resp, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
 	}
-	if result.Successful != nil {
-		var o O
-		if err := result.Successful.Consume(&o); err != nil {
-			return nil, err
+
+	if resp.Complete != nil {
+		lv, err := resp.Complete.Get()
+		if err != nil {
+			return &StartOperationResponse[O]{
+				Complete: &OperationResult[O]{
+					err: err,
+				},
+				Links: resp.Links,
+			}, nil
 		}
-		return &ClientStartOperationResult[O]{
-			Successful: o,
-			Links:      result.Links,
+
+		var o O
+		return &StartOperationResponse[O]{
+			Complete: &OperationResult[O]{
+				result: o,
+				err:    lv.Consume(&o),
+			},
+			Links: resp.Links,
 		}, nil
 	}
-	handle := OperationHandle[O]{
-		client:    client,
-		Operation: operation.Name(),
-		ID:        result.Pending.ID,
-		Token:     result.Pending.Token,
+
+	handle, err := NewHandle(client, operation, resp.Pending.Token)
+	if err != nil {
+		return nil, err
 	}
-	return &ClientStartOperationResult[O]{
-		Pending: &handle,
-		Links:   result.Links,
+	return &StartOperationResponse[O]{
+		Pending: handle,
+		Links:   resp.Links,
 	}, nil
 }
 
 // NewHandle is the type safe version of [HTTPClient.NewHandle].
 // The [Handle.GetResult] method will return an output of type O.
-func NewHandle[I, O any](client *HTTPClient, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
+func NewHandle[I, O any](client *Client, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
 	if token == "" {
 		return nil, errEmptyOperationToken
 	}
+	handle, err := client.NewHandle(operation.Name(), token)
+	if err != nil {
+		return nil, err
+	}
 	return &OperationHandle[O]{
-		client:    client,
+		transport: handle.transport,
+		Service:   handle.Service,
 		Operation: operation.Name(),
 		ID:        token, // Duplicate token as ID for the deprecation period.
 		Token:     token,

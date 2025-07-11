@@ -15,7 +15,7 @@ const testTimeout = time.Second * 5
 const testService = "Ser/vic e"
 const getResultMaxTimeout = time.Millisecond * 300
 
-func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, client *HTTPClient, teardown func()) {
+func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, client *Client, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
@@ -27,12 +27,13 @@ func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureCo
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	client, err = NewHTTPClient(HTTPClientOptions{
-		BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
-		Service:          testService,
-		Serializer:       serializer,
-		FailureConverter: failureConverter,
-	})
+	client, err = NewHTTPClient(
+		ClientOptions{Service: testService},
+		HTTPTransportOptions{
+			BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
+			Serializer:       serializer,
+			FailureConverter: failureConverter,
+		})
 	require.NoError(t, err)
 
 	go func() {
@@ -46,7 +47,7 @@ func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureCo
 	}
 }
 
-func setup(t *testing.T, handler Handler) (ctx context.Context, client *HTTPClient, teardown func()) {
+func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, teardown func()) {
 	return setupCustom(t, handler, nil, nil)
 }
 
