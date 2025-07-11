@@ -68,16 +68,19 @@ func NewHTTPClient(copts ClientOptions, topts HTTPTransportOptions) (*Client, er
 // This method has the following possible outcomes:
 //
 //  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
-//     ClientStartOperationResult.Complete and must be consumed to free up the underlying connection.
+//     StartOperationResponse.Complete and must be consumed to free up the underlying connection.
 //
-//  2. The operation was started and the handler has indicated that it will complete asynchronously. An
-//     [OperationHandle] will be returned as ClientStartOperationResult.Pending, which can be used to perform actions
+//  2. The operation completes unsuccessfully. The response will contain an [OperationError] in
+//     StartOperationResponse.Complete
+//
+//  3. The operation was started and the handler has indicated that it will complete asynchronously. An
+//     [OperationHandle] will be returned as StartOperationResponse.Pending, which can be used to perform actions
 //     such as getting its result.
 //
-//  3. The operation was unsuccessful. The returned result will be nil and error will be an
-//     [OperationError].
+//  4. There was an error making the call. The returned response will be nil and the error will be a
+//     [HandlerError].
 //
-//  4. Any other error.
+//  5. Any other error.
 //
 // NOTE: Experimental
 func (c *Client) StartOperation(
@@ -134,8 +137,7 @@ func (c *Client) ExecuteOperation(
 	} else {
 		gro.Wait = options.Wait
 	}
-	r, e := handle.GetResult(ctx, gro)
-	return r, e
+	return handle.GetResult(ctx, gro)
 }
 
 // NewHandle gets a handle to an asynchronous operation by name and token.

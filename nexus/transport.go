@@ -22,7 +22,31 @@ const getResultContextPadding = time.Second * 5
 var errOperationWaitTimeout = errors.New("operation wait timeout")
 
 type (
+	// Transport is the low-level abstraction used by [Client] and [OperationHandle] to make network calls.
+	//
+	// NOTE: Experimental
 	Transport interface {
+
+		// StartOperation calls the configured Nexus endpoint to start an operation.
+		//
+		// This method has the following possible outcomes:
+		//
+		//  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
+		//     StartOperationResponse.Complete and must be consumed to free up the underlying connection.
+		//
+		//	2. The operation completes unsuccessfully. The response will contain an [OperationError] in
+		//	   StartOperationResponse.Complete
+		//
+		//  3. The operation was started and the handler has indicated that it will complete asynchronously. An
+		//     [OperationHandle] will be returned as StartOperationResponse.Pending, which can be used to perform actions
+		//     such as getting its result.
+		//
+		//  4. There was an error making the call. The returned response will be nil and the error will be a
+		//     [HandlerError].
+		//
+		//  5. Any other error.
+		//
+		// NOTE: Experimental
 		StartOperation(
 			ctx context.Context,
 			service string,
@@ -31,6 +55,10 @@ type (
 			options StartOperationOptions,
 		) (*StartOperationResponse[*LazyValue], error)
 
+		// GetOperationInfo returns information about a specific operation. Should only be called through an
+		// [OperationHandle].
+		//
+		// NOTE: Experimental
 		GetOperationInfo(
 			ctx context.Context,
 			service string,
@@ -39,6 +67,26 @@ type (
 			options GetOperationInfoOptions,
 		) (*GetOperationInfoResponse, error)
 
+		// GetOperationResult gets the result of an operation, issuing a network request to the service handler.
+		//
+		// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
+		// operation has not yet completed.
+		//
+		// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing
+		// the transport to long poll for the result issuing one or more requests until the provided wait period
+		// exceeds, in which case (nil, [ErrOperationStillRunning]) is returned.
+		//
+		// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline
+		// errors and [ErrOperationStillRunning].
+		//
+		// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving.
+		// Set the context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
+		//
+		// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
+		//
+		// Should only be called through an [OperationHandle].
+		//
+		// NOTE: Experimental
 		GetOperationResult(
 			ctx context.Context,
 			service string,
@@ -47,6 +95,13 @@ type (
 			options GetOperationResultOptions,
 		) (*GetOperationResultResponse[*LazyValue], error)
 
+		// CancelOperation requests to cancel an asynchronous operation.
+		//
+		// Cancelation is asynchronous and may be not be respected by the operation's implementation.
+		//
+		// Should only be called through an [OperationHandle].
+		//
+		// NOTE: Experimental
 		CancelOperation(
 			ctx context.Context,
 			service string,
@@ -56,11 +111,15 @@ type (
 		) (*CancelOperationResponse, error)
 	}
 
+	// StartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
+	// Pending will be populated.
+	//
+	// NOTE: Experimental
 	StartOperationResponse[T any] struct {
 		// Set when start completes synchronously.
 		//
-		// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close it to
-		// free up the underlying connection.
+		// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+		// it to free up the underlying connection.
 		Complete *OperationResult[T]
 		// Set when the handler indicates that it started an asynchronous operation.
 		// The attached handle can be used to perform actions such as cancel the operation or get its result.
@@ -69,43 +128,71 @@ type (
 		Links []Link
 	}
 
+	// GetOperationInfoResponse is the response to Transport.GetOperationInfo calls.
+	//
+	// NOTE: Experimental
 	GetOperationInfoResponse struct {
 		Info *OperationInfo
 	}
 
+	// GetOperationResultResponse is the response to Transport.GetOperationResult calls.
+	// Use GetOperationResultResponse.GetResult to retrieve the final value or error returned by the operation.
+	//
+	// NOTE: Experimental
 	GetOperationResultResponse[T any] struct {
 		result *OperationResult[T]
 		Links  []Link
 	}
 
+	// CancelOperationResponse is the response to Transport.CancelOperation calls.
+	//
+	// NOTE: Experimental
 	CancelOperationResponse struct {
 	}
 
+	// OperationResult contains the final value or error returned by an operation handler. One and only one of
+	// result or err will be populated. Use OperationResult.Get to retrieve the result.
+	//
+	// In most cases err will be an [OperationError]. Other failures, such as [HandlerError], will be returned by
+	// the Transport method called to indicate a failure to communicate with the operation handler.
+	//
+	// NOTE: Experimental
 	OperationResult[T any] struct {
 		result T
 		err    error
 	}
 )
 
+// Get returns the final result or error returned by an operation. Only one of result or err should be non-zero/non-nil.
+//
+// NOTE: Experimental
 func (r *OperationResult[T]) Get() (T, error) {
 	return r.result, r.err
 }
 
+// GetResult returns the final result or error returned by the operation.
+//
+// NOTE: Experimental
 func (gr *GetOperationResultResponse[T]) GetResult() (T, error) {
 	return gr.result.Get()
 }
 
 // User-Agent header set on HTTP requests.
 const userAgent = "Nexus-go-sdk/" + version
-
 const headerUserAgent = "User-Agent"
 
 type (
+	// HTTPTransport is a [Transport] implementation backed by HTTP.
+	//
+	// NOTE: Experimental
 	HTTPTransport struct {
 		options        HTTPTransportOptions
 		serviceBaseURL *url.URL
 	}
 
+	// HTTPTransportOptions are the options for constructing a new [HTTPTransport].
+	//
+	// NOTE: Experimental
 	HTTPTransportOptions struct {
 		// Base URL for all requests. Required.
 		BaseURL string
@@ -127,6 +214,9 @@ type (
 	}
 )
 
+// NewHTTPTransport creates a new [Transport] backed by HTTP from the provided [HTTPTransportOptions].
+//
+// NOTE: Experimental
 func NewHTTPTransport(options HTTPTransportOptions) (*HTTPTransport, error) {
 	if options.HTTPCaller == nil {
 		options.HTTPCaller = http.DefaultClient.Do
