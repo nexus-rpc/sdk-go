@@ -40,7 +40,7 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 
 // GetResult gets the result of an operation, issuing a network request to the service handler.
 //
-// This is a convenience method on top of GetResultWithDetails for callers who do not wish to inspect metadata.
+// This is a convenience method on top of GetDetailedResult for callers who do not wish to inspect metadata.
 //
 // The returned error may be an [OperationError] returned by the handler, indicating the operation completed
 // unsuccessfully, a [HandlerError] indicating a failure to communicate with the handler, or any other error.
@@ -48,14 +48,14 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 // NOTE: Experimental
 func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
 	var result T
-	res, err := h.GetResultWithDetails(ctx, options)
+	res, err := h.GetDetailedResult(ctx, options)
 	if err != nil {
 		return result, err
 	}
 	return res.Get()
 }
 
-// GetResultWithDetails gets the result of an operation and associated metadata, issuing a network request to the service
+// GetDetailedResult gets the result of an operation and associated metadata, issuing a network request to the service
 // handler.
 //
 // By default, GetOperationResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
@@ -74,12 +74,12 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 // Errors returned by the method itself indicate a failure to communicate with the operation handler and are typically
 // represented by a [HandlerError].
 //
-// # The final value or error returned by the operation can be retrieved with DetailedOperationResult.Get
+// # The final value or error returned by the operation can be retrieved with OperationHandleDetailedResult.Get
 //
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options GetOperationResultOptions) (*DetailedOperationResult[T], error) {
+func (h *OperationHandle[T]) GetDetailedResult(ctx context.Context, options GetOperationResultOptions) (*OperationHandleDetailedResult[T], error) {
 	to := TransportGetOperationResultOptions{
 		ClientOptions: options,
 		Service:       h.Service,
@@ -92,7 +92,7 @@ func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options G
 	}
 	lv, err := resp.GetResult()
 	if err != nil {
-		return &DetailedOperationResult[T]{
+		return &OperationHandleDetailedResult[T]{
 			result: &OperationResult[T]{
 				err: err,
 			},
@@ -102,7 +102,7 @@ func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options G
 
 	var result T
 	if _, ok := any(result).(*LazyValue); ok {
-		return &DetailedOperationResult[T]{
+		return &OperationHandleDetailedResult[T]{
 			result: &OperationResult[T]{
 				result: any(lv).(T),
 			},
@@ -110,7 +110,7 @@ func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options G
 		}, nil
 	}
 
-	return &DetailedOperationResult[T]{
+	return &OperationHandleDetailedResult[T]{
 		result: &OperationResult[T]{
 			result: result,
 			err:    lv.Consume(&result),
@@ -133,10 +133,10 @@ func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperation
 	return err
 }
 
-// DetailedOperationResult is a wrapper for the result of an operation with any associated metadata.
+// OperationHandleDetailedResult is a wrapper for the result of an operation with any associated metadata.
 //
 // NOTE: Experimental
-type DetailedOperationResult[T any] struct {
+type OperationHandleDetailedResult[T any] struct {
 	result *OperationResult[T]
 	Links  []Link
 }
@@ -144,6 +144,6 @@ type DetailedOperationResult[T any] struct {
 // Get returns the final result or error returned by the operation.
 //
 // NOTE: Experimental
-func (r *DetailedOperationResult[T]) Get() (T, error) {
+func (r *OperationHandleDetailedResult[T]) Get() (T, error) {
 	return r.result.Get()
 }
