@@ -25,30 +25,22 @@ type OperationHandle[T any] struct {
 //
 // NOTE: Experimental
 func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
-	resp, err := h.GetInfoResponse(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Info, nil
-}
-
-// GetInfoResponse gets operation information, issuing a network request to the service handler. It returns a
-// TransportGetOperationInfoResponse object containing operation information and metadata.
-//
-// NOTE: Experimental
-func (h *OperationHandle[T]) GetInfoResponse(ctx context.Context, options GetOperationInfoOptions) (*TransportGetOperationInfoResponse, error) {
 	to := TransportGetOperationInfoOptions{
 		ClientOptions: options,
 		Service:       h.Service,
 		Operation:     h.Operation,
 		Token:         h.Token,
 	}
-	return h.transport.GetOperationInfo(ctx, to)
+	resp, err := h.transport.GetOperationInfo(ctx, to)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Info, nil
 }
 
 // GetResult gets the result of an operation, issuing a network request to the service handler.
 //
-// This is a convenience method on top of GetResultResponse for callers who do not wish to inspect metadata.
+// This is a convenience method on top of GetResultWithDetails for callers who do not wish to inspect metadata.
 //
 // The returned error may be an [OperationError] returned by the handler, indicating the operation completed
 // unsuccessfully, a [HandlerError] indicating a failure to communicate with the handler, or any other error.
@@ -56,14 +48,14 @@ func (h *OperationHandle[T]) GetInfoResponse(ctx context.Context, options GetOpe
 // NOTE: Experimental
 func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
 	var result T
-	resp, err := h.GetResultResponse(ctx, options)
+	res, err := h.GetResultWithDetails(ctx, options)
 	if err != nil {
 		return result, err
 	}
-	return resp.GetResult()
+	return res.Get()
 }
 
-// GetResultResponse gets the result of an operation and associated metadata, issuing a network request to the service
+// GetResultWithDetails gets the result of an operation and associated metadata, issuing a network request to the service
 // handler.
 //
 // By default, GetOperationResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
@@ -82,12 +74,12 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 // Errors returned by the method itself indicate a failure to communicate with the operation handler and are typically
 // represented by a [HandlerError].
 //
-// # The final value or error returned by the operation can be retrieved with TransportGetOperationResultResponse.GetResult
+// # The final value or error returned by the operation can be retrieved with DetailedOperationResult.Get
 //
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetOperationResultOptions) (*TransportGetOperationResultResponse[T], error) {
+func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options GetOperationResultOptions) (*DetailedOperationResult[T], error) {
 	to := TransportGetOperationResultOptions{
 		ClientOptions: options,
 		Service:       h.Service,
@@ -100,7 +92,7 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 	}
 	lv, err := resp.GetResult()
 	if err != nil {
-		return &TransportGetOperationResultResponse[T]{
+		return &DetailedOperationResult[T]{
 			result: &OperationResult[T]{
 				err: err,
 			},
@@ -110,7 +102,7 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 
 	var result T
 	if _, ok := any(result).(*LazyValue); ok {
-		return &TransportGetOperationResultResponse[T]{
+		return &DetailedOperationResult[T]{
 			result: &OperationResult[T]{
 				result: any(lv).(T),
 			},
@@ -118,7 +110,7 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 		}, nil
 	}
 
-	return &TransportGetOperationResultResponse[T]{
+	return &DetailedOperationResult[T]{
 		result: &OperationResult[T]{
 			result: result,
 			err:    lv.Consume(&result),
@@ -131,22 +123,27 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
 func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperationOptions) error {
-	_, err := h.CancelResponse(ctx, options)
-	return err
-}
-
-// CancelResponse requests to cancel an asynchronous operation and returns a TransportCancelOperationResponse object which
-// may contain additional metadata returned by the operation handler.
-//
-// Cancelation is asynchronous and may be not be respected by the operation's implementation.
-//
-// NOTE: Experimental
-func (h *OperationHandle[T]) CancelResponse(ctx context.Context, options CancelOperationOptions) (*TransportCancelOperationResponse, error) {
 	to := TransportCancelOperationOptions{
 		ClientOptions: options,
 		Service:       h.Service,
 		Operation:     h.Operation,
 		Token:         h.Token,
 	}
-	return h.transport.CancelOperation(ctx, to)
+	_, err := h.transport.CancelOperation(ctx, to)
+	return err
+}
+
+// DetailedOperationResult is a wrapper for the result of an operation with any associated metadata.
+//
+// NOTE: Experimental
+type DetailedOperationResult[T any] struct {
+	result *OperationResult[T]
+	Links  []Link
+}
+
+// Get returns the final result or error returned by the operation.
+//
+// NOTE: Experimental
+func (r *DetailedOperationResult[T]) Get() (T, error) {
+	return r.result.Get()
 }
