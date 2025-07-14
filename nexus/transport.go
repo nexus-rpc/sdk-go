@@ -42,8 +42,7 @@ type Transport interface {
 	// NOTE: Experimental
 	StartOperation(ctx context.Context, input any, options TransportStartOperationOptions) (*TransportStartOperationResponse[*LazyValue], error)
 
-	// GetOperationInfo returns information about a specific operation. Should only be called through an
-	// [OperationHandle].
+	// GetOperationInfo returns information about a specific operation.
 	//
 	// NOTE: Experimental
 	GetOperationInfo(ctx context.Context, options TransportGetOperationInfoOptions) (*TransportGetOperationInfoResponse, error)
@@ -65,16 +64,12 @@ type Transport interface {
 	//
 	// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 	//
-	// Should only be called through an [OperationHandle].
-	//
 	// NOTE: Experimental
 	GetOperationResult(ctx context.Context, options TransportGetOperationResultOptions) (*TransportGetOperationResultResponse[*LazyValue], error)
 
 	// CancelOperation requests to cancel an asynchronous operation.
 	//
 	// Cancelation is asynchronous and may be not be respected by the operation's implementation.
-	//
-	// Should only be called through an [OperationHandle].
 	//
 	// NOTE: Experimental
 	CancelOperation(ctx context.Context, options TransportCancelOperationOptions) (*TransportCancelOperationResponse, error)
@@ -156,38 +151,39 @@ const getResultContextPadding = time.Second * 5
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
 
-type (
-	// HTTPTransport is a [Transport] implementation backed by HTTP.
-	//
-	// NOTE: Experimental
-	HTTPTransport struct {
-		options        HTTPTransportOptions
-		serviceBaseURL *url.URL
-	}
+// HTTPTransport is a [Transport] implementation backed by HTTP. It makes Nexus service requests as defined in
+// the [Nexus HTTP API].
+//
+// NOTE: Experimental
+//
+// [Nexus HTTP API]: https://github.com/nexus-rpc/api
+type HTTPTransport struct {
+	options        HTTPTransportOptions
+	serviceBaseURL *url.URL
+}
 
-	// HTTPTransportOptions are the options for constructing a new [HTTPTransport].
+// HTTPTransportOptions are the options for constructing a new [HTTPTransport].
+//
+// NOTE: Experimental
+type HTTPTransportOptions struct {
+	// Base URL for all requests. Required.
+	BaseURL string
+	// A function for making HTTP requests.
+	// Defaults to [http.DefaultClient.Do].
+	HTTPCaller func(*http.Request) (*http.Response, error)
+	// A [Serializer] to customize client serialization behavior.
+	// By default the client handles JSONables, byte slices, and nil.
+	Serializer Serializer
+	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
+	// [DefaultFailureConverter].
+	FailureConverter FailureConverter
+	// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
+	// as part of the URL path.
+	// This flag will be removed in a future release.
 	//
 	// NOTE: Experimental
-	HTTPTransportOptions struct {
-		// Base URL for all requests. Required.
-		BaseURL string
-		// A function for making HTTP requests.
-		// Defaults to [http.DefaultClient.Do].
-		HTTPCaller func(*http.Request) (*http.Response, error)
-		// A [Serializer] to customize client serialization behavior.
-		// By default the client handles JSONables, byte slices, and nil.
-		Serializer Serializer
-		// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
-		// [DefaultFailureConverter].
-		FailureConverter FailureConverter
-		// UseOperationID instructs the client to use an older format of the protocol where operation ID is sent
-		// as part of the URL path.
-		// This flag will be removed in a future release.
-		//
-		// NOTE: Experimental
-		UseOperationID bool
-	}
-)
+	UseOperationID bool
+}
 
 // NewHTTPTransport creates a new [Transport] backed by HTTP from the provided [HTTPTransportOptions].
 //

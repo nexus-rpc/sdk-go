@@ -410,9 +410,9 @@ func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation O
 }
 
 // StartOperation is the type safe version of [Client.StartOperation].
-// It accepts input of type I and returns a [TransportStartOperationResponse] of type O, removing the need to consume the
+// It accepts input of type I and returns a [ClientStartOperationResponse] of type O, removing the need to consume the
 // [LazyValue] returned by the client method.
-func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*TransportStartOperationResponse[O], error) {
+func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResponse[O], error) {
 	resp, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
@@ -421,7 +421,7 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 	if resp.Complete != nil {
 		lv, err := resp.Complete.Get()
 		if err != nil {
-			return &TransportStartOperationResponse[O]{
+			return &ClientStartOperationResponse[O]{
 				Complete: &OperationResult[O]{
 					err: err,
 				},
@@ -430,7 +430,7 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 		}
 
 		var o O
-		return &TransportStartOperationResponse[O]{
+		return &ClientStartOperationResponse[O]{
 			Complete: &OperationResult[O]{
 				result: o,
 				err:    lv.Consume(&o),
@@ -443,7 +443,7 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 	if err != nil {
 		return nil, err
 	}
-	return &TransportStartOperationResponse[O]{
+	return &ClientStartOperationResponse[O]{
 		Pending: handle,
 		Links:   resp.Links,
 	}, nil

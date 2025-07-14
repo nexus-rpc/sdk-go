@@ -27,9 +27,9 @@ func ExampleClient_StartOperation() {
 	if response.Complete != nil { // operation complete
 		result, opErr := response.Complete.Get()
 		if opErr != nil {
-			var OperationError *nexus.OperationError
-			if errors.As(err, &OperationError) { // operation failed or canceled
-				fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", OperationError.State, OperationError.Cause.Error())
+			var operationErr *nexus.OperationError
+			if errors.As(err, &operationErr) { // operation failed or canceled
+				fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", operationErr.State, operationErr.Cause.Error())
 			} else {
 				fmt.Printf("Operation unsuccessful with unexpected error: %v", opErr)
 			}

@@ -13,9 +13,8 @@ var errEmptyOperationName = errors.New("empty operation name")
 
 var errEmptyOperationToken = errors.New("empty operation token")
 
-// A Client makes Nexus service requests as defined in the [Nexus API].
-//
-// It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
+// A Client makes Nexus service requests to start new operations or get an [OperationHandle] to an
+// existing, asynchronous operation.
 //
 // Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
 //
@@ -23,8 +22,6 @@ var errEmptyOperationToken = errors.New("empty operation token")
 // operations.
 //
 // NOTE: Experimental
-//
-// [Nexus API]: https://github.com/nexus-rpc/api
 type Client struct {
 	options ClientOptions
 }
@@ -58,13 +55,13 @@ func NewClient(options ClientOptions) (*Client, error) {
 // This method has the following possible outcomes:
 //
 //  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
-//     TransportStartOperationResponse.Complete and must be consumed to free up the underlying connection.
+//     ClientStartOperationResponse.Complete and must be consumed to free up the underlying connection.
 //
 //  2. The operation completes unsuccessfully. The response will contain an [OperationError] in
-//     TransportStartOperationResponse.Complete
+//     ClientStartOperationResponse.Complete
 //
 //  3. The operation was started and the handler has indicated that it will complete asynchronously. An
-//     [OperationHandle] will be returned as TransportStartOperationResponse.Pending, which can be used to perform actions
+//     [OperationHandle] will be returned as ClientStartOperationResponse.Pending, which can be used to perform actions
 //     such as getting its result.
 //
 //  4. There was an error making the call. The returned response will be nil and the error will be non-nil.
@@ -93,7 +90,7 @@ func (c *Client) StartOperation(
 	}, nil
 }
 
-// ClientStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
+// ClientStartOperationResponse is the response to Client.StartOperation calls. One and only one of Complete or
 // Pending will be populated.
 //
 // NOTE: Experimental
