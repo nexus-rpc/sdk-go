@@ -13,54 +13,44 @@ var errEmptyOperationName = errors.New("empty operation name")
 
 var errEmptyOperationToken = errors.New("empty operation token")
 
-type (
-	// A Client makes Nexus service requests as defined in the [Nexus API].
-	//
-	// It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
-	//
-	// Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
-	//
-	// OperationHandles can be obtained either by starting new operations or by calling [Client.NewHandle] for existing
-	// operations.
-	//
-	// NOTE: Experimental
-	//
-	// [Nexus API]: https://github.com/nexus-rpc/api
-	Client struct {
-		options   ClientOptions
-		transport Transport
-	}
-
-	ClientOptions struct {
-		// Service name. Required.
-		Service string
-	}
-)
-
-// NewClient creates a new [Client] from provided [ClientOptions] and [Transport].
-// Service is required.
+// A Client makes Nexus service requests as defined in the [Nexus API].
+//
+// It can start a new operation and get an [OperationHandle] to an existing, asynchronous operation.
+//
+// Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
+//
+// OperationHandles can be obtained either by starting new operations or by calling [Client.NewOperationHandle] for existing
+// operations.
 //
 // NOTE: Experimental
-func NewClient(options ClientOptions, transport Transport) (*Client, error) {
+//
+// [Nexus API]: https://github.com/nexus-rpc/api
+type Client struct {
+	options ClientOptions
+}
+
+// ClientOptions are the options for creating a new [Client].
+type ClientOptions struct {
+	// Service name. Required.
+	Service string
+	// Transport delegate for making network calls. Required.
+	Transport Transport
+}
+
+// NewClient creates a new [Client] from provided [ClientOptions].
+// Service and Transport are required.
+//
+// NOTE: Experimental
+func NewClient(options ClientOptions) (*Client, error) {
 	if options.Service == "" {
 		return nil, errors.New("empty Service")
 	}
-	return &Client{
-		options:   options,
-		transport: transport,
-	}, nil
-}
-
-// NewHTTPClient creates a new [HTTPTransport] delegate from provided [HTTPTransportOptions] and uses that and
-// provided [ClientOptions] to create a new [Client]. Service is required.
-//
-// NOTE: Experimental
-func NewHTTPClient(copts ClientOptions, topts HTTPTransportOptions) (*Client, error) {
-	transport, err := NewHTTPTransport(topts)
-	if err != nil {
-		return nil, err
+	if options.Transport == nil {
+		return nil, errors.New("nil Transport")
 	}
-	return NewClient(copts, transport)
+	return &Client{
+		options: options,
+	}, nil
 }
 
 // StartOperation calls the configured Nexus endpoint to start an operation.
@@ -68,19 +58,17 @@ func NewHTTPClient(copts ClientOptions, topts HTTPTransportOptions) (*Client, er
 // This method has the following possible outcomes:
 //
 //  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
-//     StartOperationResponse.Complete and must be consumed to free up the underlying connection.
+//     TransportStartOperationResponse.Complete and must be consumed to free up the underlying connection.
 //
 //  2. The operation completes unsuccessfully. The response will contain an [OperationError] in
-//     StartOperationResponse.Complete
+//     TransportStartOperationResponse.Complete
 //
 //  3. The operation was started and the handler has indicated that it will complete asynchronously. An
-//     [OperationHandle] will be returned as StartOperationResponse.Pending, which can be used to perform actions
+//     [OperationHandle] will be returned as TransportStartOperationResponse.Pending, which can be used to perform actions
 //     such as getting its result.
 //
-//  4. There was an error making the call. The returned response will be nil and the error will be a
-//     [HandlerError].
-//
-//  5. Any other error.
+//  4. There was an error making the call. The returned response will be nil and the error will be non-nil.
+//     Most often it will be a [HandlerError].
 //
 // NOTE: Experimental
 func (c *Client) StartOperation(
@@ -88,8 +76,38 @@ func (c *Client) StartOperation(
 	operation string,
 	input any,
 	options StartOperationOptions,
-) (*StartOperationResponse[*LazyValue], error) {
-	return c.transport.StartOperation(ctx, c.options.Service, operation, input, options)
+) (*ClientStartOperationResponse[*LazyValue], error) {
+	to := TransportStartOperationOptions{
+		ClientOptions: options,
+		Service:       c.options.Service,
+		Operation:     operation,
+	}
+	resp, err := c.options.Transport.StartOperation(ctx, input, to)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientStartOperationResponse[*LazyValue]{
+		Complete: resp.Complete,
+		Pending:  resp.Pending,
+		Links:    resp.Links,
+	}, nil
+}
+
+// ClientStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
+// Pending will be populated.
+//
+// NOTE: Experimental
+type ClientStartOperationResponse[T any] struct {
+	// Set when start completes synchronously.
+	//
+	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+	// it to free up the underlying connection.
+	Complete *OperationResult[T]
+	// Set when the handler indicates that it started an asynchronous operation.
+	// The attached handle can be used to perform actions such as cancel the operation or get its result.
+	Pending *OperationHandle[T]
+	// Links contain information about the operations done by the handler.
+	Links []Link
 }
 
 // ExecuteOperation is a helper for starting an operation and waiting for its completion.
@@ -140,12 +158,12 @@ func (c *Client) ExecuteOperation(
 	return handle.GetResult(ctx, gro)
 }
 
-// NewHandle gets a handle to an asynchronous operation by name and token.
+// NewOperationHandle gets a handle to an asynchronous operation by name and token.
 // Does not incur a trip to the server.
 // Fails if provided an empty operation or token.
 //
 // NOTE: Experimental
-func (c *Client) NewHandle(
+func (c *Client) NewOperationHandle(
 	operation string,
 	token string,
 ) (*OperationHandle[*LazyValue], error) {
@@ -160,7 +178,7 @@ func (c *Client) NewHandle(
 		return nil, errors.Join(es...)
 	}
 	return &OperationHandle[*LazyValue]{
-		transport: c.transport,
+		transport: c.options.Transport,
 		Service:   c.options.Service,
 		Operation: operation,
 		ID:        token, // Duplicate token as ID for the deprecation period.

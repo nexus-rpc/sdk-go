@@ -333,7 +333,7 @@ func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	requireTimeoutPropagated(t, result, timeout)
 }
 
-func requireTimeoutPropagated(t *testing.T, response *StartOperationResponse[*LazyValue], expected time.Duration) {
+func requireTimeoutPropagated(t *testing.T, response *ClientStartOperationResponse[*LazyValue], expected time.Duration) {
 	result, err := response.Complete.Get()
 	require.NoError(t, err)
 	require.NotNil(t, result)

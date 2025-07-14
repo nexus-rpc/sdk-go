@@ -17,151 +17,130 @@ import (
 	"github.com/google/uuid"
 )
 
-const getResultContextPadding = time.Second * 5
+// Transport is the low-level abstraction used by [Client] and [OperationHandle] to make network calls.
+//
+// NOTE: Experimental
+type Transport interface {
 
-var errOperationWaitTimeout = errors.New("operation wait timeout")
-
-type (
-	// Transport is the low-level abstraction used by [Client] and [OperationHandle] to make network calls.
+	// StartOperation calls the configured Nexus endpoint to start an operation.
+	//
+	// This method has the following possible outcomes:
+	//
+	//  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
+	//     TransportStartOperationResponse.Complete and must be consumed to free up the underlying connection.
+	//
+	//	2. The operation completes unsuccessfully. The response will contain an [OperationError] in
+	//	   TransportStartOperationResponse.Complete
+	//
+	//  3. The operation was started and the handler has indicated that it will complete asynchronously. An
+	//     [OperationHandle] will be returned as TransportStartOperationResponse.Pending, which can be used to perform actions
+	//     such as getting its result.
+	//
+	//  4. There was an error making the call. The returned response will be nil and the error will be non-nil.
+	//     Most often it will be a [HandlerError].
 	//
 	// NOTE: Experimental
-	Transport interface {
+	StartOperation(ctx context.Context, input any, options TransportStartOperationOptions) (*TransportStartOperationResponse[*LazyValue], error)
 
-		// StartOperation calls the configured Nexus endpoint to start an operation.
-		//
-		// This method has the following possible outcomes:
-		//
-		//  1. The operation completes successfully. The result of this call will be set as a [LazyValue] in
-		//     StartOperationResponse.Complete and must be consumed to free up the underlying connection.
-		//
-		//	2. The operation completes unsuccessfully. The response will contain an [OperationError] in
-		//	   StartOperationResponse.Complete
-		//
-		//  3. The operation was started and the handler has indicated that it will complete asynchronously. An
-		//     [OperationHandle] will be returned as StartOperationResponse.Pending, which can be used to perform actions
-		//     such as getting its result.
-		//
-		//  4. There was an error making the call. The returned response will be nil and the error will be a
-		//     [HandlerError].
-		//
-		//  5. Any other error.
-		//
-		// NOTE: Experimental
-		StartOperation(
-			ctx context.Context,
-			service string,
-			operation string,
-			input any,
-			options StartOperationOptions,
-		) (*StartOperationResponse[*LazyValue], error)
-
-		// GetOperationInfo returns information about a specific operation. Should only be called through an
-		// [OperationHandle].
-		//
-		// NOTE: Experimental
-		GetOperationInfo(
-			ctx context.Context,
-			service string,
-			operation string,
-			token string,
-			options GetOperationInfoOptions,
-		) (*GetOperationInfoResponse, error)
-
-		// GetOperationResult gets the result of an operation, issuing a network request to the service handler.
-		//
-		// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
-		// operation has not yet completed.
-		//
-		// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing
-		// the transport to long poll for the result issuing one or more requests until the provided wait period
-		// exceeds, in which case (nil, [ErrOperationStillRunning]) is returned.
-		//
-		// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline
-		// errors and [ErrOperationStillRunning].
-		//
-		// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving.
-		// Set the context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
-		//
-		// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
-		//
-		// Should only be called through an [OperationHandle].
-		//
-		// NOTE: Experimental
-		GetOperationResult(
-			ctx context.Context,
-			service string,
-			operation string,
-			token string,
-			options GetOperationResultOptions,
-		) (*GetOperationResultResponse[*LazyValue], error)
-
-		// CancelOperation requests to cancel an asynchronous operation.
-		//
-		// Cancelation is asynchronous and may be not be respected by the operation's implementation.
-		//
-		// Should only be called through an [OperationHandle].
-		//
-		// NOTE: Experimental
-		CancelOperation(
-			ctx context.Context,
-			service string,
-			operation string,
-			token string,
-			options CancelOperationOptions,
-		) (*CancelOperationResponse, error)
-	}
-
-	// StartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
-	// Pending will be populated.
+	// GetOperationInfo returns information about a specific operation. Should only be called through an
+	// [OperationHandle].
 	//
 	// NOTE: Experimental
-	StartOperationResponse[T any] struct {
-		// Set when start completes synchronously.
-		//
-		// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
-		// it to free up the underlying connection.
-		Complete *OperationResult[T]
-		// Set when the handler indicates that it started an asynchronous operation.
-		// The attached handle can be used to perform actions such as cancel the operation or get its result.
-		Pending *OperationHandle[T]
-		// Links contain information about the operations done by the handler.
-		Links []Link
-	}
+	GetOperationInfo(ctx context.Context, options TransportGetOperationInfoOptions) (*TransportGetOperationInfoResponse, error)
 
-	// GetOperationInfoResponse is the response to Transport.GetOperationInfo calls.
+	// GetOperationResult gets the result of an operation, issuing a network request to the service handler.
+	//
+	// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
+	// operation has not yet completed.
+	//
+	// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing
+	// the transport to long poll for the result issuing one or more requests until the provided wait period
+	// exceeds, in which case (nil, [ErrOperationStillRunning]) is returned.
+	//
+	// The wait time is capped to the deadline of the provided context. Make sure to handle both context deadline
+	// errors and [ErrOperationStillRunning].
+	//
+	// Note that the wait period is enforced by the server and may not be respected if the server is misbehaving.
+	// Set the context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
+	//
+	// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
+	//
+	// Should only be called through an [OperationHandle].
 	//
 	// NOTE: Experimental
-	GetOperationInfoResponse struct {
-		Info *OperationInfo
-	}
+	GetOperationResult(ctx context.Context, options TransportGetOperationResultOptions) (*TransportGetOperationResultResponse[*LazyValue], error)
 
-	// GetOperationResultResponse is the response to Transport.GetOperationResult calls.
-	// Use GetOperationResultResponse.GetResult to retrieve the final value or error returned by the operation.
+	// CancelOperation requests to cancel an asynchronous operation.
+	//
+	// Cancelation is asynchronous and may be not be respected by the operation's implementation.
+	//
+	// Should only be called through an [OperationHandle].
 	//
 	// NOTE: Experimental
-	GetOperationResultResponse[T any] struct {
-		result *OperationResult[T]
-		Links  []Link
-	}
+	CancelOperation(ctx context.Context, options TransportCancelOperationOptions) (*TransportCancelOperationResponse, error)
 
-	// CancelOperationResponse is the response to Transport.CancelOperation calls.
+	// Close this Transport and release any underlying resources.
 	//
 	// NOTE: Experimental
-	CancelOperationResponse struct {
-	}
+	Close() error
+}
 
-	// OperationResult contains the final value or error returned by an operation handler. One and only one of
-	// result or err will be populated. Use OperationResult.Get to retrieve the result.
+// TransportStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
+// Pending will be populated.
+//
+// NOTE: Experimental
+type TransportStartOperationResponse[T any] struct {
+	// Set when start completes synchronously.
 	//
-	// In most cases err will be an [OperationError]. Other failures, such as [HandlerError], will be returned by
-	// the Transport method called to indicate a failure to communicate with the operation handler.
-	//
-	// NOTE: Experimental
-	OperationResult[T any] struct {
-		result T
-		err    error
-	}
-)
+	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+	// it to free up the underlying connection.
+	Complete *OperationResult[T]
+	// Set when the handler indicates that it started an asynchronous operation.
+	// The attached handle can be used to perform actions such as cancel the operation or get its result.
+	Pending *OperationHandle[T]
+	// Links contain information about the operations done by the handler.
+	Links []Link
+}
+
+// TransportGetOperationInfoResponse is the response to Transport.GetOperationInfo calls.
+//
+// NOTE: Experimental
+type TransportGetOperationInfoResponse struct {
+	Info *OperationInfo
+}
+
+// TransportGetOperationResultResponse is the response to Transport.GetOperationResult calls.
+// Use TransportGetOperationResultResponse.GetResult to retrieve the final value or error returned by the operation.
+//
+// NOTE: Experimental
+type TransportGetOperationResultResponse[T any] struct {
+	result *OperationResult[T]
+	Links  []Link
+}
+
+// GetResult returns the final result or error returned by the operation.
+//
+// NOTE: Experimental
+func (gr *TransportGetOperationResultResponse[T]) GetResult() (T, error) {
+	return gr.result.Get()
+}
+
+// TransportCancelOperationResponse is the response to Transport.CancelOperation calls.
+//
+// NOTE: Experimental
+type TransportCancelOperationResponse struct{}
+
+// OperationResult contains the final value or error returned by an operation handler. One and only one of
+// result or err will be populated. Use OperationResult.Get to retrieve the result.
+//
+// In most cases err will be an [OperationError]. Other failures, such as [HandlerError], will be returned by
+// the Transport method called to indicate a failure to communicate with the operation handler.
+//
+// NOTE: Experimental
+type OperationResult[T any] struct {
+	result T
+	err    error
+}
 
 // Get returns the final result or error returned by an operation. Only one of result or err should be non-zero/non-nil.
 //
@@ -170,16 +149,12 @@ func (r *OperationResult[T]) Get() (T, error) {
 	return r.result, r.err
 }
 
-// GetResult returns the final result or error returned by the operation.
-//
-// NOTE: Experimental
-func (gr *GetOperationResultResponse[T]) GetResult() (T, error) {
-	return gr.result.Get()
-}
-
 // User-Agent header set on HTTP requests.
 const userAgent = "Nexus-go-sdk/" + version
 const headerUserAgent = "User-Agent"
+const getResultContextPadding = time.Second * 5
+
+var errOperationWaitTimeout = errors.New("operation wait timeout")
 
 type (
 	// HTTPTransport is a [Transport] implementation backed by HTTP.
@@ -246,13 +221,15 @@ func NewHTTPTransport(options HTTPTransportOptions) (*HTTPTransport, error) {
 	}, nil
 }
 
+func (t *HTTPTransport) Close() error {
+	return nil
+}
+
 func (t *HTTPTransport) StartOperation(
 	ctx context.Context,
-	service string,
-	operation string,
 	input any,
-	options StartOperationOptions,
-) (*StartOperationResponse[*LazyValue], error) {
+	options TransportStartOperationOptions,
+) (*TransportStartOperationResponse[*LazyValue], error) {
 	var reader *Reader
 	if r, ok := input.(*Reader); ok {
 		// Close the input reader in case we error before sending the HTTP request (which may double close but
@@ -280,11 +257,11 @@ func (t *HTTPTransport) StartOperation(
 		}
 	}
 
-	u := t.serviceBaseURL.JoinPath(url.PathEscape(service), url.PathEscape(operation))
+	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation))
 
-	if options.CallbackURL != "" {
+	if options.ClientOptions.CallbackURL != "" {
 		q := u.Query()
-		q.Set(queryCallbackURL, options.CallbackURL)
+		q.Set(queryCallbackURL, options.ClientOptions.CallbackURL)
 		u.RawQuery = q.Encode()
 	}
 	request, err := http.NewRequestWithContext(ctx, "POST", u.String(), reader)
@@ -292,18 +269,18 @@ func (t *HTTPTransport) StartOperation(
 		return nil, err
 	}
 
-	if options.RequestID == "" {
-		options.RequestID = uuid.NewString()
+	if options.ClientOptions.RequestID == "" {
+		options.ClientOptions.RequestID = uuid.NewString()
 	}
-	request.Header.Set(headerRequestID, options.RequestID)
+	request.Header.Set(headerRequestID, options.ClientOptions.RequestID)
 	request.Header.Set(headerUserAgent, userAgent)
 	addContentHeaderToHTTPHeader(reader.Header, request.Header)
-	addCallbackHeaderToHTTPHeader(options.CallbackHeader, request.Header)
-	if err := addLinksToHTTPHeader(options.Links, request.Header); err != nil {
+	addCallbackHeaderToHTTPHeader(options.ClientOptions.CallbackHeader, request.Header)
+	if err := addLinksToHTTPHeader(options.ClientOptions.Links, request.Header); err != nil {
 		return nil, fmt.Errorf("failed to serialize links into header: %w", err)
 	}
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
 
 	response, err := t.options.HTTPCaller(request)
 	if err != nil {
@@ -330,7 +307,7 @@ func (t *HTTPTransport) StartOperation(
 
 	// Do not close response body here to allow successful result to read it.
 	if response.StatusCode == http.StatusOK {
-		return &StartOperationResponse[*LazyValue]{
+		return &TransportStartOperationResponse[*LazyValue]{
 			Complete: &OperationResult[*LazyValue]{
 				result: &LazyValue{
 					serializer: t.options.Serializer,
@@ -366,12 +343,12 @@ func (t *HTTPTransport) StartOperation(
 			return nil, newUnexpectedResponseError("empty operation token in response", response, body)
 		}
 		handle := &OperationHandle[*LazyValue]{
-			Service:   service,
-			Operation: operation,
+			Service:   options.Service,
+			Operation: options.Operation,
 			Token:     info.Token,
 			transport: t,
 		}
-		return &StartOperationResponse[*LazyValue]{
+		return &TransportStartOperationResponse[*LazyValue]{
 			Pending: handle,
 			Links:   links,
 		}, nil
@@ -398,19 +375,16 @@ func (t *HTTPTransport) StartOperation(
 
 func (t *HTTPTransport) GetOperationInfo(
 	ctx context.Context,
-	service string,
-	operation string,
-	token string,
-	options GetOperationInfoOptions,
-) (*GetOperationInfoResponse, error) {
-	u := t.serviceBaseURL.JoinPath(url.PathEscape(service), url.PathEscape(operation))
+	options TransportGetOperationInfoOptions,
+) (*TransportGetOperationInfoResponse, error) {
+	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation))
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set(HeaderOperationToken, token)
+	request.Header.Set(HeaderOperationToken, options.Token)
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
 
 	response, err := t.options.HTTPCaller(request)
@@ -433,30 +407,27 @@ func (t *HTTPTransport) GetOperationInfo(
 		return nil, err
 	}
 
-	return &GetOperationInfoResponse{
+	return &TransportGetOperationInfoResponse{
 		Info: info,
 	}, nil
 }
 
 func (t *HTTPTransport) GetOperationResult(
 	ctx context.Context,
-	service string,
-	operation string,
-	token string,
-	options GetOperationResultOptions,
-) (*GetOperationResultResponse[*LazyValue], error) {
-	u := t.serviceBaseURL.JoinPath(url.PathEscape(service), url.PathEscape(operation), "result")
+	options TransportGetOperationResultOptions,
+) (*TransportGetOperationResultResponse[*LazyValue], error) {
+	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation), "result")
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set(HeaderOperationToken, token)
+	request.Header.Set(HeaderOperationToken, options.Token)
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
 
 	startTime := time.Now()
-	wait := options.Wait
+	wait := options.ClientOptions.Wait
 	for {
 		if wait > 0 {
 			if deadline, set := ctx.Deadline(); set {
@@ -479,7 +450,7 @@ func (t *HTTPTransport) GetOperationResult(
 			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
 				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
 				// issue to avoid blowing it up with repeated calls.
-				wait = options.Wait - time.Since(startTime)
+				wait = options.ClientOptions.Wait - time.Since(startTime)
 				continue
 			}
 			return nil, err
@@ -488,7 +459,7 @@ func (t *HTTPTransport) GetOperationResult(
 		if err != nil {
 			return nil, err
 		}
-		return &GetOperationResultResponse[*LazyValue]{
+		return &TransportGetOperationResultResponse[*LazyValue]{
 			result: &OperationResult[*LazyValue]{
 				result: &LazyValue{
 					serializer: t.options.Serializer,
@@ -545,20 +516,17 @@ func (t *HTTPTransport) sendGetOperationResultRequest(request *http.Request) (*h
 
 func (t *HTTPTransport) CancelOperation(
 	ctx context.Context,
-	service string,
-	operation string,
-	token string,
-	options CancelOperationOptions,
-) (*CancelOperationResponse, error) {
-	u := t.serviceBaseURL.JoinPath(url.PathEscape(service), url.PathEscape(operation), "cancel")
+	options TransportCancelOperationOptions,
+) (*TransportCancelOperationResponse, error) {
+	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation), "cancel")
 	request, err := http.NewRequestWithContext(ctx, "POST", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set(HeaderOperationToken, token)
+	request.Header.Set(HeaderOperationToken, options.Token)
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	request.Header.Set(headerUserAgent, userAgent)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
+	addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
 
 	response, err := t.options.HTTPCaller(request)
 	if err != nil {
@@ -574,7 +542,7 @@ func (t *HTTPTransport) CancelOperation(
 	if response.StatusCode != http.StatusAccepted {
 		return nil, t.bestEffortHandlerErrorFromResponse(response, body)
 	}
-	return &CancelOperationResponse{}, nil
+	return &TransportCancelOperationResponse{}, nil
 }
 
 func (t *HTTPTransport) failureFromResponse(response *http.Response, body []byte) (Failure, error) {

@@ -30,6 +30,8 @@ func ExampleClient_StartOperation() {
 			var OperationError *nexus.OperationError
 			if errors.As(err, &OperationError) { // operation failed or canceled
 				fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", OperationError.State, OperationError.Cause.Error())
+			} else {
+				fmt.Printf("Operation unsuccessful with unexpected error: %v", opErr)
 			}
 		} else { // operation successful
 			// must consume the result to free up the underlying connection

@@ -27,13 +27,13 @@ func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureCo
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	client, err = NewHTTPClient(
-		ClientOptions{Service: testService},
-		HTTPTransportOptions{
-			BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
-			Serializer:       serializer,
-			FailureConverter: failureConverter,
-		})
+	transport, err := NewHTTPTransport(HTTPTransportOptions{
+		BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
+		Serializer:       serializer,
+		FailureConverter: failureConverter,
+	})
+	require.NoError(t, err)
+	client, err = NewClient(ClientOptions{Service: testService, Transport: transport})
 	require.NoError(t, err)
 
 	go func() {

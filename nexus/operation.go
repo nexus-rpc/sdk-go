@@ -410,9 +410,9 @@ func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation O
 }
 
 // StartOperation is the type safe version of [Client.StartOperation].
-// It accepts input of type I and returns a [StartOperationResponse] of type O, removing the need to consume the
+// It accepts input of type I and returns a [TransportStartOperationResponse] of type O, removing the need to consume the
 // [LazyValue] returned by the client method.
-func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*StartOperationResponse[O], error) {
+func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*TransportStartOperationResponse[O], error) {
 	resp, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
@@ -421,7 +421,7 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 	if resp.Complete != nil {
 		lv, err := resp.Complete.Get()
 		if err != nil {
-			return &StartOperationResponse[O]{
+			return &TransportStartOperationResponse[O]{
 				Complete: &OperationResult[O]{
 					err: err,
 				},
@@ -430,7 +430,7 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 		}
 
 		var o O
-		return &StartOperationResponse[O]{
+		return &TransportStartOperationResponse[O]{
 			Complete: &OperationResult[O]{
 				result: o,
 				err:    lv.Consume(&o),
@@ -439,23 +439,23 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 		}, nil
 	}
 
-	handle, err := NewHandle(client, operation, resp.Pending.Token)
+	handle, err := NewOperationHandle(client, operation, resp.Pending.Token)
 	if err != nil {
 		return nil, err
 	}
-	return &StartOperationResponse[O]{
+	return &TransportStartOperationResponse[O]{
 		Pending: handle,
 		Links:   resp.Links,
 	}, nil
 }
 
-// NewHandle is the type safe version of [Client.NewHandle].
+// NewOperationHandle is the type safe version of [Client.NewOperationHandle].
 // The [OperationHandle.GetResult] method will return an output of type O.
-func NewHandle[I, O any](client *Client, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
+func NewOperationHandle[I, O any](client *Client, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
 	if token == "" {
 		return nil, errEmptyOperationToken
 	}
-	handle, err := client.NewHandle(operation.Name(), token)
+	handle, err := client.NewOperationHandle(operation.Name(), token)
 	if err != nil {
 		return nil, err
 	}

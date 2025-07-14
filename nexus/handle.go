@@ -33,11 +33,17 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 }
 
 // GetInfoResponse gets operation information, issuing a network request to the service handler. It returns a
-// GetOperationInfoResponse object containing operation information and metadata.
+// TransportGetOperationInfoResponse object containing operation information and metadata.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetInfoResponse(ctx context.Context, options GetOperationInfoOptions) (*GetOperationInfoResponse, error) {
-	return h.transport.GetOperationInfo(ctx, h.Service, h.Operation, h.Token, options)
+func (h *OperationHandle[T]) GetInfoResponse(ctx context.Context, options GetOperationInfoOptions) (*TransportGetOperationInfoResponse, error) {
+	to := TransportGetOperationInfoOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
+	}
+	return h.transport.GetOperationInfo(ctx, to)
 }
 
 // GetResult gets the result of an operation, issuing a network request to the service handler.
@@ -76,19 +82,25 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 // Errors returned by the method itself indicate a failure to communicate with the operation handler and are typically
 // represented by a [HandlerError].
 //
-// # The final value or error returned by the operation can be retrieved with GetOperationResultResponse.GetResult
+// # The final value or error returned by the operation can be retrieved with TransportGetOperationResultResponse.GetResult
 //
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetOperationResultOptions) (*GetOperationResultResponse[T], error) {
-	resp, err := h.transport.GetOperationResult(ctx, h.Service, h.Operation, h.Token, options)
+func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetOperationResultOptions) (*TransportGetOperationResultResponse[T], error) {
+	to := TransportGetOperationResultOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
+	}
+	resp, err := h.transport.GetOperationResult(ctx, to)
 	if err != nil {
 		return nil, err
 	}
 	lv, err := resp.GetResult()
 	if err != nil {
-		return &GetOperationResultResponse[T]{
+		return &TransportGetOperationResultResponse[T]{
 			result: &OperationResult[T]{
 				err: err,
 			},
@@ -98,7 +110,7 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 
 	var result T
 	if _, ok := any(result).(*LazyValue); ok {
-		return &GetOperationResultResponse[T]{
+		return &TransportGetOperationResultResponse[T]{
 			result: &OperationResult[T]{
 				result: any(lv).(T),
 			},
@@ -106,7 +118,7 @@ func (h *OperationHandle[T]) GetResultResponse(ctx context.Context, options GetO
 		}, nil
 	}
 
-	return &GetOperationResultResponse[T]{
+	return &TransportGetOperationResultResponse[T]{
 		result: &OperationResult[T]{
 			result: result,
 			err:    lv.Consume(&result),
@@ -123,12 +135,18 @@ func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperation
 	return err
 }
 
-// CancelResponse requests to cancel an asynchronous operation and returns a CancelOperationResponse object which
+// CancelResponse requests to cancel an asynchronous operation and returns a TransportCancelOperationResponse object which
 // may contain additional metadata returned by the operation handler.
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) CancelResponse(ctx context.Context, options CancelOperationOptions) (*CancelOperationResponse, error) {
-	return h.transport.CancelOperation(ctx, h.Service, h.Operation, h.Token, options)
+func (h *OperationHandle[T]) CancelResponse(ctx context.Context, options CancelOperationOptions) (*TransportCancelOperationResponse, error) {
+	to := TransportCancelOperationOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
+	}
+	return h.transport.CancelOperation(ctx, to)
 }
