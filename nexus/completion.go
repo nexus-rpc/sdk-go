@@ -198,6 +198,9 @@ type OperationCompletionUnsuccessful struct {
 type OperationCompletionUnsuccessfulOptions struct {
 	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
 	// [DefaultFailureConverter].
+	//
+	// NOTE: To call server versions <= 0.4.0, use a FailureConverter that unwraps the error cause if message is not
+	// present.
 	FailureConverter FailureConverter
 	// OperationID is the unique ID for this operation. Used when a completion callback is received before a started response.
 	//
@@ -221,11 +224,15 @@ func NewOperationCompletionUnsuccessful(error *OperationError, options Operation
 	if options.FailureConverter == nil {
 		options.FailureConverter = defaultFailureConverter
 	}
+	failure, err := options.FailureConverter.ErrorToFailure(error)
+	if err != nil {
+		return nil, err
+	}
 
 	return &OperationCompletionUnsuccessful{
 		Header:         make(Header),
 		State:          error.State,
-		Failure:        options.FailureConverter.ErrorToFailure(error.Cause),
+		Failure:        failure,
 		OperationID:    options.OperationID,
 		OperationToken: options.OperationToken,
 		StartTime:      options.StartTime,
@@ -241,6 +248,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	if c.Header != nil {
 		addNexusHeaderToHTTPHeader(c.Header, request.Header)
 	}
+	// Set the operation state header for backwards compatibility.
 	request.Header.Set(headerOperationState, string(c.State))
 	request.Header.Set("Content-Type", contentTypeJSON)
 
@@ -381,7 +389,11 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
-		completion.Error = h.failureConverter.FailureToError(failure)
+		completion.Error, err = h.failureConverter.FailureToError(failure)
+		if err != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to decode failure from request body"))
+			return
+		}
 	case OperationStateSucceeded:
 		completion.Result = &LazyValue{
 			serializer: h.options.Serializer,

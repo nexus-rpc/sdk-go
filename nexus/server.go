@@ -276,14 +276,19 @@ func (h *httpHandler) writeResult(writer http.ResponseWriter, result any) {
 
 func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 	var failure Failure
-	var unsuccessfulError *OperationError
+	var opError *OperationError
 	var handlerError *HandlerError
 	var operationState OperationState
 	statusCode := http.StatusInternalServerError
 
-	if errors.As(err, &unsuccessfulError) {
-		operationState = unsuccessfulError.State
-		failure = h.failureConverter.ErrorToFailure(unsuccessfulError.Cause)
+	if errors.As(err, &opError) {
+		operationState = opError.State
+		var convErr error
+		failure, convErr = h.failureConverter.ErrorToFailure(opError)
+		if convErr != nil {
+			h.logger.Error("failed to convert error to failure", "error", convErr)
+			writer.WriteHeader(http.StatusInternalServerError)
+		}
 		statusCode = statusOperationFailed
 
 		if operationState == OperationStateFailed || operationState == OperationStateCanceled {
@@ -294,10 +299,17 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 			return
 		}
 	} else if errors.As(err, &handlerError) {
-		failure = h.failureConverter.ErrorToFailure(handlerError.Cause)
+		var convErr error
+		failure, convErr = h.failureConverter.ErrorToFailure(handlerError)
+		if convErr != nil {
+			h.logger.Error("failed to convert error to failure", "error", convErr)
+			writer.WriteHeader(http.StatusInternalServerError)
+		}
 		switch handlerError.Type {
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
+		case HandlerErrorTypeConflict:
+			statusCode = http.StatusConflict
 		case HandlerErrorTypeUnauthenticated:
 			statusCode = http.StatusUnauthorized
 		case HandlerErrorTypeUnauthorized:

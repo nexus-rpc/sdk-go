@@ -239,7 +239,7 @@ func TestHandlerError(t *testing.T) {
 	_, err = StartOperation(ctx, client, &authRejectionHandler{}, nil, StartOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 
 	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
 	require.NoError(t, err)
@@ -247,17 +247,17 @@ func TestHandlerError(t *testing.T) {
 	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 }
 
 func TestInputOutputType(t *testing.T) {
