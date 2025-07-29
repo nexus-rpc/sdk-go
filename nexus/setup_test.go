@@ -51,7 +51,7 @@ func setup(t *testing.T, handler Handler) (ctx context.Context, client *Client, 
 	return setupCustom(t, handler, nil, nil)
 }
 
-func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, callbackURL string, teardown func()) {
+func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, client *CompletionClient, callbackURL string, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewCompletionHTTPHandler(CompletionHandlerOptions{
@@ -64,13 +64,23 @@ func setupForCompletion(t *testing.T, handler CompletionHandler, serializer Seri
 	require.NoError(t, err)
 	callbackURL = fmt.Sprintf("http://%s/callback?a=b", listener.Addr().String())
 
+	transport, err := NewHTTPTransport(HTTPTransportOptions{
+		BaseURL:          fmt.Sprintf("http://%s/", listener.Addr().String()),
+		Serializer:       serializer,
+		FailureConverter: failureConverter,
+	})
+	require.NoError(t, err)
+	client, err = NewCompletionClient(CompletionClientOptions{Transport: transport})
+	require.NoError(t, err)
+
 	go func() {
 		// Ignore for test purposes
 		_ = http.Serve(listener, httpHandler)
 	}()
 
-	return ctx, callbackURL, func() {
+	return ctx, client, callbackURL, func() {
 		cancel()
 		listener.Close()
+		transport.Close()
 	}
 }

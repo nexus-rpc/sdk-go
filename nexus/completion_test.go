@@ -3,8 +3,6 @@ package nexus
 import (
 	"context"
 	"errors"
-	"io"
-	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -49,10 +47,12 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 }
 
 func TestSuccessfulCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil, nil)
+	ctx, client, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
+	completeOpts := CompleteOperationOptions{
+		Header:         Header{"foo": "bar"},
+		Result:         666,
 		OperationToken: "test-operation-token",
 		StartTime:      time.Now(),
 		Links: []Link{{
@@ -64,27 +64,20 @@ func TestSuccessfulCompletion(t *testing.T) {
 			},
 			Type: "url",
 		}},
-	})
-	completion.Header.Set("foo", "bar")
-	require.NoError(t, err)
+	}
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
+	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
 	require.NoError(t, err)
-	response, err := http.DefaultClient.Do(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
-	_, err = io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, response.StatusCode)
 }
 
 func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 	serializer := &customSerializer{}
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer, nil)
+	ctx, client, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, serializer, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
-		Serializer: serializer,
+	completeOpts := CompleteOperationOptions{
+		Header: Header{"foo": "bar", HeaderOperationToken: "test-operation-token"},
+		Result: 666,
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -94,19 +87,10 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 			},
 			Type: "url",
 		}},
-	})
-	completion.Header.Set("foo", "bar")
-	completion.Header.Set(HeaderOperationToken, "test-operation-token")
-	require.NoError(t, err)
+	}
 
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
+	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
 	require.NoError(t, err)
-	response, err := http.DefaultClient.Do(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
-	_, err = io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, response.StatusCode)
 
 	require.Equal(t, 1, serializer.decoded)
 	require.Equal(t, 1, serializer.encoded)
@@ -140,9 +124,9 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 }
 
 func TestFailureCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
+	ctx, client, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
 		errorChecker: func(err error) error {
-			if err.Error() != "expected message" {
+			if err.Error() != "operation canceled: expected message" {
 				return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure: %v", err)
 			}
 			return nil
@@ -150,7 +134,9 @@ func TestFailureCompletion(t *testing.T) {
 	}, nil, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
+	completeOpts := CompleteOperationOptions{
+		Header:         Header{"foo": "bar"},
+		Error:          NewOperationCanceledError("expected message"),
 		OperationToken: "test-operation-token",
 		StartTime:      time.Now(),
 		Links: []Link{{
@@ -162,22 +148,15 @@ func TestFailureCompletion(t *testing.T) {
 			},
 			Type: "url",
 		}},
-	})
+	}
+
+	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
 	require.NoError(t, err)
-	completion.Header.Set("foo", "bar")
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
-	require.NoError(t, err)
-	response, err := http.DefaultClient.Do(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
-	_, err = io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, response.StatusCode)
 }
 
 func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	fc := customFailureConverter{}
-	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
+	ctx, client, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
 		errorChecker: func(err error) error {
 			if !errors.Is(err, errCustom) {
 				return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure, expected a custom error: %v", err)
@@ -187,10 +166,11 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	}, nil, fc)
 	defer teardown()
 
-	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
-		FailureConverter: fc,
-		OperationToken:   "test-operation-token",
-		StartTime:        time.Now(),
+	completeOpts := CompleteOperationOptions{
+		Header:         Header{"foo": "bar"},
+		Error:          NewOperationCanceledError("expected message"),
+		OperationToken: "test-operation-token",
+		StartTime:      time.Now(),
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -200,17 +180,10 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 			},
 			Type: "url",
 		}},
-	})
+	}
+
+	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
 	require.NoError(t, err)
-	completion.Header.Set("foo", "bar")
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
-	require.NoError(t, err)
-	response, err := http.DefaultClient.Do(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
-	_, err = io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, response.StatusCode)
 }
 
 type failingCompletionHandler struct {
@@ -221,17 +194,19 @@ func (h *failingCompletionHandler) CompleteOperation(ctx context.Context, comple
 }
 
 func TestBadRequestCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil, nil)
+	ctx, client, callbackURL, teardown := setupForCompletion(t, &failingCompletionHandler{}, nil, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionSuccessful([]byte("success"), OperationCompletionSuccessfulOptions{})
-	require.NoError(t, err)
-	request, err := NewCompletionHTTPRequest(ctx, callbackURL, completion)
-	require.NoError(t, err)
-	response, err := http.DefaultClient.Do(request)
-	require.NoError(t, err)
-	defer response.Body.Close()
-	_, err = io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+	completeOpts := CompleteOperationOptions{
+		Result: []byte("success"),
+	}
+
+	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	var handlerErr *HandlerError
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, HandlerErrorTypeBadRequest, handlerErr.Type)
+
+	completeOpts.Error = NewOperationFailedError("some failure")
+	err = client.CompleteOperation(ctx, callbackURL, completeOpts)
+	require.ErrorIs(t, err, errResultAndErrorSet)
 }

@@ -74,6 +74,11 @@ type Transport interface {
 	// NOTE: Experimental
 	CancelOperation(ctx context.Context, options TransportCancelOperationOptions) (*TransportCancelOperationResponse, error)
 
+	// CompleteOperation requests to complete an asynchronous operation.
+	//
+	// NOTE: Experimental
+	CompleteOperation(ctx context.Context, options TransportCompleteOperationOptions) (*TransportCompleteOperationResponse, error)
+
 	// Close this Transport and release any underlying resources.
 	//
 	// NOTE: Experimental
@@ -124,6 +129,11 @@ func (gr *TransportGetOperationResultResponse[T]) GetResult() (T, error) {
 //
 // NOTE: Experimental
 type TransportCancelOperationResponse struct{}
+
+// TransportCompleteOperationResponse is the response to Transport.CompleteOperation calls.
+//
+// NOTE: Experimental
+type TransportCompleteOperationResponse struct{}
 
 // OperationResult contains the final value or error returned by an operation handler. One and only one of
 // result or err will be populated. Use OperationResult.Get to retrieve the result.
@@ -539,6 +549,99 @@ func (t *HTTPTransport) CancelOperation(
 		return nil, t.bestEffortHandlerErrorFromResponse(response, body)
 	}
 	return &TransportCancelOperationResponse{}, nil
+}
+
+func (t *HTTPTransport) CompleteOperation(
+	ctx context.Context,
+	options TransportCompleteOperationOptions,
+) (*TransportCompleteOperationResponse, error) {
+	request, err := http.NewRequestWithContext(ctx, "POST", options.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.Header == nil {
+		request.Header = make(http.Header, len(options.ClientOptions.Header)+2) // +2 for headerUserAgent and headerOperationState
+	}
+	request.Header.Set(headerUserAgent, userAgent)
+	request.Header.Set(headerOperationState, string(options.State))
+	addContextTimeoutToHTTPHeader(ctx, request.Header)
+	if options.ClientOptions.Header != nil {
+		addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
+	}
+
+	if options.ClientOptions.Header.Get(HeaderOperationToken) == "" && options.ClientOptions.OperationToken != "" {
+		request.Header.Set(HeaderOperationToken, options.ClientOptions.OperationToken)
+		request.Header.Set(HeaderOperationID, options.ClientOptions.OperationToken) // duplicate token as ID for backwards compatibility
+	}
+	if options.ClientOptions.Header.Get(headerOperationStartTime) == "" && !options.ClientOptions.StartTime.IsZero() {
+		request.Header.Set(headerOperationStartTime, options.ClientOptions.StartTime.Format(http.TimeFormat))
+	}
+	if options.ClientOptions.Header.Get(headerLink) == "" {
+		if err := addLinksToHTTPHeader(options.ClientOptions.Links, request.Header); err != nil {
+			return nil, err
+		}
+	}
+
+	switch options.State {
+	case OperationStateFailed, OperationStateCanceled:
+		failure := t.options.FailureConverter.ErrorToFailure(options.ClientOptions.Error)
+		b, err := json.Marshal(failure)
+		if err != nil {
+			return nil, err
+		}
+		request.Header.Set("Content-Type", contentTypeJSON)
+		request.Body = io.NopCloser(bytes.NewReader(b))
+	case OperationStateSucceeded:
+		reader, err := t.operationResultToReader(options.ClientOptions.Result)
+		if err != nil {
+			return nil, err
+		}
+		if reader.Header != nil {
+			addContentHeaderToHTTPHeader(reader.Header, request.Header)
+		}
+		request.Body = reader.ReadCloser
+	}
+
+	response, err := t.options.HTTPCaller(request)
+	if err != nil {
+		return nil, err
+	}
+	// Do this once here and make sure it doesn't leak.
+	body, err := readAndReplaceBody(response)
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, t.bestEffortHandlerErrorFromResponse(response, body)
+	}
+
+	return &TransportCompleteOperationResponse{}, nil
+}
+
+func (t *HTTPTransport) operationResultToReader(result any) (*Reader, error) {
+	reader, ok := result.(*Reader)
+	if !ok {
+		content, ok := result.(*Content)
+		if !ok {
+			var err error
+			content, err = t.options.Serializer.Serialize(result)
+			if err != nil {
+				return nil, err
+			}
+		}
+		header := maps.Clone(content.Header)
+		if header == nil {
+			header = make(Header, 1)
+		}
+		header["length"] = strconv.Itoa(len(content.Data))
+
+		reader = &Reader{
+			Header:     header,
+			ReadCloser: io.NopCloser(bytes.NewReader(content.Data)),
+		}
+	}
+	return reader, nil
 }
 
 func (t *HTTPTransport) failureFromResponse(response *http.Response, body []byte) (Failure, error) {
