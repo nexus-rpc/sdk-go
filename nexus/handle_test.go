@@ -7,13 +7,16 @@ import (
 )
 
 func TestNewHandleFailureConditions(t *testing.T) {
-	client, err := NewHTTPClient(HTTPClientOptions{BaseURL: "http://foo.com", Service: "test"})
+	tr, err := NewHTTPTransport(HTTPTransportOptions{BaseURL: "http://foo.com"})
 	require.NoError(t, err)
-	_, err = client.NewHandle("", "token")
+
+	client, err := NewClient(ClientOptions{Service: "test", Transport: tr})
+	require.NoError(t, err)
+	_, err = client.NewOperationHandle("", "token")
 	require.ErrorIs(t, err, errEmptyOperationName)
-	_, err = client.NewHandle("name", "")
+	_, err = client.NewOperationHandle("name", "")
 	require.ErrorIs(t, err, errEmptyOperationToken)
-	_, err = client.NewHandle("", "")
+	_, err = client.NewOperationHandle("", "")
 	require.ErrorIs(t, err, errEmptyOperationName)
 	require.ErrorIs(t, err, errEmptyOperationToken)
 }

@@ -2,16 +2,12 @@ package nexus
 
 import (
 	"context"
-	"errors"
-	"net/http"
-	"net/url"
-	"time"
 )
-
-const getResultContextPadding = time.Second * 5
 
 // An OperationHandle is used to cancel operations and get their result and status.
 type OperationHandle[T any] struct {
+	// Service to which this operation belongs.
+	Service string
 	// Name of the Operation this handle represents.
 	Operation string
 	// Handler generated ID for this handle's operation.
@@ -21,52 +17,49 @@ type OperationHandle[T any] struct {
 	// Handler generated token for this handle's operation.
 	Token string
 
-	client *HTTPClient
+	// transport is used to make external network calls.
+	transport Transport
 }
 
 // GetInfo gets operation information, issuing a network request to the service handler.
 //
 // NOTE: Experimental
 func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
-	var u *url.URL
-	if h.client.options.UseOperationID {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), url.PathEscape(h.ID))
-	} else {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation))
+	to := TransportGetOperationInfoOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
 	}
-	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	resp, err := h.transport.GetOperationInfo(ctx, to)
 	if err != nil {
 		return nil, err
 	}
-	if !h.client.options.UseOperationID {
-		request.Header.Set(HeaderOperationToken, h.Token)
-	}
-	addContextTimeoutToHTTPHeader(ctx, request.Header)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
-
-	request.Header.Set(headerUserAgent, userAgent)
-	response, err := h.client.options.HTTPCaller(request)
-	if err != nil {
-		return nil, err
-	}
-
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return nil, err
-	}
-
-	if response.StatusCode != http.StatusOK {
-		return nil, h.client.bestEffortHandlerErrorFromResponse(response, body)
-	}
-
-	return operationInfoFromResponse(response, body)
+	return resp.Info, nil
 }
 
 // GetResult gets the result of an operation, issuing a network request to the service handler.
 //
-// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the operation has
-// not yet completed.
+// This is a convenience method on top of GetResultWithDetails for callers who do not wish to inspect metadata.
+//
+// The returned error may be an [OperationError] returned by the handler, indicating the operation completed
+// unsuccessfully, a [HandlerError] indicating a failure to communicate with the handler, or any other error.
+//
+// NOTE: Experimental
+func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
+	var result T
+	res, err := h.GetResultWithDetails(ctx, options)
+	if err != nil {
+		return result, err
+	}
+	return res.Get()
+}
+
+// GetResultWithDetails gets the result of an operation and associated metadata, issuing a network request to the service
+// handler.
+//
+// By default, GetOperationResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
+// operation has not yet completed.
 //
 // Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client
 // to long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
@@ -78,147 +71,79 @@ func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationIn
 // Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
 // context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 //
+// Errors returned by the method itself indicate a failure to communicate with the operation handler and are typically
+// represented by a [HandlerError].
+//
+// # The final value or error returned by the operation can be retrieved with OperationHandleResultWithDetails.Get
+//
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
-	var result T
-	var u *url.URL
-	if h.client.options.UseOperationID {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), url.PathEscape(h.ID), "result")
-	} else {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), "result")
+func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options GetOperationResultOptions) (*OperationHandleResultWithDetails[T], error) {
+	to := TransportGetOperationResultOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
 	}
-	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	resp, err := h.transport.GetOperationResult(ctx, to)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	if !h.client.options.UseOperationID {
-		request.Header.Set(HeaderOperationToken, h.Token)
-	}
-	addContextTimeoutToHTTPHeader(ctx, request.Header)
-	request.Header.Set(headerUserAgent, userAgent)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
-
-	startTime := time.Now()
-	wait := options.Wait
-	for {
-		if wait > 0 {
-			if deadline, set := ctx.Deadline(); set {
-				// Ensure we don't wait longer than the deadline but give some buffer to prevent racing between wait and
-				// context deadline.
-				wait = min(wait, time.Until(deadline)+getResultContextPadding)
-			}
-
-			q := request.URL.Query()
-			q.Set(queryWait, formatDuration(wait))
-			request.URL.RawQuery = q.Encode()
-		} else {
-			// We may reuse the request object multiple times and will need to reset the query when wait becomes 0 or
-			// negative.
-			request.URL.RawQuery = ""
-		}
-
-		response, err := h.sendGetOperationResultRequest(request)
-		if err != nil {
-			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
-				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
-				// issue to avoid blowing it up with repeated calls.
-				wait = options.Wait - time.Since(startTime)
-				continue
-			}
-			return result, err
-		}
-		s := &LazyValue{
-			serializer: h.client.options.Serializer,
-			Reader: &Reader{
-				response.Body,
-				prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
+	lv, err := resp.GetResult()
+	if err != nil {
+		return &OperationHandleResultWithDetails[T]{
+			result: &OperationResult[T]{
+				err: err,
 			},
-		}
-		if _, ok := any(result).(*LazyValue); ok {
-			return any(s).(T), nil
-		} else {
-			return result, s.Consume(&result)
-		}
-	}
-}
-
-func (h *OperationHandle[T]) sendGetOperationResultRequest(request *http.Request) (*http.Response, error) {
-	response, err := h.client.options.HTTPCaller(request)
-	if err != nil {
-		return nil, err
+			Links: resp.Links,
+		}, nil
 	}
 
-	if response.StatusCode == http.StatusOK {
-		return response, nil
+	var result T
+	if _, ok := any(result).(*LazyValue); ok {
+		return &OperationHandleResultWithDetails[T]{
+			result: &OperationResult[T]{
+				result: any(lv).(T),
+			},
+			Links: resp.Links,
+		}, nil
 	}
 
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return nil, err
-	}
-
-	switch response.StatusCode {
-	case http.StatusRequestTimeout:
-		return nil, errOperationWaitTimeout
-	case statusOperationRunning:
-		return nil, ErrOperationStillRunning
-	case statusOperationFailed:
-		state, err := getUnsuccessfulStateFromHeader(response, body)
-		if err != nil {
-			return nil, err
-		}
-		failure, err := h.client.failureFromResponse(response, body)
-		if err != nil {
-			return nil, err
-		}
-		failureErr := h.client.options.FailureConverter.FailureToError(failure)
-		return nil, &OperationError{
-			State: state,
-			Cause: failureErr,
-		}
-	default:
-		return nil, h.client.bestEffortHandlerErrorFromResponse(response, body)
-	}
+	return &OperationHandleResultWithDetails[T]{
+		result: &OperationResult[T]{
+			result: result,
+			err:    lv.Consume(&result),
+		},
+		Links: resp.Links,
+	}, nil
 }
 
 // Cancel requests to cancel an asynchronous operation.
 //
 // Cancelation is asynchronous and may be not be respected by the operation's implementation.
 func (h *OperationHandle[T]) Cancel(ctx context.Context, options CancelOperationOptions) error {
-	var u *url.URL
-	if h.client.options.UseOperationID {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), url.PathEscape(h.ID), "cancel")
-	} else {
-		u = h.client.serviceBaseURL.JoinPath(url.PathEscape(h.client.options.Service), url.PathEscape(h.Operation), "cancel")
+	to := TransportCancelOperationOptions{
+		ClientOptions: options,
+		Service:       h.Service,
+		Operation:     h.Operation,
+		Token:         h.Token,
 	}
-	request, err := http.NewRequestWithContext(ctx, "POST", u.String(), nil)
-	if err != nil {
-		return err
-	}
+	_, err := h.transport.CancelOperation(ctx, to)
+	return err
+}
 
-	if !h.client.options.UseOperationID {
-		request.Header.Set(HeaderOperationToken, h.Token)
-	}
+// OperationHandleResultWithDetails is a wrapper for the result of an operation with any associated metadata.
+//
+// NOTE: Experimental
+type OperationHandleResultWithDetails[T any] struct {
+	result *OperationResult[T]
+	Links  []Link
+}
 
-	addContextTimeoutToHTTPHeader(ctx, request.Header)
-	request.Header.Set(headerUserAgent, userAgent)
-	addNexusHeaderToHTTPHeader(options.Header, request.Header)
-	response, err := h.client.options.HTTPCaller(request)
-	if err != nil {
-		return err
-	}
-
-	// Do this once here and make sure it doesn't leak.
-	body, err := readAndReplaceBody(response)
-	if err != nil {
-		return err
-	}
-
-	if response.StatusCode != http.StatusAccepted {
-		return h.client.bestEffortHandlerErrorFromResponse(response, body)
-	}
-	return nil
+// Get returns the final result or error returned by the operation.
+//
+// NOTE: Experimental
+func (r *OperationHandleResultWithDetails[T]) Get() (T, error) {
+	return r.result.Get()
 }

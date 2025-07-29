@@ -160,7 +160,7 @@ func TestPeekResult_StillRunning(t *testing.T) {
 	ctx, client, teardown := setup(t, &handler)
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "a/sync")
+	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
 	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
@@ -173,7 +173,7 @@ func TestPeekResult_Success(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "a/sync")
+	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
 	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestPeekResult_Canceled(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithResultHandler{resultError: &OperationError{State: OperationStateCanceled}})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "a/sync")
+	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
 	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
 	var OperationError *OperationError

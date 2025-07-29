@@ -1,31 +1,23 @@
 package nexus
 
 import (
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewClient(t *testing.T) {
+func TestNewHTTPClient(t *testing.T) {
 	var err error
 
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "", Service: "ignored"})
-	require.ErrorContains(t, err, "empty BaseURL")
-
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "-http://invalid", Service: "ignored"})
-	var urlError *url.Error
-	require.ErrorAs(t, err, &urlError)
-
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "smtp://example.com", Service: "ignored"})
-	require.ErrorContains(t, err, "invalid URL scheme: smtp")
-
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "http://example.com", Service: "ignored"})
+	transport, err := NewHTTPTransport(HTTPTransportOptions{BaseURL: "http://example.com"})
 	require.NoError(t, err)
 
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "https://example.com", Service: ""})
+	_, err = NewClient(ClientOptions{Service: "", Transport: transport})
 	require.ErrorContains(t, err, "empty Service")
 
-	_, err = NewHTTPClient(HTTPClientOptions{BaseURL: "https://example.com", Service: "valid"})
+	_, err = NewClient(ClientOptions{Service: "valid", Transport: nil})
+	require.ErrorContains(t, err, "nil Transport")
+
+	_, err = NewClient(ClientOptions{Service: "valid", Transport: transport})
 	require.NoError(t, err)
 }

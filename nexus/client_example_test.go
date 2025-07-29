@@ -13,34 +13,39 @@ type MyStruct struct {
 }
 
 var ctx = context.Background()
-var client *nexus.HTTPClient
+var client *nexus.Client
 
-func ExampleHTTPClient_StartOperation() {
-	result, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
+func ExampleClient_StartOperation() {
+	response, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
 	if err != nil {
-		var OperationError *nexus.OperationError
-		if errors.As(err, &OperationError) { // operation failed or canceled
-			fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", OperationError.State, OperationError.Cause.Error())
-		}
 		var handlerError *nexus.HandlerError
 		if errors.As(err, &handlerError) {
 			fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Cause.Error())
 		}
 		// most other errors should be returned as *nexus.UnexpectedResponseError
 	}
-	if result.Successful != nil { // operation successful
-		response := result.Successful
-		// must consume the response to free up the underlying connection
-		var output MyStruct
-		_ = response.Consume(&output)
-		fmt.Printf("Got response: %v\n", output)
+	if response.Complete != nil { // operation complete
+		result, opErr := response.Complete.Get()
+		if opErr != nil {
+			var operationErr *nexus.OperationError
+			if errors.As(err, &operationErr) { // operation failed or canceled
+				fmt.Printf("Operation unsuccessful with state: %s, failure message: %s\n", operationErr.State, operationErr.Cause.Error())
+			} else {
+				fmt.Printf("Operation unsuccessful with unexpected error: %v", opErr)
+			}
+		} else { // operation successful
+			// must consume the result to free up the underlying connection
+			var output MyStruct
+			_ = result.Consume(&output)
+			fmt.Printf("Got response: %v\n", output)
+		}
 	} else { // operation started asynchronously
-		handle := result.Pending
-		fmt.Printf("Started asynchronous operation with ID: %s\n", handle.ID)
+		handle := response.Pending
+		fmt.Printf("Started asynchronous operation with token: %s\n", handle.Token)
 	}
 }
 
-func ExampleHTTPClient_ExecuteOperation() {
+func ExampleClient_ExecuteOperation() {
 	response, err := client.ExecuteOperation(ctx, "operation name", MyStruct{Field: "value"}, nexus.ExecuteOperationOptions{})
 	if err != nil {
 		// handle nexus.OperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded

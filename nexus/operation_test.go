@@ -135,14 +135,16 @@ func TestStartOperation(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, numberValidatorOperation, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	require.Equal(t, 3, result.Successful)
+	val, err := result.Complete.Get()
+	require.NoError(t, err)
+	require.Equal(t, 3, val)
 
 	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
 	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
-	handle, err := NewHandle(client, asyncNumberValidatorOperationInstance, result.Pending.Token)
+	handle, err := NewOperationHandle(client, asyncNumberValidatorOperationInstance, result.Pending.Token)
 	require.NoError(t, err)
 	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
@@ -241,7 +243,7 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
-	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
+	handle, err := NewOperationHandle(client, &authRejectionHandler{}, "dont-care")
 	require.NoError(t, err)
 
 	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})

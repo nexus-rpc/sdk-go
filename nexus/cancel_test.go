@@ -56,7 +56,7 @@ func TestCancel_HandleFromClient(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithCancelHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("f/o/o", "a/sync")
+	handle, err := client.NewOperationHandle("f/o/o", "a/sync")
 	require.NoError(t, err)
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestCancel_ContextDeadlinePropagated(t *testing.T) {
 	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{expectedTimeout: testTimeout})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	err = handle.Cancel(ctx, CancelOperationOptions{})
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestCancel_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{expectedTimeout: timeout})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	err = handle.Cancel(ctx, CancelOperationOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestCancel_TimeoutNotPropagated(t *testing.T) {
 	_, client, teardown := setup(t, &echoTimeoutAsyncWithCancelHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	err = handle.Cancel(context.Background(), CancelOperationOptions{})
 	require.NoError(t, err)

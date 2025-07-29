@@ -53,7 +53,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 		Header: Header{"test": "ok"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, handle.ID, info.ID)
+	require.Equal(t, handle.Token, info.Token)
 	require.Equal(t, OperationStateCanceled, info.State)
 }
 
@@ -61,7 +61,7 @@ func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("escape/me", "just-a-token")
+	handle, err := client.NewOperationHandle("escape/me", "just-a-token")
 	require.NoError(t, err)
 	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: testTimeout})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: timeout})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
 	_, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
 	defer teardown()
 
-	handle, err := client.NewHandle("foo", "timeout")
+	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
 	_, err = handle.GetInfo(context.Background(), GetOperationInfoOptions{})
 	require.NoError(t, err)
