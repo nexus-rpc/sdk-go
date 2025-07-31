@@ -2,10 +2,8 @@ package nexus
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
-	"net/http"
 	"time"
 )
 
@@ -13,39 +11,39 @@ var errEmptyOperationName = errors.New("empty operation name")
 
 var errEmptyOperationToken = errors.New("empty operation token")
 
-// A Client makes Nexus service requests to start new operations or get an [OperationHandle] to an
+// A ServiceClient makes Nexus service requests to start new operations or get an [OperationHandle] to an
 // existing, asynchronous operation.
 //
 // Use an [OperationHandle] to cancel, get the result of, and get information about asynchronous operations.
 //
-// OperationHandles can be obtained either by starting new operations or by calling [Client.NewOperationHandle] for existing
+// OperationHandles can be obtained either by starting new operations or by calling [ServiceClient.NewOperationHandle] for existing
 // operations.
 //
 // NOTE: Experimental
-type Client struct {
-	options ClientOptions
+type ServiceClient struct {
+	options ServiceClientOptions
 }
 
-// ClientOptions are the options for creating a new [Client].
-type ClientOptions struct {
+// ServiceClientOptions are the options for creating a new [ServiceClient].
+type ServiceClientOptions struct {
 	// Service name. Required.
 	Service string
 	// Transport delegate for making network calls. Required.
 	Transport Transport
 }
 
-// NewClient creates a new [Client] from provided [ClientOptions].
+// NewServiceClient creates a new [ServiceClient] from provided [ServiceClientOptions].
 // Service and Transport are required.
 //
 // NOTE: Experimental
-func NewClient(options ClientOptions) (*Client, error) {
+func NewServiceClient(options ServiceClientOptions) (*ServiceClient, error) {
 	if options.Service == "" {
 		return nil, errors.New("empty Service")
 	}
 	if options.Transport == nil {
 		return nil, errors.New("nil Transport")
 	}
-	return &Client{
+	return &ServiceClient{
 		options: options,
 	}, nil
 }
@@ -68,7 +66,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 //     Most often it will be a [HandlerError].
 //
 // NOTE: Experimental
-func (c *Client) StartOperation(
+func (c *ServiceClient) StartOperation(
 	ctx context.Context,
 	operation string,
 	input any,
@@ -90,7 +88,7 @@ func (c *Client) StartOperation(
 	}, nil
 }
 
-// ClientStartOperationResponse is the response to Client.StartOperation calls. One and only one of Complete or
+// ClientStartOperationResponse is the response to ServiceClient.StartOperation calls. One and only one of Complete or
 // Pending will be populated.
 //
 // NOTE: Experimental
@@ -123,7 +121,7 @@ type ClientStartOperationResponse[T any] struct {
 // free up the underlying connection.
 //
 // NOTE: Experimental
-func (c *Client) ExecuteOperation(
+func (c *ServiceClient) ExecuteOperation(
 	ctx context.Context,
 	operation string,
 	input any,
@@ -160,7 +158,7 @@ func (c *Client) ExecuteOperation(
 // Fails if provided an empty operation or token.
 //
 // NOTE: Experimental
-func (c *Client) NewOperationHandle(
+func (c *ServiceClient) NewOperationHandle(
 	operation string,
 	token string,
 ) (*OperationHandle[*LazyValue], error) {
@@ -181,36 +179,4 @@ func (c *Client) NewOperationHandle(
 		ID:        token, // Duplicate token as ID for the deprecation period.
 		Token:     token,
 	}, nil
-}
-
-// UnexpectedResponseError indicates a client encountered something unexpected in the server's response.
-type UnexpectedResponseError struct {
-	// Error message.
-	Message string
-	// Optional failure that may have been embedded in the response.
-	Failure *Failure
-	// Additional transport specific details.
-	// For HTTP, this would include the HTTP response. The response body will have already been read into memory and
-	// does not need to be closed.
-	Details any
-}
-
-// Error implements the error interface.
-func (e *UnexpectedResponseError) Error() string {
-	return e.Message
-}
-
-func newUnexpectedResponseError(message string, response *http.Response, body []byte) error {
-	var failure *Failure
-	if isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		if err := json.Unmarshal(body, &failure); err == nil && failure.Message != "" {
-			message += ": " + failure.Message
-		}
-	}
-
-	return &UnexpectedResponseError{
-		Message: message,
-		Details: response,
-		Failure: failure,
-	}
 }

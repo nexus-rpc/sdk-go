@@ -10,7 +10,7 @@ func TestNewHandleFailureConditions(t *testing.T) {
 	tr, err := NewHTTPTransport(HTTPTransportOptions{BaseURL: "http://foo.com"})
 	require.NoError(t, err)
 
-	client, err := NewClient(ClientOptions{Service: "test", Transport: tr})
+	client, err := NewServiceClient(ServiceClientOptions{Service: "test", Transport: tr})
 	require.NoError(t, err)
 	_, err = client.NewOperationHandle("", "token")
 	require.ErrorIs(t, err, errEmptyOperationName)

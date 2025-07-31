@@ -17,7 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// Transport is the low-level abstraction used by [Client] and [OperationHandle] to make network calls.
+// Transport is the low-level abstraction used by [ServiceClient] and [OperationHandle] to make network calls.
+//
+// Implementations must embed [UnimplementedTransport] for future compatibility.
 //
 // NOTE: Experimental
 type Transport interface {
@@ -78,6 +80,43 @@ type Transport interface {
 	//
 	// NOTE: Experimental
 	Close() error
+
+	// UnimplementedTransport must be embedded into any [Transport] implementation for future compatibility.
+	// It implements all methods on the [Transport] interface, returning unimplemented errors if they are not implemented by
+	// the embedding type.
+	mustEmbedUnimplementedTransport()
+}
+
+// TransportError indicates a client encountered something unexpected in the server's response.
+type TransportError struct {
+	// Error message.
+	Message string
+	// Optional failure that may have been embedded in the response.
+	Failure *Failure
+	// Additional transport specific details.
+	// For HTTP, this would include the HTTP response. The response body will have already been read into memory and
+	// does not need to be closed.
+	Details any
+}
+
+// Error implements the error interface.
+func (e *TransportError) Error() string {
+	return e.Message
+}
+
+func newTransportError(message string, response *http.Response, body []byte) error {
+	var failure *Failure
+	if isMediaTypeJSON(response.Header.Get("Content-Type")) {
+		if err := json.Unmarshal(body, &failure); err == nil && failure.Message != "" {
+			message += ": " + failure.Message
+		}
+	}
+
+	return &TransportError{
+		Message: message,
+		Details: response,
+		Failure: failure,
+	}
 }
 
 // TransportStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
@@ -144,6 +183,33 @@ func (r *OperationResult[T]) Get() (T, error) {
 	return r.result, r.err
 }
 
+// UnimplementedTransport must be embedded into any [Transport] implementation for future compatibility.
+// It implements all methods on the [Transport] interface, returning unimplemented errors if they are not implemented by
+// the embedding type.
+type UnimplementedTransport struct{}
+
+func (u UnimplementedTransport) mustEmbedUnimplementedTransport() {}
+
+func (u UnimplementedTransport) StartOperation(_ context.Context, _ any, _ TransportStartOperationOptions) (*TransportStartOperationResponse[*LazyValue], error) {
+	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
+}
+
+func (u UnimplementedTransport) GetOperationInfo(_ context.Context, _ TransportGetOperationInfoOptions) (*TransportGetOperationInfoResponse, error) {
+	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
+}
+
+func (u UnimplementedTransport) GetOperationResult(_ context.Context, _ TransportGetOperationResultOptions) (*TransportGetOperationResultResponse[*LazyValue], error) {
+	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
+}
+
+func (u UnimplementedTransport) CancelOperation(_ context.Context, _ TransportCancelOperationOptions) (*TransportCancelOperationResponse, error) {
+	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
+}
+
+func (u UnimplementedTransport) Close() error {
+	return HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
+}
+
 // User-Agent header set on HTTP requests.
 const userAgent = "Nexus-go-sdk/" + version
 const headerUserAgent = "User-Agent"
@@ -158,6 +224,8 @@ var errOperationWaitTimeout = errors.New("operation wait timeout")
 //
 // [Nexus HTTP API]: https://github.com/nexus-rpc/api
 type HTTPTransport struct {
+	UnimplementedTransport
+
 	options        HTTPTransportOptions
 	serviceBaseURL *url.URL
 }
@@ -292,7 +360,7 @@ func (t *HTTPTransport) StartOperation(
 		}
 		return nil, fmt.Errorf(
 			"%w: %w",
-			newUnexpectedResponseError(
+			newTransportError(
 				fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLink)),
 				response,
 				body,
@@ -330,13 +398,13 @@ func (t *HTTPTransport) StartOperation(
 			return nil, err
 		}
 		if info.State != OperationStateRunning {
-			return nil, newUnexpectedResponseError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
+			return nil, newTransportError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
 		}
 		if info.Token == "" && info.ID != "" {
 			info.Token = info.ID
 		}
 		if info.Token == "" {
-			return nil, newUnexpectedResponseError("empty operation token in response", response, body)
+			return nil, newTransportError("empty operation token in response", response, body)
 		}
 		handle := &OperationHandle[*LazyValue]{
 			Service:   options.Service,
@@ -543,7 +611,7 @@ func (t *HTTPTransport) CancelOperation(
 
 func (t *HTTPTransport) failureFromResponse(response *http.Response, body []byte) (Failure, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return Failure{}, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
+		return Failure{}, newTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var failure Failure
 	err := json.Unmarshal(body, &failure)
@@ -621,7 +689,7 @@ func (t *HTTPTransport) bestEffortHandlerErrorFromResponse(response *http.Respon
 			RetryBehavior: retryBehaviorFromHeader(response.Header),
 		}
 	default:
-		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+		return newTransportError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
 	}
 }
 
@@ -638,7 +706,7 @@ func readAndReplaceBody(response *http.Response) ([]byte, error) {
 
 func operationInfoFromResponse(response *http.Response, body []byte) (*OperationInfo, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return nil, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
+		return nil, newTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var info OperationInfo
 	if err := json.Unmarshal(body, &info); err != nil {
@@ -666,6 +734,6 @@ func getUnsuccessfulStateFromHeader(response *http.Response, body []byte) (Opera
 	case OperationStateFailed:
 		return state, nil
 	default:
-		return state, newUnexpectedResponseError(fmt.Sprintf("invalid operation state header: %q", state), response, body)
+		return state, newTransportError(fmt.Sprintf("invalid operation state header: %q", state), response, body)
 	}
 }

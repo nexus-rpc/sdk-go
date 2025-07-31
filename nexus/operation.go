@@ -394,13 +394,13 @@ func (r *rootOperationHandler) Start(ctx context.Context, input any, options Sta
 	return ret.(HandlerStartOperationResult[any]), nil
 }
 
-// ExecuteOperation is the type safe version of [Client.ExecuteOperation].
+// ExecuteOperation is the type safe version of [ServiceClient.ExecuteOperation].
 // It accepts input of type I and returns output of type O, removing the need to consume the [LazyValue] returned by the
 // client method.
 //
 //	ref := NewOperationReference[MyInput, MyOutput]("my-operation")
 //	out, err := ExecuteOperation(ctx, client, ref, MyInput{}, options) // returns MyOutput, error
-func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
+func ExecuteOperation[I, O any](ctx context.Context, client *ServiceClient, operation OperationReference[I, O], input I, request ExecuteOperationOptions) (O, error) {
 	var o O
 	value, err := client.ExecuteOperation(ctx, operation.Name(), input, request)
 	if err != nil {
@@ -409,10 +409,10 @@ func ExecuteOperation[I, O any](ctx context.Context, client *Client, operation O
 	return o, value.Consume(&o)
 }
 
-// StartOperation is the type safe version of [Client.StartOperation].
+// StartOperation is the type safe version of [ServiceClient.StartOperation].
 // It accepts input of type I and returns a [ClientStartOperationResponse] of type O, removing the need to consume the
 // [LazyValue] returned by the client method.
-func StartOperation[I, O any](ctx context.Context, client *Client, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResponse[O], error) {
+func StartOperation[I, O any](ctx context.Context, client *ServiceClient, operation OperationReference[I, O], input I, request StartOperationOptions) (*ClientStartOperationResponse[O], error) {
 	resp, err := client.StartOperation(ctx, operation.Name(), input, request)
 	if err != nil {
 		return nil, err
@@ -449,9 +449,9 @@ func StartOperation[I, O any](ctx context.Context, client *Client, operation Ope
 	}, nil
 }
 
-// NewOperationHandle is the type safe version of [Client.NewOperationHandle].
+// NewOperationHandle is the type safe version of [ServiceClient.NewOperationHandle].
 // The [OperationHandle.GetResult] method will return an output of type O.
-func NewOperationHandle[I, O any](client *Client, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
+func NewOperationHandle[I, O any](client *ServiceClient, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
 	if token == "" {
 		return nil, errEmptyOperationToken
 	}

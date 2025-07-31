@@ -80,14 +80,14 @@ type Serializer interface {
 
 // FailureConverter is used by the framework to transform [error] instances to and from [Failure] instances.
 // To customize conversion logic, implement this interface and provide your implementation to framework methods such as
-// [NewClient] and [NewHTTPHandler].
+// [NewServiceClient] and [NewHTTPHandler].
 // By default the SDK translates only error messages, losing type information and struct fields.
 type FailureConverter interface {
 	// ErrorToFailure converts an [error] to a [Failure].
 	// Implementors should take a best-effort approach and never fail this method.
 	// Note that the provided error may be nil.
 	ErrorToFailure(error) Failure
-	// ErrorToFailure converts a [Failure] to an [error].
+	// FailureToError converts a [Failure] to an [error].
 	// Implementors should take a best-effort approach and never fail this method.
 	FailureToError(Failure) error
 }
