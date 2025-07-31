@@ -156,14 +156,10 @@ type TransportCancelOperationOptions struct {
 //
 // NOTE: Experimental
 type CompleteOperationOptions struct {
+	// URL indicating where the completion should be delivered.
+	URL string
 	// Header to send in the completion request.
 	Header Header
-
-	// Result of the operation. Indicates a successful completion. Mutually exclusive with Error.
-	Result any
-
-	// Error produced by the operation. Indicates an operation failure. Mutually exclusive with Result.
-	Error *OperationError
 
 	// OperationToken is the unique token for this operation. Used when a completion callback is received before a
 	// started response.
@@ -180,8 +176,9 @@ type CompleteOperationOptions struct {
 type TransportCompleteOperationOptions struct {
 	// Options passed to [CompletionClient.CompleteOperation]
 	ClientOptions CompleteOperationOptions
-	// State of the operation, should be succeeded, failed, or canceled.
-	State OperationState
-	// URL indicating the destination where the completion should be delivered.
-	URL string
+
+	// Result of a successful operation. Mutually exclusive with Error
+	Success any
+	// Error returned by an unsuccessful operation. Mutually exclusive with Success
+	Error *OperationError
 }

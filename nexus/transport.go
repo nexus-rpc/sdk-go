@@ -160,6 +160,7 @@ const headerUserAgent = "User-Agent"
 const getResultContextPadding = time.Second * 5
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
+var errSuccessAndErrorSet = errors.New("completion cannot contain both Success and Error")
 
 // HTTPTransport is a [Transport] implementation backed by HTTP. It makes Nexus service requests as defined in
 // the [Nexus HTTP API].
@@ -555,7 +556,12 @@ func (t *HTTPTransport) CompleteOperation(
 	ctx context.Context,
 	options TransportCompleteOperationOptions,
 ) (*TransportCompleteOperationResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, "POST", options.URL, nil)
+	if options.Success != nil && options.Error != nil {
+		// This should never happen since transport options are constructed by our [CompletionClient].
+		return nil, errSuccessAndErrorSet
+	}
+
+	request, err := http.NewRequestWithContext(ctx, "POST", options.ClientOptions.URL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +570,6 @@ func (t *HTTPTransport) CompleteOperation(
 		request.Header = make(http.Header, len(options.ClientOptions.Header)+2) // +2 for headerUserAgent and headerOperationState
 	}
 	request.Header.Set(headerUserAgent, userAgent)
-	request.Header.Set(headerOperationState, string(options.State))
 	addContextTimeoutToHTTPHeader(ctx, request.Header)
 	if options.ClientOptions.Header != nil {
 		addNexusHeaderToHTTPHeader(options.ClientOptions.Header, request.Header)
@@ -583,20 +588,21 @@ func (t *HTTPTransport) CompleteOperation(
 		}
 	}
 
-	switch options.State {
-	case OperationStateFailed, OperationStateCanceled:
-		failure := t.options.FailureConverter.ErrorToFailure(options.ClientOptions.Error)
+	if options.Error != nil {
+		failure := t.options.FailureConverter.ErrorToFailure(options.Error)
 		b, err := json.Marshal(failure)
 		if err != nil {
 			return nil, err
 		}
+		request.Header.Set(headerOperationState, string(options.Error.State))
 		request.Header.Set("Content-Type", contentTypeJSON)
 		request.Body = io.NopCloser(bytes.NewReader(b))
-	case OperationStateSucceeded:
-		reader, err := t.operationResultToReader(options.ClientOptions.Result)
+	} else {
+		reader, err := t.operationResultToReader(options.Success)
 		if err != nil {
 			return nil, err
 		}
+		request.Header.Set(headerOperationState, string(OperationStateSucceeded))
 		if reader.Header != nil {
 			addContentHeaderToHTTPHeader(reader.Header, request.Header)
 		}

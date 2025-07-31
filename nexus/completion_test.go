@@ -51,8 +51,8 @@ func TestSuccessfulCompletion(t *testing.T) {
 	defer teardown()
 
 	completeOpts := CompleteOperationOptions{
+		URL:            callbackURL,
 		Header:         Header{"foo": "bar"},
-		Result:         666,
 		OperationToken: "test-operation-token",
 		StartTime:      time.Now(),
 		Links: []Link{{
@@ -66,7 +66,7 @@ func TestSuccessfulCompletion(t *testing.T) {
 		}},
 	}
 
-	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	err := client.CompleteOperation(ctx, 666, completeOpts)
 	require.NoError(t, err)
 }
 
@@ -76,8 +76,8 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 	defer teardown()
 
 	completeOpts := CompleteOperationOptions{
+		URL:    callbackURL,
 		Header: Header{"foo": "bar", HeaderOperationToken: "test-operation-token"},
-		Result: 666,
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -89,7 +89,7 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 		}},
 	}
 
-	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	err := client.CompleteOperation(ctx, 666, completeOpts)
 	require.NoError(t, err)
 
 	require.Equal(t, 1, serializer.decoded)
@@ -135,8 +135,8 @@ func TestFailureCompletion(t *testing.T) {
 	defer teardown()
 
 	completeOpts := CompleteOperationOptions{
+		URL:            callbackURL,
 		Header:         Header{"foo": "bar"},
-		Error:          NewOperationCanceledError("expected message"),
 		OperationToken: "test-operation-token",
 		StartTime:      time.Now(),
 		Links: []Link{{
@@ -150,7 +150,7 @@ func TestFailureCompletion(t *testing.T) {
 		}},
 	}
 
-	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	err := client.FailOperation(ctx, NewOperationCanceledError("expected message"), completeOpts)
 	require.NoError(t, err)
 }
 
@@ -167,8 +167,8 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	defer teardown()
 
 	completeOpts := CompleteOperationOptions{
+		URL:            callbackURL,
 		Header:         Header{"foo": "bar"},
-		Error:          NewOperationCanceledError("expected message"),
 		OperationToken: "test-operation-token",
 		StartTime:      time.Now(),
 		Links: []Link{{
@@ -182,7 +182,7 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 		}},
 	}
 
-	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	err := client.FailOperation(ctx, NewOperationCanceledError("expected message"), completeOpts)
 	require.NoError(t, err)
 }
 
@@ -198,15 +198,11 @@ func TestBadRequestCompletion(t *testing.T) {
 	defer teardown()
 
 	completeOpts := CompleteOperationOptions{
-		Result: []byte("success"),
+		URL: callbackURL,
 	}
 
-	err := client.CompleteOperation(ctx, callbackURL, completeOpts)
+	err := client.CompleteOperation(ctx, []byte("success"), completeOpts)
 	var handlerErr *HandlerError
 	require.ErrorAs(t, err, &handlerErr)
 	require.Equal(t, HandlerErrorTypeBadRequest, handlerErr.Type)
-
-	completeOpts.Error = NewOperationFailedError("some failure")
-	err = client.CompleteOperation(ctx, callbackURL, completeOpts)
-	require.ErrorIs(t, err, errResultAndErrorSet)
 }

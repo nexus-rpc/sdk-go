@@ -2,10 +2,7 @@ package nexus
 
 import (
 	"context"
-	"errors"
 )
-
-var errResultAndErrorSet = errors.New("completion cannot contain both Result and Error")
 
 type CompletionClient struct {
 	options CompletionClientOptions
@@ -21,23 +18,26 @@ func NewCompletionClient(options CompletionClientOptions) (*CompletionClient, er
 
 func (c *CompletionClient) CompleteOperation(
 	ctx context.Context,
-	url string,
+	result any,
 	options CompleteOperationOptions,
 ) error {
-	if options.Result != nil && options.Error != nil {
-		return errResultAndErrorSet
-	}
-
 	topts := TransportCompleteOperationOptions{
 		ClientOptions: options,
-		URL:           url,
+		Success:       result,
 	}
-	if options.Error != nil {
-		topts.State = options.Error.State
-	} else {
-		topts.State = OperationStateSucceeded
-	}
+	_, err := c.options.Transport.CompleteOperation(ctx, topts)
+	return err
+}
 
+func (c *CompletionClient) FailOperation(
+	ctx context.Context,
+	opError *OperationError,
+	options CompleteOperationOptions,
+) error {
+	topts := TransportCompleteOperationOptions{
+		ClientOptions: options,
+		Error:         opError,
+	}
 	_, err := c.options.Transport.CompleteOperation(ctx, topts)
 	return err
 }

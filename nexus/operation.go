@@ -468,14 +468,6 @@ func NewOperationHandle[I, O any](client *Client, operation OperationReference[I
 	}, nil
 }
 
-func CompleteOperation[I, O any](ctx context.Context, client *CompletionClient, operation OperationReference[I, O], url string, request CompleteOperationOptions) error {
-	if request.Result != nil && request.Error != nil {
-		return errResultAndErrorSet
-	}
-	if request.Result != nil {
-		if _, ok := request.Result.(O); !ok {
-			return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid operation output. expected %T, got %T", operation.OutputType(), reflect.TypeOf(request.Result))
-		}
-	}
-	return client.CompleteOperation(ctx, url, request)
+func CompleteOperation[I, O any](ctx context.Context, client *CompletionClient, _ OperationReference[I, O], result O, request CompleteOperationOptions) error {
+	return client.CompleteOperation(ctx, result, request)
 }
