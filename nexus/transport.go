@@ -94,29 +94,12 @@ type TransportError struct {
 	// Optional failure that may have been embedded in the response.
 	Failure *Failure
 	// Additional transport specific details.
-	// For HTTP, this would include the HTTP response. The response body will have already been read into memory and
-	// does not need to be closed.
-	Details any
+	Cause error
 }
 
 // Error implements the error interface.
 func (e *TransportError) Error() string {
 	return e.Message
-}
-
-func newTransportError(message string, response *http.Response, body []byte) error {
-	var failure *Failure
-	if isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		if err := json.Unmarshal(body, &failure); err == nil && failure.Message != "" {
-			message += ": " + failure.Message
-		}
-	}
-
-	return &TransportError{
-		Message: message,
-		Details: response,
-		Failure: failure,
-	}
 }
 
 // TransportStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
@@ -216,6 +199,16 @@ const headerUserAgent = "User-Agent"
 const getResultContextPadding = time.Second * 5
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
+
+// HTTPTransportError is an error indicating a failure in the HTTP transport. The response body should have already
+// been read into memory and will not be closed. Used as a wrapper for [TransportError.Cause].
+type HTTPTransportError struct {
+	Response *http.Response
+}
+
+func (e *HTTPTransportError) Error() string {
+	return fmt.Sprintf("HTTPTransportError: %v", e.Response.Status)
+}
 
 // HTTPTransport is a [Transport] implementation backed by HTTP. It makes Nexus service requests as defined in
 // the [Nexus HTTP API].
@@ -360,7 +353,7 @@ func (t *HTTPTransport) StartOperation(
 		}
 		return nil, fmt.Errorf(
 			"%w: %w",
-			newTransportError(
+			newHTTPTransportError(
 				fmt.Sprintf("invalid links header: %q", response.Header.Values(headerLink)),
 				response,
 				body,
@@ -398,13 +391,13 @@ func (t *HTTPTransport) StartOperation(
 			return nil, err
 		}
 		if info.State != OperationStateRunning {
-			return nil, newTransportError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
+			return nil, newHTTPTransportError(fmt.Sprintf("invalid operation state in response info: %q", info.State), response, body)
 		}
 		if info.Token == "" && info.ID != "" {
 			info.Token = info.ID
 		}
 		if info.Token == "" {
-			return nil, newTransportError("empty operation token in response", response, body)
+			return nil, newHTTPTransportError("empty operation token in response", response, body)
 		}
 		handle := &OperationHandle[*LazyValue]{
 			Service:   options.Service,
@@ -611,7 +604,7 @@ func (t *HTTPTransport) CancelOperation(
 
 func (t *HTTPTransport) failureFromResponse(response *http.Response, body []byte) (Failure, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return Failure{}, newTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
+		return Failure{}, newHTTPTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var failure Failure
 	err := json.Unmarshal(body, &failure)
@@ -689,7 +682,23 @@ func (t *HTTPTransport) bestEffortHandlerErrorFromResponse(response *http.Respon
 			RetryBehavior: retryBehaviorFromHeader(response.Header),
 		}
 	default:
-		return newTransportError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+		return newHTTPTransportError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+	}
+}
+
+// Returns a [TransportError] with [TransportError.Cause] set to a [HTTPTransportError] containing the HTTP response.
+func newHTTPTransportError(message string, response *http.Response, body []byte) error {
+	var failure *Failure
+	if isMediaTypeJSON(response.Header.Get("Content-Type")) {
+		if err := json.Unmarshal(body, &failure); err == nil && failure.Message != "" {
+			message += ": " + failure.Message
+		}
+	}
+
+	return &TransportError{
+		Message: message,
+		Failure: failure,
+		Cause:   &HTTPTransportError{Response: response},
 	}
 }
 
@@ -706,7 +715,7 @@ func readAndReplaceBody(response *http.Response) ([]byte, error) {
 
 func operationInfoFromResponse(response *http.Response, body []byte) (*OperationInfo, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
-		return nil, newTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
+		return nil, newHTTPTransportError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
 	var info OperationInfo
 	if err := json.Unmarshal(body, &info); err != nil {
@@ -734,6 +743,6 @@ func getUnsuccessfulStateFromHeader(response *http.Response, body []byte) (Opera
 	case OperationStateFailed:
 		return state, nil
 	default:
-		return state, newTransportError(fmt.Sprintf("invalid operation state header: %q", state), response, body)
+		return state, newHTTPTransportError(fmt.Sprintf("invalid operation state header: %q", state), response, body)
 	}
 }
