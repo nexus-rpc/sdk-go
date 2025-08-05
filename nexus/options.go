@@ -161,10 +161,11 @@ type CompleteOperationOptions struct {
 	// Header to send in the completion request.
 	Header Header
 
-	// OperationToken is the unique token for this operation. Used when a completion callback is received before a
-	// started response.
+	// OperationToken is the unique token for this operation. May be used by the completion handler when a completion
+	// callback is received before a started response.
 	OperationToken string
-	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
+	// StartTime is the time the operation started. May be used by the completion handler when a completion callback
+	// is received before a started response.
 	StartTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
