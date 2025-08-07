@@ -134,7 +134,7 @@ func TestClientRequestID(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			response, err := client.StartOperation(ctx, "foo", nil, c.request)
 			require.NoError(t, err)
-			result, err := response.Complete.Get()
+			result, err := response.Sync().Get()
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			var responseBody []byte
@@ -163,7 +163,7 @@ func TestJSON(t *testing.T) {
 
 	response, err := client.StartOperation(ctx, "foo", "success", StartOperationOptions{})
 	require.NoError(t, err)
-	result, err := response.Complete.Get()
+	result, err := response.Sync().Get()
 	require.NoError(t, err)
 	require.NotNil(t, response)
 	var operationResult string
@@ -238,7 +238,7 @@ func TestReaderIO(t *testing.T) {
 			response, err := client.StartOperation(ctx, "foo", tc.input, StartOperationOptions{Header: tc.header, Links: tc.links})
 			require.NoError(t, err)
 			require.Equal(t, tc.links, response.Links)
-			result, err := response.Complete.Get()
+			result, err := response.Sync().Get()
 			require.NoError(t, err)
 			require.NotNil(t, response)
 			var operationResult string
@@ -265,7 +265,7 @@ func TestAsync(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	require.NotNil(t, result.Pending)
+	require.NotNil(t, result.Async())
 }
 
 type unsuccessfulHandler struct {
@@ -334,7 +334,7 @@ func TestStart_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 }
 
 func requireTimeoutPropagated(t *testing.T, response *ClientStartOperationResponse[*LazyValue], expected time.Duration) {
-	result, err := response.Complete.Get()
+	result, err := response.Sync().Get()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	var responseBody []byte
@@ -352,7 +352,7 @@ func TestStart_TimeoutNotPropagated(t *testing.T) {
 
 	response, err := client.StartOperation(context.Background(), "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	result, err := response.Complete.Get()
+	result, err := response.Sync().Get()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	var responseBody []byte
@@ -367,7 +367,7 @@ func TestStart_NilContentHeaderDoesNotPanic(t *testing.T) {
 
 	response, err := client.StartOperation(context.Background(), "op", &Content{Data: []byte("abc")}, StartOperationOptions{})
 	require.NoError(t, err)
-	result, err := response.Complete.Get()
+	result, err := response.Sync().Get()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	var responseBody []byte

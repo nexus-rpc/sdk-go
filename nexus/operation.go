@@ -52,6 +52,25 @@ func (operationReference[I, O]) OutputType() reflect.Type {
 
 func (operationReference[I, O]) inferType(I, O) {} //nolint:unused
 
+// OperationResult contains the final value or error returned by an operation handler. One and only one of
+// result or err will be populated. Use OperationResult.Get to retrieve the result.
+//
+// In most cases err will be an [OperationError]. Other failures, such as [HandlerError], will be returned by
+// the Transport method called to indicate a failure to communicate with the operation handler.
+//
+// NOTE: Experimental
+type OperationResult[T any] struct {
+	result T
+	err    error
+}
+
+// Get returns the final result or error returned by an operation. Only one of result or err should be non-zero/non-nil.
+//
+// NOTE: Experimental
+func (r *OperationResult[T]) Get() (T, error) {
+	return r.result, r.err
+}
+
 // A RegisterableOperation is accepted in [OperationRegistry.Register].
 // Embed [UnimplementedOperation] to implement it.
 type RegisterableOperation interface {
@@ -418,12 +437,14 @@ func StartOperation[I, O any](ctx context.Context, client *ServiceClient, operat
 		return nil, err
 	}
 
-	if resp.Complete != nil {
-		lv, err := resp.Complete.Get()
+	if resp.Sync() != nil {
+		lv, err := resp.Sync().Get()
 		if err != nil {
 			return &ClientStartOperationResponse[O]{
-				Complete: &OperationResult[O]{
-					err: err,
+				Variant: &ClientStartOperationResponseSync[O]{
+					Success: &OperationResult[O]{
+						err: err,
+					},
 				},
 				Links: resp.Links,
 			}, nil
@@ -431,21 +452,25 @@ func StartOperation[I, O any](ctx context.Context, client *ServiceClient, operat
 
 		var o O
 		return &ClientStartOperationResponse[O]{
-			Complete: &OperationResult[O]{
-				result: o,
-				err:    lv.Consume(&o),
+			Variant: &ClientStartOperationResponseSync[O]{
+				Success: &OperationResult[O]{
+					result: o,
+					err:    lv.Consume(&o),
+				},
 			},
 			Links: resp.Links,
 		}, nil
 	}
 
-	handle, err := NewOperationHandle(client, operation, resp.Pending.Token)
+	handle, err := NewOperationHandle(client, operation, resp.Async().Token)
 	if err != nil {
 		return nil, err
 	}
 	return &ClientStartOperationResponse[O]{
-		Pending: handle,
-		Links:   resp.Links,
+		Variant: &ClientStartOperationResponseAsync[O]{
+			Running: handle,
+		},
+		Links: resp.Links,
 	}, nil
 }
 

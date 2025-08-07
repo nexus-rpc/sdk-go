@@ -110,7 +110,7 @@ func TestWaitResult_StillRunning(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	handle := result.Pending
+	handle := result.Async()
 	require.NotNil(t, handle)
 
 	ctx = context.Background()
@@ -125,7 +125,7 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	handle := result.Pending
+	handle := result.Async()
 	require.NotNil(t, handle)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
@@ -145,7 +145,7 @@ func TestWaitResult_RequestTimeout(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "foo", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	handle := result.Pending
+	handle := result.Async()
 	require.NotNil(t, handle)
 
 	timeout := 200 * time.Millisecond

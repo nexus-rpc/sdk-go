@@ -135,16 +135,16 @@ func TestStartOperation(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, numberValidatorOperation, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	val, err := result.Complete.Get()
+	val, err := result.Sync().Get()
 	require.NoError(t, err)
 	require.Equal(t, 3, val)
 
 	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
+	value, err := result.Async().GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
-	handle, err := NewOperationHandle(client, asyncNumberValidatorOperationInstance, result.Pending.Token)
+	handle, err := NewOperationHandle(client, asyncNumberValidatorOperationInstance, result.Async().Token)
 	require.NoError(t, err)
 	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
 	require.NoError(t, err)
@@ -167,9 +167,9 @@ func TestCancelOperation(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{}))
+	require.NoError(t, result.Async().Cancel(ctx, CancelOperationOptions{}))
 	var handlerError *HandlerError
-	require.ErrorAs(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &handlerError)
+	require.ErrorAs(t, result.Async().Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
 	require.Equal(t, "internal server error", handlerError.Cause.Error())
 }
@@ -190,10 +190,10 @@ func TestGetOperationInfo(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
+	info, err := result.Async().GetInfo(ctx, GetOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, &OperationInfo{Token: "3", ID: "3", State: OperationStateRunning}, info)
-	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
+	_, err = result.Async().GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
 	var handlerError *HandlerError
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
@@ -299,8 +299,8 @@ func TestOperationInterceptor(t *testing.T) {
 		Header: authHeader,
 	})
 	require.NoError(t, err)
-	require.ErrorContains(t, result.Pending.Cancel(ctx, CancelOperationOptions{}), "unauthorized")
-	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: authHeader}))
+	require.ErrorContains(t, result.Async().Cancel(ctx, CancelOperationOptions{}), "unauthorized")
+	require.NoError(t, result.Async().Cancel(ctx, CancelOperationOptions{Header: authHeader}))
 	// Assert the logger  only contains calls from successful operations.
 	require.Len(t, logs, 2)
 	require.Contains(t, logs[0], "starting operation async-number-validator")

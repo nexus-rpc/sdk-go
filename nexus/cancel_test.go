@@ -44,7 +44,7 @@ func TestCancel_HandleFromStart(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "f/o/o", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	handle := result.Pending
+	handle := result.Async()
 	require.NotNil(t, handle)
 	err = handle.Cancel(ctx, CancelOperationOptions{
 		Header: Header{"foo": "bar"},

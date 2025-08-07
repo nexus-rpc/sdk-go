@@ -47,7 +47,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 
 	result, err := client.StartOperation(ctx, "escape/me", nil, StartOperationOptions{})
 	require.NoError(t, err)
-	handle := result.Pending
+	handle := result.Async()
 	require.NotNil(t, handle)
 	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{
 		Header: Header{"test": "ok"},

@@ -15,7 +15,7 @@ type MyStruct struct {
 var ctx = context.Background()
 var client *nexus.ServiceClient
 
-func ExampleClient_StartOperation() {
+func ExampleServiceClient_StartOperation() {
 	response, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
 	if err != nil {
 		var handlerError *nexus.HandlerError
@@ -24,8 +24,8 @@ func ExampleClient_StartOperation() {
 		}
 		// most other errors should be returned as *nexus.TransportError
 	}
-	if response.Complete != nil { // operation complete
-		result, opErr := response.Complete.Get()
+	if response.Sync() != nil { // operation complete
+		result, opErr := response.Sync().Get()
 		if opErr != nil {
 			var operationErr *nexus.OperationError
 			if errors.As(err, &operationErr) { // operation failed or canceled
@@ -40,12 +40,12 @@ func ExampleClient_StartOperation() {
 			fmt.Printf("Got response: %v\n", output)
 		}
 	} else { // operation started asynchronously
-		handle := response.Pending
+		handle := response.Async()
 		fmt.Printf("Started asynchronous operation with token: %s\n", handle.Token)
 	}
 }
 
-func ExampleClient_ExecuteOperation() {
+func ExampleServiceClient_ExecuteOperation() {
 	response, err := client.ExecuteOperation(ctx, "operation name", MyStruct{Field: "value"}, nexus.ExecuteOperationOptions{})
 	if err != nil {
 		// handle nexus.OperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded

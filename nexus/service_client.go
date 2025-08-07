@@ -81,28 +81,24 @@ func (c *ServiceClient) StartOperation(
 	if err != nil {
 		return nil, err
 	}
-	return &ClientStartOperationResponse[*LazyValue]{
-		Complete: resp.Complete,
-		Pending:  resp.Pending,
-		Links:    resp.Links,
-	}, nil
-}
+	switch r := resp.Variant.(type) {
+	case *TransportStartOperationResponseSync[*LazyValue]:
+		return &ClientStartOperationResponse[*LazyValue]{
+			Links: resp.Links,
+			Variant: &ClientStartOperationResponseSync[*LazyValue]{
+				Success: r.Success,
+			},
+		}, nil
+	case *TransportStartOperationResponseAsync[*LazyValue]:
+		return &ClientStartOperationResponse[*LazyValue]{
+			Links: resp.Links,
+			Variant: &ClientStartOperationResponseAsync[*LazyValue]{
+				Running: r.Running,
+			},
+		}, nil
+	}
 
-// ClientStartOperationResponse is the response to ServiceClient.StartOperation calls. One and only one of Complete or
-// Pending will be populated.
-//
-// NOTE: Experimental
-type ClientStartOperationResponse[T any] struct {
-	// Set when start completes synchronously.
-	//
-	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
-	// it to free up the underlying connection.
-	Complete *OperationResult[T]
-	// Set when the handler indicates that it started an asynchronous operation.
-	// The attached handle can be used to perform actions such as cancel the operation or get its result.
-	Pending *OperationHandle[T]
-	// Links contain information about the operations done by the handler.
-	Links []Link
+	return nil, HandlerErrorf(HandlerErrorTypeInternal, "transport returned unexpected response type: %T", resp.Variant)
 }
 
 // ExecuteOperation is a helper for starting an operation and waiting for its completion.
@@ -134,14 +130,18 @@ func (c *ServiceClient) ExecuteOperation(
 		Links:          options.Links,
 		Header:         options.Header,
 	}
-	result, err := c.StartOperation(ctx, operation, input, so)
+	response, err := c.StartOperation(ctx, operation, input, so)
 	if err != nil {
 		return nil, err
 	}
-	if result.Complete != nil {
-		return result.Complete.Get()
+	if response.Sync() != nil {
+		return response.Sync().Get()
 	}
-	handle := result.Pending
+
+	if response.Async() == nil {
+		return nil, HandlerErrorf(HandlerErrorTypeInternal, "transport returned unexpected response type: %T", response.Variant)
+	}
+	handle := response.Async()
 	gro := GetOperationResultOptions{
 		Header: options.Header,
 	}
@@ -180,3 +180,67 @@ func (c *ServiceClient) NewOperationHandle(
 		Token:     token,
 	}, nil
 }
+
+// isClientStartOperationResponseVariant must be implemented by each possible [ServiceClient.StartOperation] response
+// variant. This enforces one and only one variant will be set and allows for type checking to get the value of it.
+//
+// NOTE: Experimental
+type isClientStartOperationResponseVariant[T any] interface {
+	isClientStartOperationResponseVariant()
+}
+
+// ClientStartOperationResponse is the response to ServiceClient.StartOperation calls.
+//
+// NOTE: Experimental
+type ClientStartOperationResponse[T any] struct {
+	Variant isClientStartOperationResponseVariant[T]
+	// Links contain information about the operations done by the handler.
+	Links []Link
+}
+
+// Sync is non-nil when start completes synchronously.
+//
+// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+// it to free up the underlying connection.
+//
+// NOTE: Experimental
+func (r *ClientStartOperationResponse[T]) Sync() *OperationResult[T] {
+	if s, ok := r.Variant.(*ClientStartOperationResponseSync[T]); ok {
+		return s.Success
+	}
+	return nil
+}
+
+// Async is non-nil when the handler indicates that it started an asynchronous operation.
+// The attached handle can be used to perform actions such as cancel the operation or get its result.
+//
+// NOTE: Experimental
+func (r *ClientStartOperationResponse[T]) Async() *OperationHandle[T] {
+	if a, ok := r.Variant.(*ClientStartOperationResponseAsync[T]); ok {
+		return a.Running
+	}
+	return nil
+}
+
+// ClientStartOperationResponseSync is the response variant for [ServiceClient.StartOperation] that indicates the
+// operation completed synchronously.
+//
+// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+// it to free up the underlying connection.
+//
+// NOTE: Experimental
+type ClientStartOperationResponseSync[T any] struct {
+	Success *OperationResult[T]
+}
+
+// ClientStartOperationResponseAsync is the response variant for [ServiceClient.StartOperation] that indicates the
+// operation will complete asynchronously. The attached handle can be used to perform actions such as cancel the
+// operation or get its result.
+//
+// NOTE: Experimental
+type ClientStartOperationResponseAsync[T any] struct {
+	Running *OperationHandle[T]
+}
+
+func (*ClientStartOperationResponseSync[T]) isClientStartOperationResponseVariant()  {} //nolint:unused
+func (*ClientStartOperationResponseAsync[T]) isClientStartOperationResponseVariant() {} //nolint:unused

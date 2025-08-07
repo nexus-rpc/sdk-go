@@ -100,22 +100,69 @@ func (e *TransportError) Error() string {
 	return e.Message
 }
 
-// TransportStartOperationResponse is the response to Transport.StartOperation calls. One and only one of Complete or
-// Pending will be populated.
+// isTransportStartOperationResponseVariant must be implemented by each possible [Transport.StartOperation] response
+// variant. This enforces one and only one variant will be set and allows for type checking to get the value of it.
+//
+// NOTE: Experimental
+type isTransportStartOperationResponseVariant[T any] interface {
+	isTransportStartOperationResponseVariant()
+}
+
+// TransportStartOperationResponse is the response to Transport.StartOperation calls.
 //
 // NOTE: Experimental
 type TransportStartOperationResponse[T any] struct {
-	// Set when start completes synchronously.
-	//
-	// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
-	// it to free up the underlying connection.
-	Complete *OperationResult[T]
-	// Set when the handler indicates that it started an asynchronous operation.
-	// The attached handle can be used to perform actions such as cancel the operation or get its result.
-	Pending *OperationHandle[T]
+	Variant isTransportStartOperationResponseVariant[T]
 	// Links contain information about the operations done by the handler.
 	Links []Link
 }
+
+// Sync is non-nil when start completes synchronously.
+//
+// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+// it to free up the underlying connection.
+//
+// NOTE: Experimental
+func (r *TransportStartOperationResponse[T]) Sync() *OperationResult[T] {
+	if s, ok := r.Variant.(*TransportStartOperationResponseSync[T]); ok {
+		return s.Success
+	}
+	return nil
+}
+
+// Async is non-nil when the handler indicates that it started an asynchronous operation.
+// The attached handle can be used to perform actions such as cancel the operation or get its result.
+//
+// NOTE: Experimental
+func (r *TransportStartOperationResponse[T]) Async() *OperationHandle[T] {
+	if a, ok := r.Variant.(*TransportStartOperationResponseAsync[T]); ok {
+		return a.Running
+	}
+	return nil
+}
+
+// TransportStartOperationResponseSync is the response variant for [Transport.StartOperation] that indicates the
+// operation completed synchronously.
+//
+// If T is a [LazyValue], ensure that your consume it or read the underlying content in its entirety and close
+// it to free up the underlying connection.
+//
+// NOTE: Experimental
+type TransportStartOperationResponseSync[T any] struct {
+	Success *OperationResult[T]
+}
+
+// TransportStartOperationResponseAsync is the response variant for [Transport.StartOperation] that indicates the
+// operation will complete asynchronously. The attached handle can be used to perform actions such as cancel the
+// operation or get its result.
+//
+// NOTE: Experimental
+type TransportStartOperationResponseAsync[T any] struct {
+	Running *OperationHandle[T]
+}
+
+func (*TransportStartOperationResponseSync[T]) isTransportStartOperationResponseVariant()  {} //nolint:unused
+func (*TransportStartOperationResponseAsync[T]) isTransportStartOperationResponseVariant() {} //nolint:unused
 
 // TransportGetOperationInfoResponse is the response to Transport.GetOperationInfo calls.
 //
@@ -144,25 +191,6 @@ func (gr *TransportGetOperationResultResponse[T]) GetResult() (T, error) {
 //
 // NOTE: Experimental
 type TransportCancelOperationResponse struct{}
-
-// OperationResult contains the final value or error returned by an operation handler. One and only one of
-// result or err will be populated. Use OperationResult.Get to retrieve the result.
-//
-// In most cases err will be an [OperationError]. Other failures, such as [HandlerError], will be returned by
-// the Transport method called to indicate a failure to communicate with the operation handler.
-//
-// NOTE: Experimental
-type OperationResult[T any] struct {
-	result T
-	err    error
-}
-
-// Get returns the final result or error returned by an operation. Only one of result or err should be non-zero/non-nil.
-//
-// NOTE: Experimental
-func (r *OperationResult[T]) Get() (T, error) {
-	return r.result, r.err
-}
 
 // UnimplementedTransport must be embedded into any [Transport] implementation for future compatibility.
 // It implements all methods on the [Transport] interface, returning unimplemented errors if they are not implemented by
@@ -381,18 +409,21 @@ func (t *HTTPTransport) StartOperation(
 	}
 
 	// Do not close response body here to allow successful result to read it.
+	res := &OperationResult[*LazyValue]{
+		result: &LazyValue{
+			serializer: t.options.Serializer,
+			Reader: &Reader{
+				response.Body,
+				prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
+			},
+		},
+	}
 	if response.StatusCode == http.StatusOK {
 		return &TransportStartOperationResponse[*LazyValue]{
-			Complete: &OperationResult[*LazyValue]{
-				result: &LazyValue{
-					serializer: t.options.Serializer,
-					Reader: &Reader{
-						response.Body,
-						prefixStrippedHTTPHeaderToNexusHeader(response.Header, "content-"),
-					},
-				},
-			},
 			Links: links,
+			Variant: &TransportStartOperationResponseSync[*LazyValue]{
+				Success: res,
+			},
 		}, nil
 	}
 
@@ -424,8 +455,10 @@ func (t *HTTPTransport) StartOperation(
 			transport: t,
 		}
 		return &TransportStartOperationResponse[*LazyValue]{
-			Pending: handle,
-			Links:   links,
+			Links: links,
+			Variant: &TransportStartOperationResponseAsync[*LazyValue]{
+				Running: handle,
+			},
 		}, nil
 	case statusOperationFailed:
 		state, err := t.getUnsuccessfulStateFromHeader(response, body)
