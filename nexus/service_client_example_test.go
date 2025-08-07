@@ -13,7 +13,7 @@ type MyStruct struct {
 }
 
 var ctx = context.Background()
-var client *nexus.Client
+var client *nexus.ServiceClient
 
 func ExampleClient_StartOperation() {
 	response, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
@@ -22,7 +22,7 @@ func ExampleClient_StartOperation() {
 		if errors.As(err, &handlerError) {
 			fmt.Printf("Handler returned an error, type: %s, failure message: %s\n", handlerError.Type, handlerError.Cause.Error())
 		}
-		// most other errors should be returned as *nexus.UnexpectedResponseError
+		// most other errors should be returned as *nexus.TransportError
 	}
 	if response.Complete != nil { // operation complete
 		result, opErr := response.Complete.Get()

@@ -35,7 +35,7 @@ type StartOperationOptions struct {
 //
 // NOTE: Experimental
 type TransportStartOperationOptions struct {
-	// Options passed to [Client.StartOperation].
+	// Options passed to [ServiceClient.StartOperation].
 	ClientOptions StartOperationOptions
 	// Service name. Required.
 	Service string
@@ -43,12 +43,12 @@ type TransportStartOperationOptions struct {
 	Operation string
 }
 
-// ExecuteOperationOptions are options for [Client.ExecuteOperation].
+// ExecuteOperationOptions are options for [ServiceClient.ExecuteOperation].
 //
 // NOTE: Experimental
 type ExecuteOperationOptions struct {
 	// Callback URL to provide to the handle for receiving async operation completions. Optional.
-	// Even though Client.ExecuteOperation waits for operation completion, some applications may want to set this
+	// Even though ServiceClient.ExecuteOperation waits for operation completion, some applications may want to set this
 	// callback as a fallback mechanism.
 	CallbackURL string
 	// Optional header fields set by a client that are required to be attached to the callback request when an
