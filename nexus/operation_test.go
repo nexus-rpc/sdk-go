@@ -37,7 +37,7 @@ func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, op
 	return &HandlerStartOperationResultAsync{OperationID: fmt.Sprintf("%d", input)}, nil
 }
 
-func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (int, error) {
+func (h *asyncNumberValidatorOperation) FetchResult(ctx context.Context, token string, options FetchOperationResultOptions) (int, error) {
 	if token == "0" {
 		return 0, NewOperationFailedError("cannot process 0")
 	}
@@ -51,7 +51,7 @@ func (h *asyncNumberValidatorOperation) Cancel(ctx context.Context, token string
 	return nil
 }
 
-func (h *asyncNumberValidatorOperation) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncNumberValidatorOperation) FetchInfo(ctx context.Context, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	if options.Header.Get("fail") != "" {
 		return nil, fmt.Errorf("intentionally failed")
 	}
@@ -141,12 +141,12 @@ func TestStartOperation(t *testing.T) {
 
 	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
+	value, err := result.Pending.FetchResult(ctx, FetchOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
 	handle, err := NewOperationHandle(client, asyncNumberValidatorOperationInstance, result.Pending.Token)
 	require.NoError(t, err)
-	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	value, err = handle.FetchResult(ctx, FetchOperationResultOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 3, value)
 }
@@ -174,7 +174,7 @@ func TestCancelOperation(t *testing.T) {
 	require.Equal(t, "internal server error", handlerError.Cause.Error())
 }
 
-func TestGetOperationInfo(t *testing.T) {
+func TestFetchOperationInfo(t *testing.T) {
 	registry := NewServiceRegistry()
 	svc := NewService(testService)
 	require.NoError(t, svc.Register(
@@ -190,10 +190,10 @@ func TestGetOperationInfo(t *testing.T) {
 
 	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
+	info, err := result.Pending.FetchInfo(ctx, FetchOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, &OperationInfo{Token: "3", ID: "3", State: OperationStateRunning}, info)
-	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
+	_, err = result.Pending.FetchInfo(ctx, FetchOperationInfoOptions{Header: Header{"fail": "1"}})
 	var handlerError *HandlerError
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
@@ -212,7 +212,7 @@ func (h *authRejectionHandler) Start(ctx context.Context, input NoValue, options
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (NoValue, error) {
+func (h *authRejectionHandler) FetchResult(ctx context.Context, token string, options FetchOperationResultOptions) (NoValue, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
@@ -220,7 +220,7 @@ func (h *authRejectionHandler) Cancel(ctx context.Context, token string, options
 	return HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *authRejectionHandler) FetchInfo(ctx context.Context, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
@@ -246,7 +246,7 @@ func TestHandlerError(t *testing.T) {
 	handle, err := NewOperationHandle(client, &authRejectionHandler{}, "dont-care")
 	require.NoError(t, err)
 
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	_, err = handle.FetchInfo(ctx, FetchOperationInfoOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
@@ -256,7 +256,7 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	_, err = handle.FetchResult(ctx, FetchOperationResultOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
 	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
@@ -329,9 +329,9 @@ func (lo *loggingOperation) Start(ctx context.Context, input any, options StartO
 	return lo.Operation.Start(ctx, input, options)
 }
 
-func (lo *loggingOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (any, error) {
+func (lo *loggingOperation) FetchResult(ctx context.Context, id string, options FetchOperationResultOptions) (any, error) {
 	lo.output(fmt.Sprintf("getting result for operation %s", lo.name))
-	return lo.Operation.GetResult(ctx, id, options)
+	return lo.Operation.FetchResult(ctx, id, options)
 }
 
 func (lo *loggingOperation) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
@@ -339,9 +339,9 @@ func (lo *loggingOperation) Cancel(ctx context.Context, id string, options Cance
 	return lo.Operation.Cancel(ctx, id, options)
 }
 
-func (lo *loggingOperation) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (lo *loggingOperation) FetchInfo(ctx context.Context, id string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	lo.output(fmt.Sprintf("getting info for operation %s", lo.name))
-	return lo.Operation.GetInfo(ctx, id, options)
+	return lo.Operation.FetchInfo(ctx, id, options)
 }
 
 func newLoggingMiddleware(output func(string)) MiddlewareFunc {

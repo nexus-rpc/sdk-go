@@ -19,7 +19,7 @@ func (h *asyncWithInfoHandler) StartOperation(ctx context.Context, service, oper
 	}, nil
 }
 
-func (h *asyncWithInfoHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoHandler) FetchOperationInfo(ctx context.Context, service, operation, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	if service != testService {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "unexpected service: %s", service)
 	}
@@ -49,7 +49,7 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	require.NoError(t, err)
 	handle := result.Pending
 	require.NotNil(t, handle)
-	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{
+	info, err := handle.FetchInfo(ctx, FetchOperationInfoOptions{
 		Header: Header{"test": "ok"},
 	})
 	require.NoError(t, err)
@@ -57,13 +57,13 @@ func TestGetHandlerFromStartInfoHeader(t *testing.T) {
 	require.Equal(t, OperationStateCanceled, info.State)
 }
 
-func TestGetInfoHandleFromClientNoHeader(t *testing.T) {
+func TestFetchInfoHandleFromClientNoHeader(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoHandler{})
 	defer teardown()
 
 	handle, err := client.NewOperationHandle("escape/me", "just-a-token")
 	require.NoError(t, err)
-	info, err := handle.GetInfo(ctx, GetOperationInfoOptions{})
+	info, err := handle.FetchInfo(ctx, FetchOperationInfoOptions{})
 	require.NoError(t, err)
 	require.Equal(t, handle.ID, info.ID)
 	require.Equal(t, OperationStateCanceled, info.State)
@@ -80,7 +80,7 @@ func (h *asyncWithInfoTimeoutHandler) StartOperation(ctx context.Context, servic
 	}, nil
 }
 
-func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (h *asyncWithInfoTimeoutHandler) FetchOperationInfo(ctx context.Context, service, operation, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	deadline, set := ctx.Deadline()
 	if h.expectedTimeout > 0 && !set {
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "expected operation to have timeout set but context has no deadline")
@@ -99,17 +99,17 @@ func (h *asyncWithInfoTimeoutHandler) GetOperationInfo(ctx context.Context, serv
 	}, nil
 }
 
-func TestGetInfo_ContextDeadlinePropagated(t *testing.T) {
+func TestFetchInfo_ContextDeadlinePropagated(t *testing.T) {
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: testTimeout})
 	defer teardown()
 
 	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	_, err = handle.FetchInfo(ctx, FetchOperationInfoOptions{})
 	require.NoError(t, err)
 }
 
-func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
+func TestFetchInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 	timeout := 100 * time.Millisecond
 	// relies on ctx returned here having default testTimeout set greater than expected timeout
 	ctx, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{expectedTimeout: timeout})
@@ -117,16 +117,16 @@ func TestGetInfo_RequestTimeoutHeaderOverridesContextDeadline(t *testing.T) {
 
 	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
+	_, err = handle.FetchInfo(ctx, FetchOperationInfoOptions{Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.NoError(t, err)
 }
 
-func TestGetInfo_TimeoutNotPropagated(t *testing.T) {
+func TestFetchInfo_TimeoutNotPropagated(t *testing.T) {
 	_, client, teardown := setup(t, &asyncWithInfoTimeoutHandler{})
 	defer teardown()
 
 	handle, err := client.NewOperationHandle("foo", "timeout")
 	require.NoError(t, err)
-	_, err = handle.GetInfo(context.Background(), GetOperationInfoOptions{})
+	_, err = handle.FetchInfo(context.Background(), FetchOperationInfoOptions{})
 	require.NoError(t, err)
 }

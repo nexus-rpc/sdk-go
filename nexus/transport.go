@@ -44,17 +44,17 @@ type Transport interface {
 	// NOTE: Experimental
 	StartOperation(ctx context.Context, input any, options TransportStartOperationOptions) (*TransportStartOperationResponse[*LazyValue], error)
 
-	// GetOperationInfo returns information about a specific operation.
+	// FetchOperationInfo returns information about a specific operation.
 	//
 	// NOTE: Experimental
-	GetOperationInfo(ctx context.Context, options TransportGetOperationInfoOptions) (*TransportGetOperationInfoResponse, error)
+	FetchOperationInfo(ctx context.Context, options TransportFetchOperationInfoOptions) (*TransportFetchOperationInfoResponse, error)
 
-	// GetOperationResult gets the result of an operation, issuing a network request to the service handler.
+	// FetchOperationResult gets the result of an operation, issuing a network request to the service handler.
 	//
-	// By default, GetResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
+	// By default, FetchResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
 	// operation has not yet completed.
 	//
-	// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing
+	// Callers may set FetchOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing
 	// the transport to long poll for the result issuing one or more requests until the provided wait period
 	// exceeds, in which case (nil, [ErrOperationStillRunning]) is returned.
 	//
@@ -67,7 +67,7 @@ type Transport interface {
 	// ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 	//
 	// NOTE: Experimental
-	GetOperationResult(ctx context.Context, options TransportGetOperationResultOptions) (*TransportGetOperationResultResponse[*LazyValue], error)
+	FetchOperationResult(ctx context.Context, options TransportFetchOperationResultOptions) (*TransportFetchOperationResultResponse[*LazyValue], error)
 
 	// CancelOperation requests to cancel an asynchronous operation.
 	//
@@ -117,26 +117,26 @@ type TransportStartOperationResponse[T any] struct {
 	Links []Link
 }
 
-// TransportGetOperationInfoResponse is the response to Transport.GetOperationInfo calls.
+// TransportFetchOperationInfoResponse is the response to Transport.FetchOperationInfo calls.
 //
 // NOTE: Experimental
-type TransportGetOperationInfoResponse struct {
+type TransportFetchOperationInfoResponse struct {
 	Info *OperationInfo
 }
 
-// TransportGetOperationResultResponse is the response to Transport.GetOperationResult calls.
-// Use TransportGetOperationResultResponse.GetResult to retrieve the final value or error returned by the operation.
+// TransportFetchOperationResultResponse is the response to Transport.FetchOperationResult calls.
+// Use TransportFetchOperationResultResponse.Result to retrieve the final value or error returned by the operation.
 //
 // NOTE: Experimental
-type TransportGetOperationResultResponse[T any] struct {
+type TransportFetchOperationResultResponse[T any] struct {
 	result *OperationResult[T]
 	Links  []Link
 }
 
-// GetResult returns the final result or error returned by the operation.
+// Result returns the final result or error returned by the operation.
 //
 // NOTE: Experimental
-func (gr *TransportGetOperationResultResponse[T]) GetResult() (T, error) {
+func (gr *TransportFetchOperationResultResponse[T]) Result() (T, error) {
 	return gr.result.Get()
 }
 
@@ -177,13 +177,13 @@ func (u UnimplementedTransport) StartOperation(_ context.Context, _ any, _ Trans
 	}
 }
 
-func (u UnimplementedTransport) GetOperationInfo(_ context.Context, _ TransportGetOperationInfoOptions) (*TransportGetOperationInfoResponse, error) {
+func (u UnimplementedTransport) FetchOperationInfo(_ context.Context, _ TransportFetchOperationInfoOptions) (*TransportFetchOperationInfoResponse, error) {
 	return nil, &TransportError{
 		Message: "not implemented",
 	}
 }
 
-func (u UnimplementedTransport) GetOperationResult(_ context.Context, _ TransportGetOperationResultOptions) (*TransportGetOperationResultResponse[*LazyValue], error) {
+func (u UnimplementedTransport) FetchOperationResult(_ context.Context, _ TransportFetchOperationResultOptions) (*TransportFetchOperationResultResponse[*LazyValue], error) {
 	return nil, &TransportError{
 		Message: "not implemented",
 	}
@@ -204,7 +204,7 @@ func (u UnimplementedTransport) Close() error {
 // User-Agent header set on HTTP requests.
 const userAgent = "Nexus-go-sdk/" + version
 const headerUserAgent = "User-Agent"
-const getResultContextPadding = time.Second * 5
+const fetchResultContextPadding = time.Second * 5
 
 var errOperationWaitTimeout = errors.New("operation wait timeout")
 
@@ -448,10 +448,10 @@ func (t *HTTPTransport) StartOperation(
 	}
 }
 
-func (t *HTTPTransport) GetOperationInfo(
+func (t *HTTPTransport) FetchOperationInfo(
 	ctx context.Context,
-	options TransportGetOperationInfoOptions,
-) (*TransportGetOperationInfoResponse, error) {
+	options TransportFetchOperationInfoOptions,
+) (*TransportFetchOperationInfoResponse, error) {
 	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation))
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
@@ -482,15 +482,15 @@ func (t *HTTPTransport) GetOperationInfo(
 		return nil, err
 	}
 
-	return &TransportGetOperationInfoResponse{
+	return &TransportFetchOperationInfoResponse{
 		Info: info,
 	}, nil
 }
 
-func (t *HTTPTransport) GetOperationResult(
+func (t *HTTPTransport) FetchOperationResult(
 	ctx context.Context,
-	options TransportGetOperationResultOptions,
-) (*TransportGetOperationResultResponse[*LazyValue], error) {
+	options TransportFetchOperationResultOptions,
+) (*TransportFetchOperationResultResponse[*LazyValue], error) {
 	u := t.serviceBaseURL.JoinPath(url.PathEscape(options.Service), url.PathEscape(options.Operation), "result")
 	request, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
@@ -508,7 +508,7 @@ func (t *HTTPTransport) GetOperationResult(
 			if deadline, set := ctx.Deadline(); set {
 				// Ensure we don't wait longer than the deadline but give some buffer to prevent racing between wait and
 				// context deadline.
-				wait = min(wait, time.Until(deadline)+getResultContextPadding)
+				wait = min(wait, time.Until(deadline)+fetchResultContextPadding)
 			}
 
 			q := request.URL.Query()
@@ -520,7 +520,7 @@ func (t *HTTPTransport) GetOperationResult(
 			request.URL.RawQuery = ""
 		}
 
-		response, err := t.sendGetOperationResultRequest(request)
+		response, err := t.sendFetchOperationResultRequest(request)
 		if err != nil {
 			if wait > 0 && errors.Is(err, errOperationWaitTimeout) {
 				// TODO: Backoff a bit in case the server is continually returning timeouts due to some LB configuration
@@ -534,7 +534,7 @@ func (t *HTTPTransport) GetOperationResult(
 		if err != nil {
 			return nil, err
 		}
-		return &TransportGetOperationResultResponse[*LazyValue]{
+		return &TransportFetchOperationResultResponse[*LazyValue]{
 			result: &OperationResult[*LazyValue]{
 				result: &LazyValue{
 					serializer: t.options.Serializer,
@@ -549,7 +549,7 @@ func (t *HTTPTransport) GetOperationResult(
 	}
 }
 
-func (t *HTTPTransport) sendGetOperationResultRequest(request *http.Request) (*http.Response, error) {
+func (t *HTTPTransport) sendFetchOperationResultRequest(request *http.Request) (*http.Response, error) {
 	response, err := t.options.HTTPCaller(request)
 	if err != nil {
 		return nil, err

@@ -69,14 +69,14 @@ type ExecuteOperationOptions struct {
 	Header Header
 	// Duration to wait for operation completion.
 	//
-	// ⚠ NOTE: unlike GetOperationResultOptions.Wait, zero and negative values are considered effectively infinite.
+	// ⚠ NOTE: unlike FetchOperationResultOptions.Wait, zero and negative values are considered effectively infinite.
 	Wait time.Duration
 }
 
-// GetOperationResultOptions are options for the GetOperationResult client and server APIs.
+// FetchOperationResultOptions are options for the FetchOperationResult client and server APIs.
 //
 // NOTE: Experimental
-type GetOperationResultOptions struct {
+type FetchOperationResultOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
@@ -88,12 +88,12 @@ type GetOperationResultOptions struct {
 	Wait time.Duration
 }
 
-// TransportGetOperationResultOptions are options for [Transport.GetOperationResult].
+// TransportFetchOperationResultOptions are options for [Transport.FetchOperationResult].
 //
 // NOTE: Experimental
-type TransportGetOperationResultOptions struct {
-	// Options passed to [OperationHandle.GetResult].
-	ClientOptions GetOperationResultOptions
+type TransportFetchOperationResultOptions struct {
+	// Options passed to [OperationHandle.FetchResult].
+	ClientOptions FetchOperationResultOptions
 	// Service name. Required.
 	Service string
 	// Operation name. Required.
@@ -102,10 +102,10 @@ type TransportGetOperationResultOptions struct {
 	Token string
 }
 
-// GetOperationInfoOptions are options for the GetOperationInfo client and server APIs.
+// FetchOperationInfoOptions are options for the FetchOperationInfo client and server APIs.
 //
 // NOTE: Experimental
-type GetOperationInfoOptions struct {
+type FetchOperationInfoOptions struct {
 	// Header contains the request header fields either received by the server or to be sent by the client.
 	//
 	// Header will always be non empty in server methods and can be optionally set in the client API.
@@ -114,12 +114,12 @@ type GetOperationInfoOptions struct {
 	Header Header
 }
 
-// TransportGetOperationInfoOptions are options for [Transport.GetOperationInfo].
+// TransportFetchOperationInfoOptions are options for [Transport.FetchOperationInfo].
 //
 // NOTE: Experimental
-type TransportGetOperationInfoOptions struct {
-	// Options passed to [OperationHandle.GetInfo].
-	ClientOptions GetOperationInfoOptions
+type TransportFetchOperationInfoOptions struct {
+	// Options passed to [OperationHandle.FetchInfo].
+	ClientOptions FetchOperationInfoOptions
 	// Service name. Required.
 	Service string
 	// Operation name. Required.

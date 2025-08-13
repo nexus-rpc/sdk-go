@@ -142,7 +142,7 @@ func (c *ServiceClient) ExecuteOperation(
 		return result.Complete.Get()
 	}
 	handle := result.Pending
-	gro := GetOperationResultOptions{
+	gro := FetchOperationResultOptions{
 		Header: options.Header,
 	}
 	if options.Wait <= 0 {
@@ -150,7 +150,7 @@ func (c *ServiceClient) ExecuteOperation(
 	} else {
 		gro.Wait = options.Wait
 	}
-	return handle.GetResult(ctx, gro)
+	return handle.FetchResult(ctx, gro)
 }
 
 // NewOperationHandle gets a handle to an asynchronous operation by name and token.

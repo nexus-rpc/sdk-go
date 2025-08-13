@@ -21,47 +21,47 @@ type OperationHandle[T any] struct {
 	transport Transport
 }
 
-// GetInfo gets operation information, issuing a network request to the service handler.
+// FetchInfo gets operation information, issuing a network request to the service handler.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetInfo(ctx context.Context, options GetOperationInfoOptions) (*OperationInfo, error) {
-	to := TransportGetOperationInfoOptions{
+func (h *OperationHandle[T]) FetchInfo(ctx context.Context, options FetchOperationInfoOptions) (*OperationInfo, error) {
+	to := TransportFetchOperationInfoOptions{
 		ClientOptions: options,
 		Service:       h.Service,
 		Operation:     h.Operation,
 		Token:         h.Token,
 	}
-	resp, err := h.transport.GetOperationInfo(ctx, to)
+	resp, err := h.transport.FetchOperationInfo(ctx, to)
 	if err != nil {
 		return nil, err
 	}
 	return resp.Info, nil
 }
 
-// GetResult gets the result of an operation, issuing a network request to the service handler.
+// FetchResult gets the result of an operation, issuing a network request to the service handler.
 //
-// This is a convenience method on top of GetResultWithDetails for callers who do not wish to inspect metadata.
+// This is a convenience method on top of FetchResultWithDetails for callers who do not wish to inspect metadata.
 //
 // The returned error may be an [OperationError] returned by the handler, indicating the operation completed
 // unsuccessfully, a [HandlerError] indicating a failure to communicate with the handler, or any other error.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperationResultOptions) (T, error) {
+func (h *OperationHandle[T]) FetchResult(ctx context.Context, options FetchOperationResultOptions) (T, error) {
 	var result T
-	res, err := h.GetResultWithDetails(ctx, options)
+	res, err := h.FetchResultWithDetails(ctx, options)
 	if err != nil {
 		return result, err
 	}
 	return res.Get()
 }
 
-// GetResultWithDetails gets the result of an operation and associated metadata, issuing a network request to the service
+// FetchResultWithDetails gets the result of an operation and associated metadata, issuing a network request to the service
 // handler.
 //
-// By default, GetOperationResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
+// By default, FetchOperationResult returns (nil, [ErrOperationStillRunning]) immediately after issuing a call if the
 // operation has not yet completed.
 //
-// Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client
+// Callers may set FetchOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client
 // to long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
 // [ErrOperationStillRunning]) is returned.
 //
@@ -79,18 +79,18 @@ func (h *OperationHandle[T]) GetResult(ctx context.Context, options GetOperation
 // ⚠️ If a [LazyValue] is returned (as indicated by T), it must be consumed to free up the underlying connection.
 //
 // NOTE: Experimental
-func (h *OperationHandle[T]) GetResultWithDetails(ctx context.Context, options GetOperationResultOptions) (*OperationHandleResultWithDetails[T], error) {
-	to := TransportGetOperationResultOptions{
+func (h *OperationHandle[T]) FetchResultWithDetails(ctx context.Context, options FetchOperationResultOptions) (*OperationHandleResultWithDetails[T], error) {
+	to := TransportFetchOperationResultOptions{
 		ClientOptions: options,
 		Service:       h.Service,
 		Operation:     h.Operation,
 		Token:         h.Token,
 	}
-	resp, err := h.transport.GetOperationResult(ctx, to)
+	resp, err := h.transport.FetchOperationResult(ctx, to)
 	if err != nil {
 		return nil, err
 	}
-	lv, err := resp.GetResult()
+	lv, err := resp.Result()
 	if err != nil {
 		return &OperationHandleResultWithDetails[T]{
 			result: &OperationResult[T]{

@@ -9,7 +9,7 @@ import (
 )
 
 type request struct {
-	options   GetOperationResultOptions
+	options   FetchOperationResultOptions
 	operation string
 	token     string
 	deadline  time.Time
@@ -33,14 +33,14 @@ func (h *asyncWithResultHandler) StartOperation(ctx context.Context, service, op
 	}, nil
 }
 
-func (h *asyncWithResultHandler) getResult() (any, error) {
+func (h *asyncWithResultHandler) fetchResult() (any, error) {
 	if h.resultError != nil {
 		return nil, h.resultError
 	}
 	return []byte("body"), nil
 }
 
-func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error) {
+func (h *asyncWithResultHandler) FetchOperationResult(ctx context.Context, service, operation, token string, options FetchOperationResultOptions) (any, error) {
 	req := request{options: options, operation: operation, token: token}
 	deadline, set := ctx.Deadline()
 	if set {
@@ -61,7 +61,7 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service
 		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "'Content-Type' header set on request")
 	}
 	if options.Wait == 0 {
-		return h.getResult()
+		return h.fetchResult()
 	}
 	if options.Wait > 0 {
 		deadline, set := ctx.Deadline()
@@ -69,7 +69,7 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service
 			return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "context deadline unset")
 		}
 		timeout := time.Until(deadline)
-		diff := (getResultMaxTimeout - timeout).Abs()
+		diff := (fetchResultMaxTimeout - timeout).Abs()
 		if diff > time.Millisecond*200 {
 			return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "context deadline invalid, timeout: %v", timeout)
 		}
@@ -80,7 +80,7 @@ func (h *asyncWithResultHandler) GetOperationResult(ctx context.Context, service
 		<-ctx.Done()
 		return nil, ErrOperationStillRunning
 	}
-	return h.getResult()
+	return h.fetchResult()
 }
 
 func TestWaitResult(t *testing.T) {
@@ -98,8 +98,8 @@ func TestWaitResult(t *testing.T) {
 	require.Equal(t, []byte("body"), body)
 
 	require.Equal(t, 2, len(handler.requests))
-	require.InDelta(t, testTimeout+getResultContextPadding, handler.requests[0].options.Wait, float64(time.Millisecond*50))
-	require.InDelta(t, testTimeout+getResultContextPadding-getResultMaxTimeout, handler.requests[1].options.Wait, float64(time.Millisecond*50))
+	require.InDelta(t, testTimeout+fetchResultContextPadding, handler.requests[0].options.Wait, float64(time.Millisecond*50))
+	require.InDelta(t, testTimeout+fetchResultContextPadding-fetchResultMaxTimeout, handler.requests[1].options.Wait, float64(time.Millisecond*50))
 	require.Equal(t, "f/o/o", handler.requests[0].operation)
 	require.Equal(t, "async", handler.requests[0].token)
 }
@@ -114,7 +114,7 @@ func TestWaitResult_StillRunning(t *testing.T) {
 	require.NotNil(t, handle)
 
 	ctx = context.Background()
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Millisecond * 200})
+	_, err = handle.FetchResult(ctx, FetchOperationResultOptions{Wait: time.Millisecond * 200})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 }
 
@@ -131,7 +131,7 @@ func TestWaitResult_DeadlineExceeded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second})
+	_, err = handle.FetchResult(ctx, FetchOperationResultOptions{Wait: time.Second})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	// Allow up to 10 ms delay to account for slow CI.
 	// This test is inherently flaky, and should be rewritten.
@@ -150,7 +150,7 @@ func TestWaitResult_RequestTimeout(t *testing.T) {
 
 	timeout := 200 * time.Millisecond
 	deadline := time.Now().Add(timeout)
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
+	_, err = handle.FetchResult(ctx, FetchOperationResultOptions{Wait: time.Second, Header: Header{HeaderRequestTimeout: formatDuration(timeout)}})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.WithinDuration(t, deadline, handler.requests[0].deadline, 1*time.Millisecond)
 }
@@ -162,7 +162,7 @@ func TestPeekResult_StillRunning(t *testing.T) {
 
 	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
-	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
+	response, err := handle.FetchResult(ctx, FetchOperationResultOptions{})
 	require.ErrorIs(t, err, ErrOperationStillRunning)
 	require.Nil(t, response)
 	require.Equal(t, 1, len(handler.requests))
@@ -175,7 +175,7 @@ func TestPeekResult_Success(t *testing.T) {
 
 	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
-	response, err := handle.GetResult(ctx, GetOperationResultOptions{})
+	response, err := handle.FetchResult(ctx, FetchOperationResultOptions{})
 	require.NoError(t, err)
 	var body []byte
 	err = response.Consume(&body)
@@ -189,7 +189,7 @@ func TestPeekResult_Canceled(t *testing.T) {
 
 	handle, err := client.NewOperationHandle("foo", "a/sync")
 	require.NoError(t, err)
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
+	_, err = handle.FetchResult(ctx, FetchOperationResultOptions{})
 	var OperationError *OperationError
 	require.ErrorAs(t, err, &OperationError)
 	require.Equal(t, OperationStateCanceled, OperationError.State)
