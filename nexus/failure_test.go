@@ -52,7 +52,7 @@ func TestFailureConverter_HandlerError(t *testing.T) {
 	failure, err := defaultFailureConverter.ErrorToFailure(he)
 	require.NoError(t, err)
 	// Verify that the original failure is retained.
-	he.originalFailure = &failure
+	he.OriginalFailure = &failure
 	actual, err := defaultFailureConverter.FailureToError(failure)
 	require.NoError(t, err)
 	require.Equal(t, he, actual)
@@ -68,6 +68,26 @@ func TestFailureConverter_HandlerError(t *testing.T) {
 	require.Equal(t, he, actual)
 }
 
+func TestFailureConverter_HandlerErrorRetryBehavior(t *testing.T) {
+	he := HandlerErrorf(HandlerErrorTypeBadRequest, "foo")
+	he.StackTrace = "stack"
+	he.RetryBehavior = HandlerErrorRetryBehaviorRetryable
+	failure, err := defaultFailureConverter.ErrorToFailure(he)
+	require.NoError(t, err)
+	// Verify that the original failure is retained.
+	he.OriginalFailure = &failure
+	actual, err := defaultFailureConverter.FailureToError(failure)
+	require.NoError(t, err)
+	require.Equal(t, he, actual)
+
+	// Serialize again and verify the original failure is used.
+	failure, err = defaultFailureConverter.ErrorToFailure(he)
+	require.NoError(t, err)
+	actual, err = defaultFailureConverter.FailureToError(failure)
+	require.NoError(t, err)
+	require.Equal(t, he, actual)
+}
+
 func TestFailureConverter_OperationError(t *testing.T) {
 	cause := &FailureError{Failure: Failure{Message: "cause"}}
 	oe := NewOperationCanceledError("foo")
@@ -76,7 +96,7 @@ func TestFailureConverter_OperationError(t *testing.T) {
 	failure, err := defaultFailureConverter.ErrorToFailure(oe)
 	require.NoError(t, err)
 	// Verify that the original failure is retained.
-	oe.originalFailure = &failure
+	oe.OriginalFailure = &failure
 	actual, err := defaultFailureConverter.FailureToError(failure)
 	require.NoError(t, err)
 	require.Equal(t, oe, actual)

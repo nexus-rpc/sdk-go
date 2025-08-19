@@ -46,7 +46,7 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 	actual, err := defaultFailureConverter.FailureToError(failure)
 	require.NoError(t, err)
 	// Assign the original failure object before performing the comparison.
-	he.originalFailure = &failure
+	he.OriginalFailure = &failure
 	require.Equal(t, he, actual)
 }
 
@@ -69,6 +69,6 @@ func TestWriteFailure_OperationError(t *testing.T) {
 	actual, err := defaultFailureConverter.FailureToError(failure)
 	require.NoError(t, err)
 	// Assign the original failure object before performing the comparison.
-	oe.originalFailure = &failure
+	oe.OriginalFailure = &failure
 	require.Equal(t, oe, actual)
 }

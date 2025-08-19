@@ -58,18 +58,18 @@ type FailureConverter interface {
 type knownErrorFailureConverter struct{}
 
 type serializedHandlerError struct {
-	Type      string `json:"type,omitempty"`
-	Retryable string `json:"retryable,omitempty"`
+	Type              string `json:"type,omitempty"`
+	RetryableOverride *bool  `json:"retryableOverride,omitempty"`
 }
 
 func (e serializedHandlerError) RetryBehavior() HandlerErrorRetryBehavior {
-	switch e.Retryable {
-	case "true":
-		return HandlerErrorRetryBehaviorRetryable
-	case "false":
-		return HandlerErrorRetryBehaviorNonRetryable
-	default:
+	if e.RetryableOverride == nil {
 		return HandlerErrorRetryBehaviorUnspecified
+	}
+	if *e.RetryableOverride {
+		return HandlerErrorRetryBehaviorRetryable
+	} else {
+		return HandlerErrorRetryBehaviorNonRetryable
 	}
 }
 
@@ -96,16 +96,16 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 		}
 		return f, nil
 	case *HandlerError:
-		if typedErr.originalFailure != nil {
-			return *typedErr.originalFailure, nil
+		if typedErr.OriginalFailure != nil {
+			return *typedErr.OriginalFailure, nil
 		}
 		// Temporary workaround for compatibility with old SDKs that don't support handler error messages.
 		if typedErr.Message == "" && typedErr.Cause != nil {
 			return e.ErrorToFailure(typedErr.Cause)
 		}
 		data := serializedHandlerError{
-			Type:      string(typedErr.Type),
-			Retryable: typedErr.retryBehaviorAsString(),
+			Type:              string(typedErr.Type),
+			RetryableOverride: typedErr.retryBehaviorAsOptionalBool(),
 		}
 		var details []byte
 		details, err := json.Marshal(data)
@@ -131,8 +131,8 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 
 		return f, nil
 	case *OperationError:
-		if typedErr.originalFailure != nil {
-			return *typedErr.originalFailure, nil
+		if typedErr.OriginalFailure != nil {
+			return *typedErr.OriginalFailure, nil
 		}
 		// Temporary workaround for compatibility with old SDKs that don't support operation error messages.
 		if typedErr.Message == "" && typedErr.Cause != nil {
@@ -184,7 +184,7 @@ func (e knownErrorFailureConverter) FailureToError(f Failure) (error, error) {
 				StackTrace:      f.StackTrace,
 				Type:            HandlerErrorType(se.Type),
 				RetryBehavior:   se.RetryBehavior(),
-				originalFailure: &f,
+				OriginalFailure: &f,
 			}
 			if f.Cause != nil {
 				he.Cause, err = e.FailureToError(*f.Cause)
@@ -203,7 +203,7 @@ func (e knownErrorFailureConverter) FailureToError(f Failure) (error, error) {
 				Message:         f.Message,
 				StackTrace:      f.StackTrace,
 				State:           OperationState(se.State),
-				originalFailure: &f,
+				OriginalFailure: &f,
 			}
 			if f.Cause != nil {
 				oe.Cause, err = e.FailureToError(*f.Cause)

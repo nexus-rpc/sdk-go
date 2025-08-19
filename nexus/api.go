@@ -71,7 +71,7 @@ type OperationError struct {
 	// The underlying cause for this error.
 	Cause error
 	// Set if this error is constructed from a failure object.
-	originalFailure *Failure
+	OriginalFailure *Failure
 }
 
 // UnsuccessfulOperationError represents "failed" and "canceled" operation results.
@@ -229,7 +229,7 @@ type HandlerError struct {
 	// RetryBehavior of this error. If not specified, retry behavior is determined from the error type.
 	RetryBehavior HandlerErrorRetryBehavior
 	// Set if this error is constructed from a failure object.
-	originalFailure *Failure
+	OriginalFailure *Failure
 }
 
 // HandlerErrorf creates a [HandlerError] with the given type, using [fmt.Sprintf] to construct the message.
@@ -266,14 +266,16 @@ func (e *HandlerError) Retryable() bool {
 	}
 }
 
-func (e *HandlerError) retryBehaviorAsString() string {
+func (e *HandlerError) retryBehaviorAsOptionalBool() *bool {
 	switch e.RetryBehavior {
 	case HandlerErrorRetryBehaviorRetryable:
-		return "true"
+		ret := true
+		return &ret
 	case HandlerErrorRetryBehaviorNonRetryable:
-		return "false"
+		ret := false
+		return &ret
 	}
-	return ""
+	return nil
 }
 
 // Error implements the error interface.
