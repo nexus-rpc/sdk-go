@@ -84,13 +84,13 @@ type OperationHandler[I, O any] interface {
 	// started. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
 	Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error)
-	// GetResult handles requests to get the result of an asynchronous operation. Return non error result to respond
+	// FetchResult handles requests to get the result of an asynchronous operation. Return non error result to respond
 	// successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous operation is
 	// still running. Return an [OperationError] to indicate that an operation completed as failed or
 	// canceled.
 	//
-	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
-	// Long poll requests have a server side timeout, configurable via [HandlerOptions.GetResultTimeout], and exposed
+	// When [FetchOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
+	// Long poll requests have a server side timeout, configurable via [HandlerOptions.FetchResultTimeout], and exposed
 	// via context deadline. The context deadline is decoupled from the application level Wait duration.
 	//
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
@@ -98,11 +98,11 @@ type OperationHandler[I, O any] interface {
 	// [ErrOperationStillRunning] when that context expires as shown in the [Handler] example.
 	//
 	// NOTE: Experimental
-	GetResult(ctx context.Context, token string, options GetOperationResultOptions) (O, error)
-	// GetInfo handles requests to get information about an asynchronous operation.
+	FetchResult(ctx context.Context, token string, options FetchOperationResultOptions) (O, error)
+	// FetchInfo handles requests to get information about an asynchronous operation.
 	//
 	// NOTE: Experimental
-	GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error)
+	FetchInfo(ctx context.Context, token string, options FetchOperationInfoOptions) (*OperationInfo, error)
 	// Cancel handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
@@ -304,21 +304,21 @@ func (r *registryHandler) CancelOperation(ctx context.Context, service, operatio
 }
 
 // operationHandlerInfo implements Handler.
-func (r *registryHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+func (r *registryHandler) FetchOperationInfo(ctx context.Context, service, operation, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	h, err := r.operationHandler(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return h.GetInfo(ctx, token, options)
+	return h.FetchInfo(ctx, token, options)
 }
 
 // operationHandlerResult implements Handler.
-func (r *registryHandler) GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error) {
+func (r *registryHandler) FetchOperationResult(ctx context.Context, service, operation, token string, options FetchOperationResultOptions) (any, error) {
 	h, err := r.operationHandler(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return h.GetResult(ctx, token, options)
+	return h.FetchResult(ctx, token, options)
 }
 
 // StartOperation implements Handler.
@@ -362,10 +362,10 @@ func (r *rootOperationHandler) Cancel(ctx context.Context, token string, options
 	return values[0].Interface().(error)
 }
 
-func (r *rootOperationHandler) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	// NOTE: We could avoid reflection here if we put the GetInfo method on RegisterableOperation but it doesn't
+func (r *rootOperationHandler) FetchInfo(ctx context.Context, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
+	// NOTE: We could avoid reflection here if we put the FetchInfo method on RegisterableOperation but it doesn't
 	// seem worth it since we need reflection for the generic methods.
-	m, _ := reflect.TypeOf(r.h).MethodByName("GetInfo")
+	m, _ := reflect.TypeOf(r.h).MethodByName("FetchInfo")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(r.h), reflect.ValueOf(ctx), reflect.ValueOf(token), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
@@ -374,8 +374,8 @@ func (r *rootOperationHandler) GetInfo(ctx context.Context, token string, option
 	return ret.(*OperationInfo), nil
 }
 
-func (r *rootOperationHandler) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (any, error) {
-	m, _ := reflect.TypeOf(r.h).MethodByName("GetResult")
+func (r *rootOperationHandler) FetchResult(ctx context.Context, token string, options FetchOperationResultOptions) (any, error) {
+	m, _ := reflect.TypeOf(r.h).MethodByName("FetchResult")
 	values := m.Func.Call([]reflect.Value{reflect.ValueOf(r.h), reflect.ValueOf(ctx), reflect.ValueOf(token), reflect.ValueOf(options)})
 	if !values[1].IsNil() {
 		return nil, values[1].Interface().(error)
@@ -450,7 +450,7 @@ func StartOperation[I, O any](ctx context.Context, client *ServiceClient, operat
 }
 
 // NewOperationHandle is the type safe version of [ServiceClient.NewOperationHandle].
-// The [OperationHandle.GetResult] method will return an output of type O.
+// The [OperationHandle.FetchResult] method will return an output of type O.
 func NewOperationHandle[I, O any](client *ServiceClient, operation OperationReference[I, O], token string) (*OperationHandle[O], error) {
 	if token == "" {
 		return nil, errEmptyOperationToken

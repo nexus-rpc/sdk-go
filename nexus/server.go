@@ -200,13 +200,13 @@ type Handler interface {
 	// operation was started. Return an [OperationError] to indicate that an operation completed as
 	// failed or canceled.
 	StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error)
-	// GetOperationResult handles requests to get the result of an asynchronous operation. Return non error result
+	// FetchOperationResult handles requests to get the result of an asynchronous operation. Return non error result
 	// to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous
 	// operation is still running. Return an [OperationError] to indicate that an operation completed as
 	// failed or canceled.
 	//
-	// When [GetOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
-	// Long poll requests have a server side timeout, configurable via [HandlerOptions.GetResultTimeout], and exposed
+	// When [FetchOperationResultOptions.Wait] is greater than zero, this request should be treated as a long poll.
+	// Long poll requests have a server side timeout, configurable via [HandlerOptions.FetchResultTimeout], and exposed
 	// via context deadline. The context deadline is decoupled from the application level Wait duration.
 	//
 	// It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
@@ -214,11 +214,11 @@ type Handler interface {
 	// [ErrOperationStillRunning] when that context expires as shown in the example.
 	//
 	// NOTE: Experimental
-	GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error)
-	// GetOperationInfo handles requests to get information about an asynchronous operation.
+	FetchOperationResult(ctx context.Context, service, operation, token string, options FetchOperationResultOptions) (any, error)
+	// FetchOperationInfo handles requests to get information about an asynchronous operation.
 	//
 	// NOTE: Experimental
-	GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error)
+	FetchOperationInfo(ctx context.Context, service, operation, token string, options FetchOperationInfoOptions) (*OperationInfo, error)
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
@@ -397,11 +397,11 @@ func (h *httpHandler) startOperation(service, operation string, writer http.Resp
 	}
 }
 
-func (h *httpHandler) getOperationResult(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
-	options := GetOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
+func (h *httpHandler) fetchOperationResult(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
+	options := FetchOperationResultOptions{Header: httpHeaderToNexusHeader(request.Header)}
 	ctx := request.Context()
 	// If both Request-Timeout http header and wait query string are set, the minimum of the Request-Timeout header
-	// and h.options.GetResultTimeout will be used.
+	// and h.options.FetchResultTimeout will be used.
 	requestTimeout, ok := h.parseRequestTimeoutHeader(writer, request)
 	if !ok {
 		return
@@ -416,9 +416,9 @@ func (h *httpHandler) getOperationResult(service, operation, token string, write
 		}
 		options.Wait = waitDuration
 		if requestTimeout > 0 {
-			requestTimeout = min(requestTimeout, h.options.GetResultTimeout)
+			requestTimeout = min(requestTimeout, h.options.FetchResultTimeout)
 		} else {
-			requestTimeout = h.options.GetResultTimeout
+			requestTimeout = h.options.FetchResultTimeout
 		}
 	}
 	if requestTimeout > 0 {
@@ -432,7 +432,7 @@ func (h *httpHandler) getOperationResult(service, operation, token string, write
 		Operation: operation,
 		Header:    options.Header,
 	})
-	result, err := h.options.Handler.GetOperationResult(ctx, service, operation, token, options)
+	result, err := h.options.Handler.FetchOperationResult(ctx, service, operation, token, options)
 	if err != nil {
 		if options.Wait > 0 && ctx.Err() != nil {
 			writer.WriteHeader(http.StatusRequestTimeout)
@@ -446,8 +446,8 @@ func (h *httpHandler) getOperationResult(service, operation, token string, write
 	h.writeResult(writer, result)
 }
 
-func (h *httpHandler) getOperationInfo(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
-	options := GetOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
+func (h *httpHandler) fetchOperationInfo(service, operation, token string, writer http.ResponseWriter, request *http.Request) {
+	options := FetchOperationInfoOptions{Header: httpHeaderToNexusHeader(request.Header)}
 
 	ctx, cancel, ok := h.contextWithTimeoutFromHTTPRequest(writer, request)
 	if !ok {
@@ -460,7 +460,7 @@ func (h *httpHandler) getOperationInfo(service, operation, token string, writer 
 		Operation: operation,
 		Header:    options.Header,
 	})
-	info, err := h.options.Handler.GetOperationInfo(ctx, service, operation, token, options)
+	info, err := h.options.Handler.FetchOperationInfo(ctx, service, operation, token, options)
 	if err != nil {
 		h.writeFailure(writer, err)
 		return
@@ -548,7 +548,7 @@ type HandlerOptions struct {
 	// Enforced if provided for requests with the wait query parameter set.
 	//
 	// Defaults to one minute.
-	GetResultTimeout time.Duration
+	FetchResultTimeout time.Duration
 	// A [Serializer] to customize handler serialization behavior.
 	// By default the handler handles JSONables, byte slices, and nil.
 	Serializer Serializer
@@ -596,7 +596,7 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
 				return
 			}
-			h.getOperationInfo(service, operation, token, writer, request)
+			h.fetchOperationInfo(service, operation, token, writer, request)
 		case 4:
 			switch parts[3] {
 			case "result": // /{service}/{operation}/result
@@ -604,7 +604,7 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
 					return
 				}
-				h.getOperationResult(service, operation, token, writer, request)
+				h.fetchOperationResult(service, operation, token, writer, request)
 			case "cancel": // /{service}/{operation}/cancel
 				if request.Method != "POST" {
 					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
@@ -630,7 +630,7 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 				h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
 				return
 			}
-			h.getOperationInfo(service, operation, token, writer, request)
+			h.fetchOperationInfo(service, operation, token, writer, request)
 		case 5:
 			switch parts[4] {
 			case "result": // /{service}/{operation}/{operation_id}/result
@@ -638,7 +638,7 @@ func (h *httpHandler) handleRequest(writer http.ResponseWriter, request *http.Re
 					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected GET, got %q", request.Method))
 					return
 				}
-				h.getOperationResult(service, operation, token, writer, request)
+				h.fetchOperationResult(service, operation, token, writer, request)
 			case "cancel": // /{service}/{operation}/{operation_id}/cancel
 				if request.Method != "POST" {
 					h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid request method: expected POST, got %q", request.Method))
@@ -661,8 +661,8 @@ func NewHTTPHandler(options HandlerOptions) http.Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
-	if options.GetResultTimeout == 0 {
-		options.GetResultTimeout = time.Minute
+	if options.FetchResultTimeout == 0 {
+		options.FetchResultTimeout = time.Minute
 	}
 	if options.Serializer == nil {
 		options.Serializer = defaultSerializer

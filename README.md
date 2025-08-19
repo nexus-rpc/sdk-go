@@ -84,7 +84,7 @@ result, err := client.StartOperation(ctx, "example", MyInput{Field: "value"}, ne
 
 #### Start an Operation and Await its Completion
 
-The HTTPClient provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and issuing a `GetResult`
+The HTTPClient provides the `ExecuteOperation` helper function as a shorthand for `StartOperation` and issuing a `FetchResult`
 in case the operation is asynchronous.
 
 ```go
@@ -131,15 +131,15 @@ Handles expose a couple of readonly attributes: `Operation` and `Token`.
 `Token` is the operation token as returned by a Nexus handler in the response to `StartOperation` or set by the client
 in the `NewHandle` method.
 
-#### Get the Result of an Operation
+#### Fetch the Result of an Operation
 
-The `GetResult` method is used to get the result of an operation, issuing a network request to the handle's client's
+The `FetchResult` method is used to get the result of an operation, issuing a network request to the handle's client's
 configured endpoint.
 
-By default, GetResult returns (nil, `ErrOperationStillRunning`) immediately after issuing a call if the operation has
+By default, FetchResult returns (nil, `ErrOperationStillRunning`) immediately after issuing a call if the operation has
 not yet completed.
 
-Callers may set GetOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to
+Callers may set FetchOperationResultOptions.Wait to a value greater than 0 to alter this behavior, causing the client to
 long poll for the result issuing one or more requests until the provided wait period exceeds, in which case (nil,
 `ErrOperationStillRunning`) is returned.
 
@@ -149,29 +149,29 @@ The wait time is capped to the deadline of the provided context. Make sure to ha
 Note that the wait period is enforced by the server and may not be respected if the server is misbehaving. Set the
 context deadline to the max allowed wait period to ensure this call returns in a timely fashion.
 
-Custom request headers may be provided via `GetOperationResultOptions`.
+Custom request headers may be provided via `FetchOperationResultOptions`.
 
-When a handle is created from an OperationReference, `GetResult` returns a result of the reference's output type. When a
-handle is created from a name, `GetResult` returns a `LazyValue` which must be `Consume`d to free up the underlying
+When a handle is created from an OperationReference, `FetchResult` returns a result of the reference's output type. When a
+handle is created from a name, `FetchResult` returns a `LazyValue` which must be `Consume`d to free up the underlying
 connection.
 
 ```go
-result, err := handle.GetResult(ctx, nexus.GetOperationResultOptions{})
+result, err := handle.FetchResult(ctx, nexus.FetchOperationResultOptions{})
 if err != nil {
 	// handle nexus.OperationError, nexus.ErrOperationStillRunning, and context.DeadlineExceeded
 }
 // result's type is the Handle's generic type T.
 ```
 
-#### Get Operation Information
+#### Fetch Operation Information
 
-The `GetInfo` method is used to get operation information (currently only the operation's state) issuing a network
+The `FetchInfo` method is used to get operation information (currently only the operation's state) issuing a network
 request to the service handler.
 
-Custom request headers may be provided via `GetOperationInfoOptions`.
+Custom request headers may be provided via `FetchOperationInfoOptions`.
 
 ```go
-info, _ := handle.GetInfo(ctx, nexus.GetOperationInfoOptions{})
+info, _ := handle.FetchInfo(ctx, nexus.FetchOperationInfoOptions{})
 ```
 
 #### Cancel an Operation
@@ -249,7 +249,7 @@ func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, o
 	return &HandlerStartOperationResultAsync{OperationToken: "BASE64_ENCODED_DATA"}, nil
 }
 
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) FetchResult(ctx context.Context, token string, options nexus.FetchOperationResultOptions) (MyOutput, error) {
 	return MyOutput{}, nil
 }
 
@@ -258,7 +258,7 @@ func (h *myArbitraryLengthOperation) Cancel(ctx context.Context, token string, o
 	return nil
 }
 
-func (h *myArbitraryLengthOperation) GetInfo(ctx context.Context, token string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
+func (h *myArbitraryLengthOperation) FetchInfo(ctx context.Context, token string, options nexus.FetchOperationInfoOptions) (*nexus.OperationInfo, error) {
 	return &nexus.OperationInfo{Token: token, State: nexus.OperationStateRunning}, nil
 }
 ```
@@ -292,20 +292,20 @@ func (h *myArbitraryLengthOperation) Start(ctx context.Context, input MyInput, o
 
 #### Get Operation Result
 
-The `GetResult` method is used to deliver an operation's result inline. If this method does not return an error, the
+The `FetchResult` method is used to deliver an operation's result inline. If this method does not return an error, the
 operation is considered as successfully completed. Return an `OperationError` to indicate completion or an
 `ErrOperationStillRunning` error to indicate that the operation is still running.
 
-When `GetOperationResultOptions.Wait` is greater than zero, this request should be treated as a long poll. Long poll
-requests have a server side timeout, configurable via `HandlerOptions.GetResultTimeout`, and exposed via context
+When `FetchOperationResultOptions.Wait` is greater than zero, this request should be treated as a long poll. Long poll
+requests have a server side timeout, configurable via `HandlerOptions.FetchResultTimeout`, and exposed via context
 deadline. The context deadline is decoupled from the application level Wait duration.
 
-It is the implementor's responsiblity to respect the client's wait duration and return in a timely fashion.
+It is the implementor's responsibility to respect the client's wait duration and return in a timely fashion.
 Consider using a derived context that enforces the wait timeout when implementing this method and return
 `ErrOperationStillRunning` when that context expires as shown in the example.
 
 ```go
-func (h *myArbitraryLengthOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (MyOutput, error) {
+func (h *myArbitraryLengthOperation) FetchResult(ctx context.Context, token string, options nexus.FetchOperationResultOptions) (MyOutput, error) {
 	if options.Wait > 0 { // request is a long poll
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, options.Wait)
@@ -447,9 +447,9 @@ func (lo *loggingOperation) Start(ctx context.Context, input any, options nexus.
 	return lo.next.Start(ctx, input, options)
 }
 
-func (lo *loggingOperation) GetResult(ctx context.Context, token string, options nexus.GetOperationResultOptions) (any, error) {
-	log.Println("getting result for operation", ExtractHandlerInfo(ctx).Operation)
-	return lo.next.GetResult(ctx, token, options)
+func (lo *loggingOperation) FetchResult(ctx context.Context, token string, options nexus.FetchOperationResultOptions) (any, error) {
+	log.Println("fetching result for operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.FetchResult(ctx, token, options)
 }
 
 func (lo *loggingOperation) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
@@ -457,9 +457,9 @@ func (lo *loggingOperation) Cancel(ctx context.Context, token string, options ne
 	return lo.next.Cancel(ctx, token, options)
 }
 
-func (lo *loggingOperation) GetInfo(ctx context.Context, token string, options nexus.GetOperationInfoOptions) (*nexus.OperationInfo, error) {
-	log.Println("getting info for operation", ExtractHandlerInfo(ctx).Operation)
-	return lo.next.GetInfo(ctx, token, options)
+func (lo *loggingOperation) FetchInfo(ctx context.Context, token string, options nexus.FetchOperationInfoOptions) (*nexus.OperationInfo, error) {
+	log.Println("fetching info for operation", ExtractHandlerInfo(ctx).Operation)
+	return lo.next.FetchInfo(ctx, token, options)
 }
 
 registry.Use(func(ctx context.Context, next nexus.OperationHandler[any, any]) (nexus.OperationHandler[any, any], error) {

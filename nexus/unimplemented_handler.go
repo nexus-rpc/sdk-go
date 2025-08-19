@@ -17,13 +17,13 @@ func (h UnimplementedHandler) StartOperation(ctx context.Context, service, opera
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetOperationResult implements the Handler interface.
-func (h UnimplementedHandler) GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error) {
+// FetchOperationResult implements the Handler interface.
+func (h UnimplementedHandler) FetchOperationResult(ctx context.Context, service, operation, token string, options FetchOperationResultOptions) (any, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetOperationInfo implements the Handler interface.
-func (h UnimplementedHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+// FetchOperationInfo implements the Handler interface.
+func (h UnimplementedHandler) FetchOperationInfo(ctx context.Context, service, operation, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
@@ -56,13 +56,13 @@ func (*UnimplementedOperation[I, O]) Cancel(ctx context.Context, token string, o
 	return HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetInfo implements Operation.
-func (*UnimplementedOperation[I, O]) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
+// FetchInfo implements Operation.
+func (*UnimplementedOperation[I, O]) FetchInfo(ctx context.Context, token string, options FetchOperationInfoOptions) (*OperationInfo, error) {
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetResult implements Operation.
-func (*UnimplementedOperation[I, O]) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (O, error) {
+// FetchResult implements Operation.
+func (*UnimplementedOperation[I, O]) FetchResult(ctx context.Context, token string, options FetchOperationResultOptions) (O, error) {
 	var empty O
 	return empty, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }

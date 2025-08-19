@@ -15,7 +15,7 @@ type MyStruct struct {
 var ctx = context.Background()
 var client *nexus.ServiceClient
 
-func ExampleClient_StartOperation() {
+func ExampleServiceClient_StartOperation() {
 	response, err := client.StartOperation(ctx, "example", MyStruct{Field: "value"}, nexus.StartOperationOptions{})
 	if err != nil {
 		var handlerError *nexus.HandlerError
@@ -45,7 +45,7 @@ func ExampleClient_StartOperation() {
 	}
 }
 
-func ExampleClient_ExecuteOperation() {
+func ExampleServiceClient_ExecuteOperation() {
 	response, err := client.ExecuteOperation(ctx, "operation name", MyStruct{Field: "value"}, nexus.ExecuteOperationOptions{})
 	if err != nil {
 		// handle nexus.OperationError, nexus.ErrOperationStillRunning and, context.DeadlineExceeded

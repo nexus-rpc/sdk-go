@@ -13,16 +13,16 @@ import (
 
 const testTimeout = time.Second * 5
 const testService = "Ser/vic e"
-const getResultMaxTimeout = time.Millisecond * 300
+const fetchResultMaxTimeout = time.Millisecond * 300
 
 func setupCustom(t *testing.T, handler Handler, serializer Serializer, failureConverter FailureConverter) (ctx context.Context, client *ServiceClient, teardown func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
 	httpHandler := NewHTTPHandler(HandlerOptions{
-		GetResultTimeout: getResultMaxTimeout,
-		Handler:          handler,
-		Serializer:       serializer,
-		FailureConverter: failureConverter,
+		FetchResultTimeout: fetchResultMaxTimeout,
+		Handler:            handler,
+		Serializer:         serializer,
+		FailureConverter:   failureConverter,
 	})
 
 	listener, err := net.Listen("tcp", "localhost:0")
