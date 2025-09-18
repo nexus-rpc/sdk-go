@@ -18,12 +18,11 @@ type successfulCompletionHandler struct {
 }
 
 // validateExpectedTime returns false if the times are set but aren't equal.
-func validateExpectedTime(expected, actual time.Time) bool {
+func validateExpectedTime(expected, actual time.Time, resolution time.Duration) bool {
 	if expected.IsZero() {
 		return true
 	}
 
-	resolution := time.Second
 	expected = expected.Truncate(resolution)
 	actual = actual.Truncate(resolution)
 
@@ -52,10 +51,10 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
-	if !validateExpectedTime(h.expectedStartTime, completion.StartTime) {
+	if !validateExpectedTime(h.expectedStartTime, completion.StartTime, time.Second) {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartTime to be equal")
 	}
-	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime) {
+	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime, time.Millisecond) {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected CloseTime to be equal")
 	}
 	var result int
@@ -165,10 +164,10 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
-	if !validateExpectedTime(h.expectedStartTime, completion.StartTime) {
+	if !validateExpectedTime(h.expectedStartTime, completion.StartTime, time.Second) {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartTime to be equal")
 	}
-	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime) {
+	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime, time.Millisecond) {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected CloseTime to be equal")
 	}
 
