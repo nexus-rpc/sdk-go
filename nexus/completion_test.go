@@ -52,9 +52,12 @@ func TestSuccessfulCompletion(t *testing.T) {
 	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil, nil)
 	defer teardown()
 
+	startTime := time.Now().Add(-time.Hour)
+	closeTime := time.Now()
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		OperationToken: "test-operation-token",
-		StartTime:      time.Now(),
+		StartTime:      startTime,
+		CloseTime:      closeTime,
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -150,9 +153,12 @@ func TestFailureCompletion(t *testing.T) {
 	}, nil, nil)
 	defer teardown()
 
+	startTime := time.Now().Add(-time.Hour)
+	closeTime := time.Now()
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		OperationToken: "test-operation-token",
-		StartTime:      time.Now(),
+		StartTime:      startTime,
+		CloseTime:      closeTime,
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
@@ -187,10 +193,13 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	}, nil, fc)
 	defer teardown()
 
+	startTime := time.Now().Add(-time.Hour)
+	closeTime := time.Now()
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		FailureConverter: fc,
 		OperationToken:   "test-operation-token",
-		StartTime:        time.Now(),
+		StartTime:        startTime,
+		CloseTime:        closeTime,
 		Links: []Link{{
 			URL: &url.URL{
 				Scheme:   "https",
