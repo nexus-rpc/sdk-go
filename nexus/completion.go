@@ -293,7 +293,7 @@ type CompletionRequest struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
-	// CloseTime is the time the operation completed. Used when a completion callback is received before a started response.
+	// CloseTime is the time the operation completed. This may be different from the time the completion callback is delivered.
 	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
