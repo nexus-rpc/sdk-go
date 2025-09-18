@@ -13,6 +13,21 @@ import (
 )
 
 type successfulCompletionHandler struct {
+	expectedStartTime time.Time
+	expectedCloseTime time.Time
+}
+
+// validateExpectedTime returns false if the times are set but aren't equal.
+func validateExpectedTime(expected, actual time.Time) bool {
+	if expected.IsZero() {
+		return true
+	}
+
+	resolution := time.Second
+	expected = expected.Truncate(resolution)
+	actual = actual.Truncate(resolution)
+
+	return expected.Equal(actual)
 }
 
 func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, completion *CompletionRequest) error {
@@ -37,6 +52,12 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
+	if !validateExpectedTime(h.expectedStartTime, completion.StartTime) {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartTime to be equal")
+	}
+	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime) {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected CloseTime to be equal")
+	}
 	var result int
 	err := completion.Result.Consume(&result)
 	if err != nil {
@@ -49,11 +70,15 @@ func (h *successfulCompletionHandler) CompleteOperation(ctx context.Context, com
 }
 
 func TestSuccessfulCompletion(t *testing.T) {
-	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{}, nil, nil)
+	startTime := time.Now().Add(-time.Hour).UTC()
+	closeTime := time.Now().UTC()
+
+	ctx, callbackURL, teardown := setupForCompletion(t, &successfulCompletionHandler{
+		expectedStartTime: startTime,
+		expectedCloseTime: closeTime,
+	}, nil, nil)
 	defer teardown()
 
-	startTime := time.Now().Add(-time.Hour)
-	closeTime := time.Now()
 	completion, err := NewOperationCompletionSuccessful(666, OperationCompletionSuccessfulOptions{
 		OperationToken: "test-operation-token",
 		StartTime:      startTime,
@@ -116,7 +141,9 @@ func TestSuccessfulCompletion_CustomSerializer(t *testing.T) {
 }
 
 type failureExpectingCompletionHandler struct {
-	errorChecker func(error) error
+	errorChecker      func(error) error
+	expectedStartTime time.Time
+	expectedCloseTime time.Time
 }
 
 func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Context, completion *CompletionRequest) error {
@@ -138,11 +165,20 @@ func (h *failureExpectingCompletionHandler) CompleteOperation(ctx context.Contex
 	if len(completion.Links) == 0 {
 		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected Links to be set on CompletionRequest")
 	}
+	if !validateExpectedTime(h.expectedStartTime, completion.StartTime) {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected StartTime to be equal")
+	}
+	if !validateExpectedTime(h.expectedCloseTime, completion.CloseTime) {
+		return HandlerErrorf(HandlerErrorTypeBadRequest, "expected CloseTime to be equal")
+	}
 
 	return nil
 }
 
 func TestFailureCompletion(t *testing.T) {
+	startTime := time.Now().Add(-time.Hour).UTC()
+	closeTime := time.Now().UTC()
+
 	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
 		errorChecker: func(err error) error {
 			if err.Error() != "expected message" {
@@ -150,11 +186,11 @@ func TestFailureCompletion(t *testing.T) {
 			}
 			return nil
 		},
+		expectedStartTime: startTime,
+		expectedCloseTime: closeTime,
 	}, nil, nil)
 	defer teardown()
 
-	startTime := time.Now().Add(-time.Hour)
-	closeTime := time.Now()
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		OperationToken: "test-operation-token",
 		StartTime:      startTime,
@@ -183,6 +219,9 @@ func TestFailureCompletion(t *testing.T) {
 
 func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	fc := customFailureConverter{}
+	startTime := time.Now().Add(-time.Hour).UTC()
+	closeTime := time.Now().UTC()
+
 	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
 		errorChecker: func(err error) error {
 			if !errors.Is(err, errCustom) {
@@ -190,11 +229,11 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 			}
 			return nil
 		},
+		expectedStartTime: startTime,
+		expectedCloseTime: closeTime,
 	}, nil, fc)
 	defer teardown()
 
-	startTime := time.Now().Add(-time.Hour)
-	closeTime := time.Now()
 	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
 		FailureConverter: fc,
 		OperationToken:   "test-operation-token",
