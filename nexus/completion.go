@@ -10,9 +10,6 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // NewCompletionHTTPRequest creates an HTTP request that delivers an operation completion to a given URL.
@@ -156,11 +153,7 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
-		timestamp, err := getCloseTimeHeader(c.CloseTime)
-		if err != nil {
-			return err
-		}
-		request.Header.Set(headerOperationCloseTime, timestamp)
+		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
 	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
@@ -266,11 +259,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
-		timestamp, err := getCloseTimeHeader(c.CloseTime)
-		if err != nil {
-			return err
-		}
-		request.Header.Set(headerOperationCloseTime, timestamp)
+		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
 	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
@@ -285,19 +274,6 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 
 	request.Body = io.NopCloser(bytes.NewReader(b))
 	return nil
-}
-
-// getCloseTimeHeader returns the marshalled header value for operation close time.
-func getCloseTimeHeader(closeTime time.Time) (string, error) {
-	// protojson's timestamp marshalling is closest to what is described in the Nexus spec.
-	ts := timestamppb.New(closeTime)
-	tsBytes, err := protojson.Marshal(ts)
-	if err != nil {
-		return "", err
-	}
-
-	// The returned marshalled value includes undesirable surrounding quotations.
-	return string(tsBytes[1 : len(tsBytes)-1]), nil
 }
 
 // CompletionRequest is input for CompletionHandler.CompleteOperation.
