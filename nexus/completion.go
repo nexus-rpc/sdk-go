@@ -153,7 +153,7 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
-		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
+		request.Header.Set(headerOperationCloseTime, marshalTimestamp(c.CloseTime))
 	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
@@ -259,7 +259,7 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
 	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
-		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
+		request.Header.Set(headerOperationCloseTime, marshalTimestamp(c.CloseTime))
 	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
@@ -355,7 +355,7 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 	}
 	if closeTimeHeader := request.Header.Get(headerOperationCloseTime); closeTimeHeader != "" {
 		var parseTimeErr error
-		if completion.CloseTime, parseTimeErr = time.Parse(time.RFC3339Nano, closeTimeHeader); parseTimeErr != nil {
+		if completion.CloseTime, parseTimeErr = unmarshalTimestamp(closeTimeHeader); parseTimeErr != nil {
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse operation close time header"))
 			return
 		}
