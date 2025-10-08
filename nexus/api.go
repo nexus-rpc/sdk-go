@@ -26,6 +26,7 @@ const (
 	headerRequestID          = "nexus-request-id"
 	headerLink               = "nexus-link"
 	headerOperationStartTime = "nexus-operation-start-time"
+	headerOperationCloseTime = "nexus-operation-close-time"
 	headerRetryable          = "nexus-request-retryable"
 	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
 	// Must be set on callback headers to support completing operations before the start response is received.

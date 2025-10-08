@@ -57,6 +57,8 @@ type OperationCompletionSuccessful struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
+	// CloseTime is the time the operation completed. Used when a completion callback is received before a started response.
+	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 }
@@ -77,6 +79,8 @@ type OperationCompletionSuccessfulOptions struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
+	// CloseTime is the time the operation completed. Used when a completion callback is received before a started response.
+	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 }
@@ -117,6 +121,7 @@ func NewOperationCompletionSuccessful(result any, options OperationCompletionSuc
 		OperationID:    options.OperationID,
 		OperationToken: options.OperationToken,
 		StartTime:      options.StartTime,
+		CloseTime:      options.CloseTime,
 		Links:          options.Links,
 	}, nil
 }
@@ -147,6 +152,9 @@ func (c *OperationCompletionSuccessful) applyToHTTPRequest(request *http.Request
 	if c.Header.Get(headerOperationStartTime) == "" && !c.StartTime.IsZero() {
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
 	}
+	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
+		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
+	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
 			return err
@@ -176,6 +184,8 @@ type OperationCompletionUnsuccessful struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
+	// CloseTime is the time the operation completed. This may be different from the time the completion callback is delivered.
+	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 	// Failure object to send with the completion.
@@ -198,6 +208,8 @@ type OperationCompletionUnsuccessfulOptions struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
+	// CloseTime is the time the operation completed. This may be different from the time the completion callback is delivered.
+	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 }
@@ -217,6 +229,7 @@ func NewOperationCompletionUnsuccessful(error *OperationError, options Operation
 		OperationID:    options.OperationID,
 		OperationToken: options.OperationToken,
 		StartTime:      options.StartTime,
+		CloseTime:      options.CloseTime,
 		Links:          options.Links,
 	}, nil
 }
@@ -244,6 +257,9 @@ func (c *OperationCompletionUnsuccessful) applyToHTTPRequest(request *http.Reque
 	}
 	if c.Header.Get(headerOperationStartTime) == "" && !c.StartTime.IsZero() {
 		request.Header.Set(headerOperationStartTime, c.StartTime.Format(http.TimeFormat))
+	}
+	if c.Header.Get(headerOperationCloseTime) == "" && !c.CloseTime.IsZero() {
+		request.Header.Set(headerOperationCloseTime, c.CloseTime.Format(time.RFC3339Nano))
 	}
 	if c.Header.Get(headerLink) == "" {
 		if err := addLinksToHTTPHeader(c.Links, request.Header); err != nil {
@@ -277,6 +293,8 @@ type CompletionRequest struct {
 	OperationToken string
 	// StartTime is the time the operation started. Used when a completion callback is received before a started response.
 	StartTime time.Time
+	// CloseTime is the time the operation completed. This may be different from the time the completion callback is delivered.
+	CloseTime time.Time
 	// Links are used to link back to the operation when a completion callback is received before a started response.
 	Links []Link
 	// Parsed from request and set if State is failed or canceled.
@@ -332,6 +350,13 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 		var parseTimeErr error
 		if completion.StartTime, parseTimeErr = http.ParseTime(startTimeHeader); parseTimeErr != nil {
 			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse operation start time header"))
+			return
+		}
+	}
+	if closeTimeHeader := request.Header.Get(headerOperationCloseTime); closeTimeHeader != "" {
+		var parseTimeErr error
+		if completion.CloseTime, parseTimeErr = time.Parse(time.RFC3339Nano, closeTimeHeader); parseTimeErr != nil {
+			h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "failed to parse operation close time header"))
 			return
 		}
 	}
