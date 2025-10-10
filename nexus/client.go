@@ -11,7 +11,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -181,6 +180,7 @@ func (c *HTTPClient) StartOperation(
 	options StartOperationOptions,
 ) (*ClientStartOperationResult[*LazyValue], error) {
 	var reader *Reader
+	var contentLength *int64
 	if r, ok := input.(*Reader); ok {
 		// Close the input reader in case we error before sending the HTTP request (which may double close but
 		// that's fine since we ignore the error).
@@ -199,7 +199,8 @@ func (c *HTTPClient) StartOperation(
 		if header == nil {
 			header = make(Header, 1)
 		}
-		header["length"] = strconv.Itoa(len(content.Data))
+		contentLength = new(int64)
+		*contentLength = int64(len(content.Data))
 
 		reader = &Reader{
 			io.NopCloser(bytes.NewReader(content.Data)),
@@ -215,6 +216,9 @@ func (c *HTTPClient) StartOperation(
 		url.RawQuery = q.Encode()
 	}
 	request, err := http.NewRequestWithContext(ctx, "POST", url.String(), reader)
+	if contentLength != nil {
+		request.ContentLength = *contentLength
+	}
 	if err != nil {
 		return nil, err
 	}
