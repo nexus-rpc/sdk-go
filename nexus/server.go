@@ -308,6 +308,8 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		switch handlerError.Type {
 		case HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
+		case HandlerErrorTypeRequestTimeout:
+			statusCode = http.StatusRequestTimeout
 		case HandlerErrorTypeConflict:
 			statusCode = http.StatusConflict
 		case HandlerErrorTypeUnauthenticated:

@@ -460,6 +460,8 @@ func httpStatusCodeToHandlerErrorType(response *http.Response) (HandlerErrorType
 	switch response.StatusCode {
 	case http.StatusBadRequest:
 		return HandlerErrorTypeBadRequest, nil
+	case http.StatusRequestTimeout:
+		return HandlerErrorTypeRequestTimeout, nil
 	case http.StatusConflict:
 		return HandlerErrorTypeConflict, nil
 	case http.StatusUnauthorized:
