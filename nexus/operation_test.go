@@ -1,22 +1,15 @@
 package nexus
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"reflect"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-var bytesIOOperation = NewSyncOperation("bytes-io", func(ctx context.Context, input []byte, options StartOperationOptions) ([]byte, error) {
-	return append(input, []byte(", world")...), nil
-})
-
-var noValueOperation = NewSyncOperation("no-value", func(ctx context.Context, input NoValue, options StartOperationOptions) (NoValue, error) {
-	return nil, nil
-})
 
 var numberValidatorOperation = NewSyncOperation("number-validator", func(ctx context.Context, input int, options StartOperationOptions) (int, error) {
 	if input == 0 {
@@ -34,35 +27,21 @@ func (h *asyncNumberValidatorOperation) Name() string {
 }
 
 func (h *asyncNumberValidatorOperation) Start(ctx context.Context, input int, options StartOperationOptions) (HandlerStartOperationResult[int], error) {
-	return &HandlerStartOperationResultAsync{OperationID: fmt.Sprintf("%d", input)}, nil
-}
-
-func (h *asyncNumberValidatorOperation) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (int, error) {
-	if token == "0" {
-		return 0, NewOperationFailedError("cannot process 0")
-	}
-	return strconv.Atoi(token)
+	return &HandlerStartOperationResultAsync{OperationToken: fmt.Sprintf("%d", input)}, nil
 }
 
 func (h *asyncNumberValidatorOperation) Cancel(ctx context.Context, token string, options CancelOperationOptions) error {
-	if options.Header.Get("fail") != "" {
-		return fmt.Errorf("intentionally failed")
+	if token != "token" {
+		return fmt.Errorf(`invalid token: %q, expected: "token"`, token)
 	}
 	return nil
-}
-
-func (h *asyncNumberValidatorOperation) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	if options.Header.Get("fail") != "" {
-		return nil, fmt.Errorf("intentionally failed")
-	}
-	return &OperationInfo{Token: token, State: OperationStateRunning}, nil
 }
 
 var asyncNumberValidatorOperationInstance = &asyncNumberValidatorOperation{}
 
 func TestRegistrationErrors(t *testing.T) {
 	reg := NewServiceRegistry()
-	svc := NewService(testService)
+	svc := NewService("service")
 	err := svc.Register(NewSyncOperation("", func(ctx context.Context, i int, soo StartOperationOptions) (int, error) { return 5, nil }))
 	require.ErrorContains(t, err, "tried to register an operation with no name")
 
@@ -78,49 +57,56 @@ func TestRegistrationErrors(t *testing.T) {
 	require.NoError(t, reg.Register(svc))
 
 	_, err = reg.NewHandler()
-	require.ErrorContains(t, err, fmt.Sprintf("service %q has no operations registered", testService))
+	require.ErrorContains(t, err, fmt.Sprintf("service %q has no operations registered", "service"))
 }
 
-func TestExecuteOperation(t *testing.T) {
-	registry := NewServiceRegistry()
-	svc := NewService(testService)
-	require.NoError(t, svc.Register(
-		numberValidatorOperation,
-		bytesIOOperation,
-		noValueOperation,
-	))
-	require.NoError(t, registry.Register(svc))
-	handler, err := registry.NewHandler()
+func lv(t *testing.T, v any) *LazyValue {
+	t.Helper()
+	content, err := defaultSerializer.Serialize(v)
 	require.NoError(t, err)
+	return NewLazyValue(defaultSerializer, &Reader{
+		ReadCloser: io.NopCloser(bytes.NewBuffer(content.Data)),
+		Header:     content.Header,
+	})
+}
 
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
+func startOperation(
+	t *testing.T,
+	handler Handler,
+	svc *Service,
+	op RegisterableOperation,
+	input any,
+	options StartOperationOptions,
+) (HandlerStartOperationResult[any], error) {
+	t.Helper()
+	ctx := WithHandlerContext(t.Context(), HandlerInfo{
+		Service:   svc.Name,
+		Operation: op.Name(),
+		Header:    options.Header,
+	})
+	return handler.StartOperation(ctx, svc.Name, op.Name(), lv(t, input), options)
+}
 
-	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	ref := NewOperationReference[int, int](numberValidatorOperation.Name())
-	result, err = ExecuteOperation(ctx, client, ref, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
-	var unsuccessfulError *OperationError
-	require.ErrorAs(t, err, &unsuccessfulError)
-
-	bResult, err := ExecuteOperation(ctx, client, bytesIOOperation, []byte("hello"), ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, []byte("hello, world"), bResult)
-
-	nResult, err := ExecuteOperation(ctx, client, noValueOperation, nil, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Nil(t, nResult)
+func cancelOperation(
+	t *testing.T,
+	handler Handler,
+	svc *Service,
+	op RegisterableOperation,
+	token string,
+	options CancelOperationOptions,
+) error {
+	t.Helper()
+	ctx := WithHandlerContext(t.Context(), HandlerInfo{
+		Service:   svc.Name,
+		Operation: op.Name(),
+		Header:    options.Header,
+	})
+	return handler.CancelOperation(ctx, svc.Name, asyncNumberValidatorOperationInstance.Name(), token, options)
 }
 
 func TestStartOperation(t *testing.T) {
 	registry := NewServiceRegistry()
-	svc := NewService(testService)
+	svc := NewService("service")
 	require.NoError(t, svc.Register(
 		numberValidatorOperation,
 		asyncNumberValidatorOperationInstance,
@@ -130,28 +116,22 @@ func TestStartOperation(t *testing.T) {
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
+	result, err := startOperation(t, handler, svc, numberValidatorOperation, 3, StartOperationOptions{})
+	require.NoError(t, err)
+	syncRes, ok := result.(*HandlerStartOperationResultSync[int])
+	require.True(t, ok)
+	require.Equal(t, 3, syncRes.Value)
 
-	result, err := StartOperation(ctx, client, numberValidatorOperation, 3, StartOperationOptions{})
+	result, err = startOperation(t, handler, svc, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.NoError(t, err)
-	require.Equal(t, 3, result.Successful)
-
-	result, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
-	require.NoError(t, err)
-	value, err := result.Pending.GetResult(ctx, GetOperationResultOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, value)
-	handle, err := NewHandle(client, asyncNumberValidatorOperationInstance, result.Pending.Token)
-	require.NoError(t, err)
-	value, err = handle.GetResult(ctx, GetOperationResultOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, value)
+	asyncRes, ok := result.(*HandlerStartOperationResultAsync)
+	require.True(t, ok)
+	require.Equal(t, "3", asyncRes.OperationToken)
 }
 
 func TestCancelOperation(t *testing.T) {
 	registry := NewServiceRegistry()
-	svc := NewService(testService)
+	svc := NewService("service")
 	require.NoError(t, svc.Register(
 		asyncNumberValidatorOperationInstance,
 	))
@@ -160,42 +140,8 @@ func TestCancelOperation(t *testing.T) {
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
-
-	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
+	err = cancelOperation(t, handler, svc, asyncNumberValidatorOperationInstance, "token", CancelOperationOptions{})
 	require.NoError(t, err)
-	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{}))
-	var handlerError *HandlerError
-	require.ErrorAs(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: Header{"fail": "1"}}), &handlerError)
-	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
-	require.Equal(t, "internal server error", handlerError.Cause.Error())
-}
-
-func TestGetOperationInfo(t *testing.T) {
-	registry := NewServiceRegistry()
-	svc := NewService(testService)
-	require.NoError(t, svc.Register(
-		asyncNumberValidatorOperationInstance,
-	))
-	require.NoError(t, registry.Register(svc))
-
-	handler, err := registry.NewHandler()
-	require.NoError(t, err)
-
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
-
-	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
-	require.NoError(t, err)
-	info, err := result.Pending.GetInfo(ctx, GetOperationInfoOptions{})
-	require.NoError(t, err)
-	require.Equal(t, &OperationInfo{Token: "3", ID: "3", State: OperationStateRunning}, info)
-	_, err = result.Pending.GetInfo(ctx, GetOperationInfoOptions{Header: Header{"fail": "1"}})
-	var handlerError *HandlerError
-	require.ErrorAs(t, err, &handlerError)
-	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
-	require.Equal(t, "internal server error", handlerError.Cause.Error())
 }
 
 type authRejectionHandler struct {
@@ -210,54 +156,31 @@ func (h *authRejectionHandler) Start(ctx context.Context, input NoValue, options
 	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetResult(ctx context.Context, token string, options GetOperationResultOptions) (NoValue, error) {
-	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
-}
-
 func (h *authRejectionHandler) Cancel(ctx context.Context, token string, options CancelOperationOptions) error {
 	return HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
-func (h *authRejectionHandler) GetInfo(ctx context.Context, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
-}
-
 func TestHandlerError(t *testing.T) {
-	var handlerError *HandlerError
 
 	registry := NewServiceRegistry()
-	svc := NewService(testService)
-	require.NoError(t, svc.Register(&authRejectionHandler{}))
+	svc := NewService("service")
+	authRejectionHandlerInstance := &authRejectionHandler{}
+	require.NoError(t, svc.Register(authRejectionHandlerInstance))
 	require.NoError(t, registry.Register(svc))
 
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
-
-	_, err = StartOperation(ctx, client, &authRejectionHandler{}, nil, StartOperationOptions{})
+	var handlerError *HandlerError
+	_, err = startOperation(t, handler, svc, authRejectionHandlerInstance, nil, StartOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 
-	handle, err := NewHandle(client, &authRejectionHandler{}, "dont-care")
-	require.NoError(t, err)
-
-	_, err = handle.GetInfo(ctx, GetOperationInfoOptions{})
+	err = cancelOperation(t, handler, svc, asyncNumberValidatorOperationInstance, "token", CancelOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Message)
-
-	err = handle.Cancel(ctx, CancelOperationOptions{})
-	require.ErrorAs(t, err, &handlerError)
-	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Message)
-
-	_, err = handle.GetResult(ctx, GetOperationResultOptions{})
-	require.ErrorAs(t, err, &handlerError)
-	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Message)
+	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
 }
 
 func TestInputOutputType(t *testing.T) {
@@ -270,7 +193,7 @@ func TestInputOutputType(t *testing.T) {
 
 func TestOperationInterceptor(t *testing.T) {
 	registry := NewServiceRegistry()
-	svc := NewService(testService)
+	svc := NewService("service")
 	require.NoError(t, svc.Register(
 		asyncNumberValidatorOperationInstance,
 	))
@@ -286,19 +209,16 @@ func TestOperationInterceptor(t *testing.T) {
 	handler, err := registry.NewHandler()
 	require.NoError(t, err)
 
-	ctx, client, teardown := setup(t, handler)
-	defer teardown()
-
-	_, err = StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
+	_, err = startOperation(t, handler, svc, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{})
 	require.ErrorContains(t, err, "unauthorized")
 
 	authHeader := map[string]string{"authorization": "auth-key"}
-	result, err := StartOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{
+	_, err = startOperation(t, handler, svc, asyncNumberValidatorOperationInstance, 3, StartOperationOptions{
 		Header: authHeader,
 	})
 	require.NoError(t, err)
-	require.ErrorContains(t, result.Pending.Cancel(ctx, CancelOperationOptions{}), "unauthorized")
-	require.NoError(t, result.Pending.Cancel(ctx, CancelOperationOptions{Header: authHeader}))
+	require.ErrorContains(t, cancelOperation(t, handler, svc, asyncNumberValidatorOperationInstance, "token", CancelOperationOptions{}), "unauthorized")
+	require.NoError(t, cancelOperation(t, handler, svc, asyncNumberValidatorOperationInstance, "token", CancelOperationOptions{Header: authHeader}))
 	// Assert the logger  only contains calls from successful operations.
 	require.Len(t, logs, 2)
 	require.Contains(t, logs[0], "starting operation async-number-validator")
@@ -327,19 +247,9 @@ func (lo *loggingOperation) Start(ctx context.Context, input any, options StartO
 	return lo.Operation.Start(ctx, input, options)
 }
 
-func (lo *loggingOperation) GetResult(ctx context.Context, id string, options GetOperationResultOptions) (any, error) {
-	lo.output(fmt.Sprintf("getting result for operation %s", lo.name))
-	return lo.Operation.GetResult(ctx, id, options)
-}
-
 func (lo *loggingOperation) Cancel(ctx context.Context, id string, options CancelOperationOptions) error {
 	lo.output(fmt.Sprintf("cancel operation %s", lo.name))
 	return lo.Operation.Cancel(ctx, id, options)
-}
-
-func (lo *loggingOperation) GetInfo(ctx context.Context, id string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	lo.output(fmt.Sprintf("getting info for operation %s", lo.name))
-	return lo.Operation.GetInfo(ctx, id, options)
 }
 
 func newLoggingMiddleware(output func(string)) MiddlewareFunc {
