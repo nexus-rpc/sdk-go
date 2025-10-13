@@ -300,21 +300,29 @@ func (c *HTTPClient) StartOperation(
 			Links:   links,
 		}, nil
 	case statusOperationFailed:
-		state, err := getUnsuccessfulStateFromHeader(response, body)
-		if err != nil {
-			return nil, err
-		}
-
 		failure, err := c.failureFromResponse(response, body)
 		if err != nil {
 			return nil, err
 		}
 
-		failureErr := c.options.FailureConverter.FailureToError(failure)
-		return nil, &OperationError{
-			State: state,
-			Cause: failureErr,
+		opErr, err := c.options.FailureConverter.FailureToError(failure)
+		if err != nil {
+			return nil, err
 		}
+
+		// For compatibility with older servers.
+		if _, ok := opErr.(*OperationError); !ok {
+			state, err := getUnsuccessfulStateFromHeader(response, body)
+			if err != nil {
+				return nil, err
+			}
+			opErr = &OperationError{
+				State: state,
+				Cause: opErr,
+			}
+		}
+
+		return nil, opErr
 	default:
 		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
 	}
@@ -448,79 +456,66 @@ func (c *HTTPClient) failureFromResponse(response *http.Response, body []byte) (
 	return failure, err
 }
 
-func (c *HTTPClient) failureFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) Failure {
-	failure, err := c.failureFromResponse(response, body)
-	if err != nil {
-		failure.Message = defaultMessage
+func httpStatusCodeToHandlerErrorType(response *http.Response) (HandlerErrorType, error) {
+	switch response.StatusCode {
+	case http.StatusBadRequest:
+		return HandlerErrorTypeBadRequest, nil
+	case http.StatusRequestTimeout:
+		return HandlerErrorTypeRequestTimeout, nil
+	case http.StatusConflict:
+		return HandlerErrorTypeConflict, nil
+	case http.StatusUnauthorized:
+		return HandlerErrorTypeUnauthenticated, nil
+	case http.StatusForbidden:
+		return HandlerErrorTypeUnauthorized, nil
+	case http.StatusNotFound:
+		return HandlerErrorTypeNotFound, nil
+	case http.StatusTooManyRequests:
+		return HandlerErrorTypeResourceExhausted, nil
+	case http.StatusInternalServerError:
+		return HandlerErrorTypeInternal, nil
+	case http.StatusNotImplemented:
+		return HandlerErrorTypeNotImplemented, nil
+	case http.StatusServiceUnavailable:
+		return HandlerErrorTypeUnavailable, nil
+	case StatusUpstreamTimeout:
+		return HandlerErrorTypeUpstreamTimeout, nil
+	default:
+		return HandlerErrorType(""), fmt.Errorf("unexpected response status: %q", response.Status)
 	}
-	return failure
 }
 
-func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) error {
-	failure := c.failureFromResponseOrDefault(response, body, defaultMessage)
-	failureErr := c.options.FailureConverter.FailureToError(failure)
-	return failureErr
+func (c *HTTPClient) defaultErrorFromResponse(response *http.Response, body []byte, cause error) error {
+	errorType, err := httpStatusCodeToHandlerErrorType(response)
+	if err != nil {
+		// TODO: wrap in transport error.
+		// TODO: use the provided cause, it's already a deserialized failure.
+		return newUnexpectedResponseError(err.Error(), response, body)
+	}
+	return &HandlerError{
+		Type:    errorType,
+		Message: response.Status,
+		// For compatibility with older servers.
+		RetryBehavior: retryBehaviorFromHeader(response.Header),
+		Cause:         cause,
+	}
 }
 
 func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
-	switch response.StatusCode {
-	case http.StatusBadRequest:
-		return &HandlerError{
-			Type:          HandlerErrorTypeBadRequest,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "bad request"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusUnauthorized:
-		return &HandlerError{
-			Type:          HandlerErrorTypeUnauthenticated,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unauthenticated"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusForbidden:
-		return &HandlerError{
-			Type:          HandlerErrorTypeUnauthorized,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unauthorized"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusNotFound:
-		return &HandlerError{
-			Type:          HandlerErrorTypeNotFound,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "not found"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusTooManyRequests:
-		return &HandlerError{
-			Type:          HandlerErrorTypeResourceExhausted,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "resource exhausted"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusInternalServerError:
-		return &HandlerError{
-			Type:          HandlerErrorTypeInternal,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "internal error"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusNotImplemented:
-		return &HandlerError{
-			Type:          HandlerErrorTypeNotImplemented,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "not implemented"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case http.StatusServiceUnavailable:
-		return &HandlerError{
-			Type:          HandlerErrorTypeUnavailable,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unavailable"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	case StatusUpstreamTimeout:
-		return &HandlerError{
-			Type:          HandlerErrorTypeUpstreamTimeout,
-			Cause:         c.failureErrorFromResponseOrDefault(response, body, "upstream timeout"),
-			RetryBehavior: retryBehaviorFromHeader(response.Header),
-		}
-	default:
-		return newUnexpectedResponseError(fmt.Sprintf("unexpected response status: %q", response.Status), response, body)
+	// TODO: support old servers
+	failure, err := c.failureFromResponse(response, body)
+	if err != nil {
+		return c.defaultErrorFromResponse(response, body, nil)
 	}
+	convErr, err := c.options.FailureConverter.FailureToError(failure)
+	if err != nil {
+		// TODO: wrap in transport error.
+		return fmt.Errorf("failed to convert Failure to error: %w", err)
+	}
+	if _, ok := convErr.(*HandlerError); !ok {
+		convErr = c.defaultErrorFromResponse(response, body, convErr)
+	}
+	return convErr
 }
 
 func retryBehaviorFromHeader(header http.Header) HandlerErrorRetryBehavior {

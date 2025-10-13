@@ -35,14 +35,19 @@ func TestWriteFailure_HandlerError(t *testing.T) {
 	}
 
 	writer := httptest.NewRecorder()
-	h.writeFailure(writer, HandlerErrorf(HandlerErrorTypeBadRequest, "foo"))
+	he := HandlerErrorf(HandlerErrorTypeBadRequest, "foo")
+	h.writeFailure(writer, he)
 
 	require.Equal(t, http.StatusBadRequest, writer.Code)
 	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))
 
-	var failure *Failure
+	var failure Failure
 	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &failure))
-	require.Equal(t, "foo", failure.Message)
+	actual, err := defaultFailureConverter.FailureToError(failure)
+	require.NoError(t, err)
+	// Assign the original failure object before performing the comparison.
+	he.OriginalFailure = &failure
+	require.Equal(t, he, actual)
 }
 
 func TestWriteFailure_OperationError(t *testing.T) {
@@ -52,13 +57,18 @@ func TestWriteFailure_OperationError(t *testing.T) {
 	}
 
 	writer := httptest.NewRecorder()
-	h.writeFailure(writer, NewCanceledOperationError(fmt.Errorf("canceled")))
+	oe := NewOperationCanceledError("canceled")
+	h.writeFailure(writer, oe)
 
 	require.Equal(t, statusOperationFailed, writer.Code)
 	require.Equal(t, contentTypeJSON, writer.Header().Get("Content-Type"))
 	require.Equal(t, string(OperationStateCanceled), writer.Header().Get(headerOperationState))
 
-	var failure *Failure
+	var failure Failure
 	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &failure))
-	require.Equal(t, "canceled", failure.Message)
+	actual, err := defaultFailureConverter.FailureToError(failure)
+	require.NoError(t, err)
+	// Assign the original failure object before performing the comparison.
+	oe.OriginalFailure = &failure
+	require.Equal(t, oe, actual)
 }

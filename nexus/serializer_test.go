@@ -163,11 +163,12 @@ func TestCustomSerializer(t *testing.T) {
 
 func TestDefaultFailureConverterArbitraryError(t *testing.T) {
 	sourceErr := errors.New("test")
-	var f Failure
 	conv := defaultFailureConverter
 
-	f = conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
+	f, err := conv.ErrorToFailure(sourceErr)
+	require.NoError(t, err)
+	convErr, err := conv.FailureToError(f)
+	require.NoError(t, err)
 	require.Equal(t, sourceErr.Error(), convErr.Error())
 }
 
@@ -179,11 +180,12 @@ func TestDefaultFailureConverterFailureError(t *testing.T) {
 			Details:  []byte(`"details"`),
 		},
 	}
-	var f Failure
 	conv := defaultFailureConverter
 
-	f = conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
+	f, err := conv.ErrorToFailure(sourceErr)
+	require.NoError(t, err)
+	convErr, err := conv.FailureToError(f)
+	require.NoError(t, err)
 	require.Equal(t, sourceErr, convErr)
 }
 
@@ -192,21 +194,21 @@ type customFailureConverter struct{}
 var errCustom = errors.New("custom")
 
 // ErrorToFailure implements FailureConverter.
-func (c customFailureConverter) ErrorToFailure(err error) Failure {
+func (c customFailureConverter) ErrorToFailure(err error) (Failure, error) {
 	return Failure{
 		Message: err.Error(),
 		Metadata: map[string]string{
 			"type": "custom",
 		},
-	}
+	}, nil
 }
 
 // FailureToError implements FailureConverter.
-func (c customFailureConverter) FailureToError(f Failure) error {
+func (c customFailureConverter) FailureToError(f Failure) (error, error) {
 	if f.Metadata["type"] != "custom" {
-		return errors.New(f.Message)
+		return errors.New(f.Message), nil
 	}
-	return fmt.Errorf("%w: %s", errCustom, f.Message)
+	return fmt.Errorf("%w: %s", errCustom, f.Message), nil
 }
 
 func TestCustomFailureConverter(t *testing.T) {

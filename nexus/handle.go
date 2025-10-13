@@ -166,19 +166,28 @@ func (h *OperationHandle[T]) sendGetOperationResultRequest(request *http.Request
 	case statusOperationRunning:
 		return nil, ErrOperationStillRunning
 	case statusOperationFailed:
-		state, err := getUnsuccessfulStateFromHeader(response, body)
-		if err != nil {
-			return nil, err
-		}
 		failure, err := h.client.failureFromResponse(response, body)
 		if err != nil {
 			return nil, err
 		}
-		failureErr := h.client.options.FailureConverter.FailureToError(failure)
-		return nil, &OperationError{
-			State: state,
-			Cause: failureErr,
+		opErr, err := h.client.options.FailureConverter.FailureToError(failure)
+		if err != nil {
+			return nil, err
 		}
+
+		// For compatibility with older servers.
+		if _, ok := opErr.(*OperationError); !ok {
+			state, err := getUnsuccessfulStateFromHeader(response, body)
+			if err != nil {
+				return nil, err
+			}
+			opErr = &OperationError{
+				State: state,
+				Cause: opErr,
+			}
+		}
+
+		return nil, opErr
 	default:
 		return nil, h.client.bestEffortHandlerErrorFromResponse(response, body)
 	}

@@ -180,17 +180,17 @@ func TestFailureCompletion(t *testing.T) {
 
 	ctx, callbackURL, teardown := setupForCompletion(t, &failureExpectingCompletionHandler{
 		errorChecker: func(err error) error {
-			if err.Error() != "expected message" {
-				return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure: %v", err)
+			if opErr, ok := err.(*OperationError); ok && opErr.Message == "expected message" {
+				return nil
 			}
-			return nil
+			return HandlerErrorf(HandlerErrorTypeBadRequest, "invalid failure: %v", err)
 		},
 		expectedStartTime: startTime,
 		expectedCloseTime: closeTime,
 	}, nil, nil)
 	defer teardown()
 
-	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
+	completion, err := NewOperationCompletionUnsuccessful(NewOperationCanceledError("expected message"), OperationCompletionUnsuccessfulOptions{
 		OperationToken: "test-operation-token",
 		StartTime:      startTime,
 		CloseTime:      closeTime,
@@ -233,7 +233,7 @@ func TestFailureCompletion_CustomFailureConverter(t *testing.T) {
 	}, nil, fc)
 	defer teardown()
 
-	completion, err := NewOperationCompletionUnsuccessful(NewCanceledOperationError(errors.New("expected message")), OperationCompletionUnsuccessfulOptions{
+	completion, err := NewOperationCompletionUnsuccessful(NewOperationCanceledError("expected message"), OperationCompletionUnsuccessfulOptions{
 		FailureConverter: fc,
 		OperationToken:   "test-operation-token",
 		StartTime:        startTime,
