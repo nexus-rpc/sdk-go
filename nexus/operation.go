@@ -222,6 +222,16 @@ func (r *ServiceRegistry) Register(services ...*Service) error {
 	return nil
 }
 
+// Register one or more service.
+// Panics if duplicate operations were registered with the same name or when trying to register a service with no name.
+//
+// Can be called multiple times and is not thread safe.
+func (r *ServiceRegistry) MustRegister(services ...*Service) {
+	if err := r.Register(services...); err != nil {
+		panic(err)
+	}
+}
+
 // Use registers one or more middleware to be applied to all operation method invocations across all registered
 // services. Middleware is applied in registration order. If called multiple times, newly registered middleware will be
 // applied after any previously registered ones.
