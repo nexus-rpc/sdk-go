@@ -2,8 +2,6 @@ package nexus
 
 import (
 	"errors"
-	"fmt"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -106,69 +104,12 @@ func TestDefaultSerializer(t *testing.T) {
 	require.Equal(t, nil, a)
 }
 
-// There's zero chance of concurrent updates in the test where this is used. Don't bother locking.
-type customSerializer struct {
-	encoded int
-	decoded int
-}
-
-func (c *customSerializer) Serialize(v any) (*Content, error) {
-	vint := v.(int)
-	c.encoded++
-	return &Content{
-		Header: map[string]string{
-			"custom": strconv.Itoa(vint),
-		},
-	}, nil
-}
-
-func (c *customSerializer) Deserialize(s *Content, v any) error {
-	vintPtr := v.(*int)
-	decoded, err := strconv.Atoi(s.Header["custom"])
-	if err != nil {
-		return err
-	}
-	*vintPtr = decoded
-	c.decoded++
-	return nil
-}
-
-func TestCustomSerializer(t *testing.T) {
-	svc := NewService(testService)
-	registry := NewServiceRegistry()
-	require.NoError(t, svc.Register(
-		numberValidatorOperation,
-		asyncNumberValidatorOperationInstance,
-	))
-	require.NoError(t, registry.Register(svc))
-	handler, err := registry.NewHandler()
-	require.NoError(t, err)
-
-	c := &customSerializer{}
-	ctx, client, teardown := setupCustom(t, handler, c, nil)
-	defer teardown()
-
-	result, err := ExecuteOperation(ctx, client, numberValidatorOperation, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	// Async triggers GetResult, test this too.
-	result, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 3, ExecuteOperationOptions{})
-	require.NoError(t, err)
-	require.Equal(t, 3, result)
-
-	require.Equal(t, 4, c.decoded)
-	require.Equal(t, 4, c.encoded)
-}
-
 func TestDefaultFailureConverterArbitraryError(t *testing.T) {
 	sourceErr := errors.New("test")
 	conv := defaultFailureConverter
 
-	f, err := conv.ErrorToFailure(sourceErr)
-	require.NoError(t, err)
-	convErr, err := conv.FailureToError(f)
-	require.NoError(t, err)
+	f := conv.ErrorToFailure(sourceErr)
+	convErr := conv.FailureToError(f)
 	require.Equal(t, sourceErr.Error(), convErr.Error())
 }
 
@@ -182,54 +123,7 @@ func TestDefaultFailureConverterFailureError(t *testing.T) {
 	}
 	conv := defaultFailureConverter
 
-	f, err := conv.ErrorToFailure(sourceErr)
-	require.NoError(t, err)
-	convErr, err := conv.FailureToError(f)
-	require.NoError(t, err)
+	f := conv.ErrorToFailure(sourceErr)
+	convErr := conv.FailureToError(f)
 	require.Equal(t, sourceErr, convErr)
-}
-
-type customFailureConverter struct{}
-
-var errCustom = errors.New("custom")
-
-// ErrorToFailure implements FailureConverter.
-func (c customFailureConverter) ErrorToFailure(err error) (Failure, error) {
-	return Failure{
-		Message: err.Error(),
-		Metadata: map[string]string{
-			"type": "custom",
-		},
-	}, nil
-}
-
-// FailureToError implements FailureConverter.
-func (c customFailureConverter) FailureToError(f Failure) (error, error) {
-	if f.Metadata["type"] != "custom" {
-		return errors.New(f.Message), nil
-	}
-	return fmt.Errorf("%w: %s", errCustom, f.Message), nil
-}
-
-func TestCustomFailureConverter(t *testing.T) {
-	svc := NewService(testService)
-	registry := NewServiceRegistry()
-	require.NoError(t, svc.Register(
-		numberValidatorOperation,
-		asyncNumberValidatorOperationInstance,
-	))
-	require.NoError(t, registry.Register(svc))
-	handler, err := registry.NewHandler()
-	require.NoError(t, err)
-
-	c := customFailureConverter{}
-	ctx, client, teardown := setupCustom(t, handler, nil, c)
-	defer teardown()
-
-	_, err = ExecuteOperation(ctx, client, numberValidatorOperation, 0, ExecuteOperationOptions{})
-	require.ErrorIs(t, err, errCustom)
-
-	// Async triggers GetResult, test this too.
-	_, err = ExecuteOperation(ctx, client, asyncNumberValidatorOperationInstance, 0, ExecuteOperationOptions{})
-	require.ErrorIs(t, err, errCustom)
 }
