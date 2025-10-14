@@ -79,7 +79,7 @@ func startOperation(
 	options StartOperationOptions,
 ) (HandlerStartOperationResult[any], error) {
 	t.Helper()
-	ctx := WithHandlerContext(t.Context(), HandlerInfo{
+	ctx := WithHandlerContext(context.Background(), HandlerInfo{
 		Service:   svc.Name,
 		Operation: op.Name(),
 		Header:    options.Header,
@@ -96,7 +96,7 @@ func cancelOperation(
 	options CancelOperationOptions,
 ) error {
 	t.Helper()
-	ctx := WithHandlerContext(t.Context(), HandlerInfo{
+	ctx := WithHandlerContext(context.Background(), HandlerInfo{
 		Service:   svc.Name,
 		Operation: op.Name(),
 		Header:    options.Header,
