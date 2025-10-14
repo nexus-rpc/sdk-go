@@ -115,6 +115,11 @@ type HandlerStartOperationResultSync[T any] struct {
 
 func (*HandlerStartOperationResultSync[T]) mustImplementHandlerStartOperationResult() {}
 
+// ValueAsAny returns the generic value out of the result.
+func (r *HandlerStartOperationResultSync[T]) ValueAsAny() any {
+	return r.Value
+}
+
 // HandlerStartOperationResultAsync indicates that an operation has been accepted and will complete asynchronously.
 type HandlerStartOperationResultAsync struct {
 	// OperationID is a unique ID to identify the operation.
