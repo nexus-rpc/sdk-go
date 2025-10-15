@@ -1,6 +1,6 @@
 module github.com/nexus-rpc/sdk-go
 
-go 1.25
+go 1.23
 
 require github.com/stretchr/testify v1.8.4
 
