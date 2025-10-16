@@ -85,10 +85,10 @@ type OperationHandler[I, O any] interface {
 	// canceled.
 	Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error)
 	// Cancel handles requests to cancel an asynchronous operation.
-	// Cancelation in Nexus is:
-	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
-	//  ignored by the underlying operation implemention.
-	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
+	// Cancellation in Nexus is:
+	//  1. asynchronous - returning from this method only ensures that cancellation is delivered, it may later be
+	//  ignored by the underlying operation implementation.
+	//  2. idempotent - implementors should ignore duplicate cancellations for the same operation.
 	Cancel(ctx context.Context, token string, options CancelOperationOptions) error
 
 	mustEmbedUnimplementedOperation()
