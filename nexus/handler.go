@@ -153,7 +153,7 @@ type Handler interface {
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
 	//  ignored by the underlying operation implementation.
-	//  2. idempotent - implementors should ignore duplicate cancelation for the same operation.
+	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
 	CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error
 	// GetOperationResult handles requests to get the result of an asynchronous operation. Return non error result
 	// to respond successfully - inline, or error with [ErrOperationStillRunning] to indicate that an asynchronous
