@@ -18,9 +18,10 @@ type StartOperationOptions struct {
 	//
 	// Implement a [CompletionHandler] and expose it as an HTTP handler to handle async completions.
 	CallbackURL string
-	// CallbackToken is a REQUIRED caller-generated token that uniquely identifies the originating operation.
+	// CallbackToken is a required caller-generated token that uniquely identifies the originating operation.
 	// This token is used for request routing and correlation between callback requests and their originating operations.
-	// Handlers MUST include this token in all callback requests to the caller-provided CallbackURL.
+	// Handlers must Include the CallbackToken in all requests to the caller's CallbackURL via the "token" header.
+
 	CallbackToken string
 	// Optional header fields set by a client that are required to be attached to the callback request when an
 	// asynchronous operation completes.
