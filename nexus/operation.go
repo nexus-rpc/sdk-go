@@ -97,15 +97,15 @@ type OperationHandler[I, O any] interface {
 type syncOperation[I, O any] struct {
 	UnimplementedOperation[I, O]
 
-	Handler func(context.Context, I, StartOperationOptions) (O, error)
+	handler func(context.Context, I, StartOperationOptions) (O, error)
 	name    string
 }
 
 // NewSyncOperation is a helper for creating a synchronous-only [Operation] from a given name and handler function.
-func NewSyncOperation[I, O any](name string, handler func(context.Context, I, StartOperationOptions) (O, error)) Operation[I, O] {
+func NewSyncOperation[I, O any](name string, handler func(ctx context.Context, input I, options StartOperationOptions) (O, error)) Operation[I, O] {
 	return &syncOperation[I, O]{
 		name:    name,
-		Handler: handler,
+		handler: handler,
 	}
 }
 
@@ -116,7 +116,7 @@ func (h *syncOperation[I, O]) Name() string {
 
 // Start implements Operation.
 func (h *syncOperation[I, O]) Start(ctx context.Context, input I, options StartOperationOptions) (HandlerStartOperationResult[O], error) {
-	o, err := h.Handler(ctx, input, options)
+	o, err := h.handler(ctx, input, options)
 	if err != nil {
 		return nil, err
 	}
