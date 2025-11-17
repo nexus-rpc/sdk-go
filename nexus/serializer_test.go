@@ -108,8 +108,10 @@ func TestDefaultFailureConverterArbitraryError(t *testing.T) {
 	sourceErr := errors.New("test")
 	conv := defaultFailureConverter
 
-	f := conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
+	f, err := conv.ErrorToFailure(sourceErr)
+	require.NoError(t, err)
+	convErr, err := conv.FailureToError(f)
+	require.NoError(t, err)
 	require.Equal(t, sourceErr.Error(), convErr.Error())
 }
 
@@ -123,7 +125,9 @@ func TestDefaultFailureConverterFailureError(t *testing.T) {
 	}
 	conv := defaultFailureConverter
 
-	f := conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
+	f, err := conv.ErrorToFailure(sourceErr)
+	require.NoError(t, err)
+	convErr, err := conv.FailureToError(f)
+	require.NoError(t, err)
 	require.Equal(t, sourceErr, convErr)
 }
