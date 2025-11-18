@@ -11,7 +11,7 @@ Go SDK for modelling applications to work with the [Nexus RPC](https://github.co
 Nexus is an RPC protocol for expressing arbitrary duration operations.
 
 A Nexus **caller** calls a **handler**. The handler may respond inline (synchronous response) or return a token
-referencing the ongoing operation (asynchronous response), which the the caller use to cancel the operation. In lieu of
+referencing the ongoing operation (asynchronous response), which the caller may use to cancel the operation. In lieu of
 a higher level service contract, the caller cannot determine whether an operation is going to resolve synchronously or
 asynchronously, and should specify a callback URL, which the handler uses to deliver the result of an asynchronous
 operation when it is ready.
