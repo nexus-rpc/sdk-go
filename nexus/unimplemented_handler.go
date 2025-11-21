@@ -17,16 +17,6 @@ func (h UnimplementedHandler) StartOperation(ctx context.Context, service, opera
 	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
 }
 
-// GetOperationResult implements the Handler interface.
-func (h UnimplementedHandler) GetOperationResult(ctx context.Context, service, operation, token string, options GetOperationResultOptions) (any, error) {
-	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
-}
-
-// GetOperationInfo implements the Handler interface.
-func (h UnimplementedHandler) GetOperationInfo(ctx context.Context, service, operation, token string, options GetOperationInfoOptions) (*OperationInfo, error) {
-	return nil, HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")
-}
-
 // CancelOperation implements the Handler interface.
 func (h UnimplementedHandler) CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error {
 	return HandlerErrorf(HandlerErrorTypeNotImplemented, "not implemented")

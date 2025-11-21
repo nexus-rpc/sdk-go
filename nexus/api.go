@@ -13,12 +13,6 @@ import (
 )
 
 const (
-	// HeaderOperationID is the unique ID returned by the StartOperation response for async operations.
-	// Must be set on callback headers to support completing operations before the start response is received.
-	//
-	// Deprecated: Use HeaderOperationToken instead.
-	HeaderOperationID = "nexus-operation-id"
-
 	// HeaderOperationToken is the unique token returned by the StartOperation response for async operations.
 	// Must be set on callback headers to support completing operations before the start response is received.
 	HeaderOperationToken = "nexus-operation-token"
@@ -64,22 +58,6 @@ type OperationError struct {
 	Cause error
 }
 
-// UnsuccessfulOperationError represents "failed" and "canceled" operation results.
-//
-// Deprecated: Use [OperationError] instead.
-type UnsuccessfulOperationError = OperationError
-
-// NewFailedOperationError is shorthand for constructing an [OperationError] with state set to
-// [OperationStateFailed] and the given err as the cause.
-//
-// Deprecated: Use [NewOperationFailedError] or construct an [OperationError] directly instead.
-func NewFailedOperationError(err error) *OperationError {
-	return &OperationError{
-		State: OperationStateFailed,
-		Cause: err,
-	}
-}
-
 // NewOperationFailedError is shorthand for constructing an [OperationError] with state set to
 // [OperationStateFailed] and the given error message as the cause.
 func NewOperationFailedError(message string) *OperationError {
@@ -95,17 +73,6 @@ func OperationFailedErrorf(format string, args ...any) *OperationError {
 	return &OperationError{
 		State: OperationStateFailed,
 		Cause: fmt.Errorf(format, args...),
-	}
-}
-
-// NewCanceledOperationError is shorthand for constructing an [OperationError] with state set to
-// [OperationStateCanceled] and the given err as the cause.
-//
-// Deprecated: Use [NewOperationCanceledError] or construct an [OperationError] directly instead.
-func NewCanceledOperationError(err error) *OperationError {
-	return &OperationError{
-		State: OperationStateCanceled,
-		Cause: err,
 	}
 }
 
@@ -270,10 +237,6 @@ func (e *HandlerError) Unwrap() error {
 
 // OperationInfo conveys information about an operation.
 type OperationInfo struct {
-	// ID of the operation.
-	//
-	// Deprecated: Use Token instead.
-	ID string `json:"id"`
 	// Token for the operation.
 	Token string `json:"token"`
 	// State of the operation.
