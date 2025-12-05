@@ -175,12 +175,12 @@ func TestHandlerError(t *testing.T) {
 	_, err = startOperation(t, handler, svc, authRejectionHandlerInstance, nil, StartOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 
 	err = cancelOperation(t, handler, svc, asyncNumberValidatorOperationInstance, "token", CancelOperationOptions{})
 	require.ErrorAs(t, err, &handlerError)
 	require.Equal(t, HandlerErrorTypeUnauthorized, handlerError.Type)
-	require.Equal(t, "unauthorized in test", handlerError.Cause.Error())
+	require.Equal(t, "unauthorized in test", handlerError.Message)
 }
 
 func TestInputOutputType(t *testing.T) {
