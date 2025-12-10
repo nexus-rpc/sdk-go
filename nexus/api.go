@@ -142,7 +142,7 @@ const (
 	// Some resource has been exhausted, perhaps a per-user quota, or perhaps the entire file system is out of
 	// space. Subsequent requests by the client are permissible.
 	HandlerErrorTypeResourceExhausted HandlerErrorType = "RESOURCE_EXHAUSTED"
-	// An internal error occured. Subsequent requests by the client are permissible.
+	// An internal error occurred. Subsequent requests by the client are permissible.
 	HandlerErrorTypeInternal HandlerErrorType = "INTERNAL"
 	// The server either does not recognize the request method, or it lacks the ability to fulfill the request.
 	// Clients should not retry this request unless advised otherwise.
@@ -154,7 +154,7 @@ const (
 	HandlerErrorTypeUpstreamTimeout HandlerErrorType = "UPSTREAM_TIMEOUT"
 )
 
-// HandlerErrorRetryBehavior allows handlers to explicity set the retry behavior of a [HandlerError]. If not specified,
+// HandlerErrorRetryBehavior allows handlers to explicitly set the retry behavior of a [HandlerError]. If not specified,
 // retry behavior is determined from the error type. For example [HandlerErrorTypeInternal] is not retryable by default
 // unless specified otherwise.
 type HandlerErrorRetryBehavior int

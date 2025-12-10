@@ -140,7 +140,7 @@ type Handler interface {
 	// CancelOperation handles requests to cancel an asynchronous operation.
 	// Cancelation in Nexus is:
 	//  1. asynchronous - returning from this method only ensures that cancelation is delivered, it may later be
-	//  ignored by the underlying operation implemention.
+	//  ignored by the underlying operation implementation.
 	//  2. idempotent - implementors should ignore duplicate cancelations for the same operation.
 	CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error
 	mustEmbedUnimplementedHandler()
