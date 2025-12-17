@@ -129,9 +129,6 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 				return Failure{}, err
 			}
 			f.Cause = &c
-		} else {
-			// Temporary workaround for compatibility with old servers that don't support handler error messages.
-			typedErr.Cause = fmt.Errorf("%s", typedErr.Message)
 		}
 		return f, nil
 	case *OperationError:
@@ -164,9 +161,6 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 				return Failure{}, err
 			}
 			f.Cause = &c
-		} else {
-			// Temporary workaround for compatibility with old servers that don't support handler error messages.
-			typedErr.Cause = fmt.Errorf("%s", typedErr.Message)
 		}
 		return f, nil
 	default:

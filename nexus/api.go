@@ -4,7 +4,6 @@
 package nexus
 
 import (
-	"errors"
 	"fmt"
 	"mime"
 	"net/url"
@@ -46,7 +45,11 @@ func NewOperationFailedError(message string) *OperationError {
 		State:   OperationStateFailed,
 		Message: message,
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: errors.New(message),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: message,
+			},
+		},
 	}
 }
 
@@ -57,7 +60,11 @@ func OperationFailedErrorf(format string, args ...any) *OperationError {
 		State:   OperationStateFailed,
 		Message: fmt.Sprintf(format, args...),
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: fmt.Errorf(format, args...),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: fmt.Sprintf(format, args...),
+			},
+		},
 	}
 }
 
@@ -68,7 +75,11 @@ func NewOperationCanceledError(message string) *OperationError {
 		State:   OperationStateCanceled,
 		Message: message,
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: errors.New(message),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: message,
+			},
+		},
 	}
 }
 
@@ -79,7 +90,11 @@ func OperationCanceledErrorf(format string, args ...any) *OperationError {
 		State:   OperationStateCanceled,
 		Message: fmt.Sprintf(format, args...),
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: fmt.Errorf(format, args...),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: fmt.Sprintf(format, args...),
+			},
+		},
 	}
 }
 
@@ -89,7 +104,11 @@ func OperationErrorf(state OperationState, format string, args ...any) *Operatio
 		State:   state,
 		Message: fmt.Sprintf(format, args...),
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: fmt.Errorf(format, args...),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: fmt.Sprintf(format, args...),
+			},
+		},
 	}
 }
 
@@ -190,7 +209,11 @@ func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerErr
 		Type:    typ,
 		Message: fmt.Sprintf(format, args...),
 		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: fmt.Errorf(format, args...),
+		Cause: &FailureError{
+			Failure: Failure{
+				Message: fmt.Sprintf(format, args...),
+			},
+		},
 	}
 }
 
