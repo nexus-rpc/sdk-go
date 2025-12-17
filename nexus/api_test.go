@@ -13,16 +13,19 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 
 	type testcase struct {
 		message    string
+		stackTrace string
 		details    any
 		metadata   map[string]string
 		serialized string
 	}
 	cases := []testcase{
 		{
-			message: "simple",
-			details: "details",
+			message:    "simple",
+			stackTrace: "stack",
+			details:    "details",
 			serialized: `{
 	"message": "simple",
+	"stackTrace": "stack",
 	"details": "details"
 }`,
 		},
@@ -55,7 +58,7 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 		t.Run(tc.message, func(t *testing.T) {
 			serializedDetails, err := json.MarshalIndent(tc.details, "", "\t")
 			require.NoError(t, err)
-			source, err := json.MarshalIndent(Failure{tc.message, tc.metadata, serializedDetails}, "", "\t")
+			source, err := json.MarshalIndent(Failure{tc.message, tc.stackTrace, tc.metadata, serializedDetails, nil}, "", "\t")
 			require.NoError(t, err)
 			require.Equal(t, tc.serialized, string(source))
 
@@ -64,6 +67,7 @@ func TestFailure_JSONMarshalling(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tc.message, failure.Message)
+			require.Equal(t, tc.stackTrace, failure.StackTrace)
 			require.Equal(t, tc.metadata, failure.Metadata)
 
 			detailsPointer := reflect.New(reflect.TypeOf(tc.details)).Interface()
