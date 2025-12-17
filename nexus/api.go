@@ -4,6 +4,7 @@
 package nexus
 
 import (
+	"errors"
 	"fmt"
 	"mime"
 	"net/url"
@@ -44,6 +45,8 @@ func NewOperationFailedError(message string) *OperationError {
 	return &OperationError{
 		State:   OperationStateFailed,
 		Message: message,
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: errors.New(message),
 	}
 }
 
@@ -53,6 +56,8 @@ func OperationFailedErrorf(format string, args ...any) *OperationError {
 	return &OperationError{
 		State:   OperationStateFailed,
 		Message: fmt.Sprintf(format, args...),
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: fmt.Errorf(format, args...),
 	}
 }
 
@@ -62,6 +67,8 @@ func NewOperationCanceledError(message string) *OperationError {
 	return &OperationError{
 		State:   OperationStateCanceled,
 		Message: message,
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: errors.New(message),
 	}
 }
 
@@ -71,6 +78,8 @@ func OperationCanceledErrorf(format string, args ...any) *OperationError {
 	return &OperationError{
 		State:   OperationStateCanceled,
 		Message: fmt.Sprintf(format, args...),
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: fmt.Errorf(format, args...),
 	}
 }
 
@@ -79,6 +88,8 @@ func OperationErrorf(state OperationState, format string, args ...any) *Operatio
 	return &OperationError{
 		State:   state,
 		Message: fmt.Sprintf(format, args...),
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: fmt.Errorf(format, args...),
 	}
 }
 
@@ -178,6 +189,8 @@ func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerErr
 	return &HandlerError{
 		Type:    typ,
 		Message: fmt.Sprintf(format, args...),
+		// Also setting Cause as a temporary workaround for compatibility with older servers.
+		Cause: fmt.Errorf(format, args...),
 	}
 }
 

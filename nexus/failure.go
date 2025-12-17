@@ -47,6 +47,8 @@ func (e *FailureError) Unwrap() error {
 // objects maintaining their cause chain.
 // Arbitrary errors are translated to a [Failure] object with its Message set to the Error() string, losing the cause
 // chain.
+//
+// NOTE: Experimental
 type FailureConverter interface {
 	// ErrorToFailure converts an [error] to a [Failure].
 	// Note that the provided error may be nil.
@@ -127,8 +129,10 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 				return Failure{}, err
 			}
 			f.Cause = &c
+		} else {
+			// Temporary workaround for compatibility with old servers that don't support handler error messages.
+			typedErr.Cause = fmt.Errorf("%s", typedErr.Message)
 		}
-
 		return f, nil
 	case *OperationError:
 		if typedErr.OriginalFailure != nil {
@@ -160,6 +164,9 @@ func (e knownErrorFailureConverter) ErrorToFailure(err error) (Failure, error) {
 				return Failure{}, err
 			}
 			f.Cause = &c
+		} else {
+			// Temporary workaround for compatibility with old servers that don't support handler error messages.
+			typedErr.Cause = fmt.Errorf("%s", typedErr.Message)
 		}
 		return f, nil
 	default:
