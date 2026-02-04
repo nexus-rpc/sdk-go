@@ -4,6 +4,7 @@
 package nexus
 
 import (
+	"errors"
 	"fmt"
 	"mime"
 	"net/url"
@@ -44,27 +45,20 @@ func NewOperationFailedError(message string) *OperationError {
 	return &OperationError{
 		State:   OperationStateFailed,
 		Message: message,
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: message,
-			},
-		},
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 
 // OperationFailedErrorf creates an [OperationError] with state set to [OperationStateFailed], using [fmt.Sprintf] to
 // construct the message.
 func OperationFailedErrorf(format string, args ...any) *OperationError {
+	message := fmt.Sprintf(format, args...)
 	return &OperationError{
 		State:   OperationStateFailed,
-		Message: fmt.Sprintf(format, args...),
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: fmt.Sprintf(format, args...),
-			},
-		},
+		Message: message,
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 
@@ -74,41 +68,31 @@ func NewOperationCanceledError(message string) *OperationError {
 	return &OperationError{
 		State:   OperationStateCanceled,
 		Message: message,
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: message,
-			},
-		},
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 
 // OperationCanceledErrorf creates an [OperationError] with state set to [OperationStateCanceled], using [fmt.Sprintf] to
 // construct the message.
 func OperationCanceledErrorf(format string, args ...any) *OperationError {
+	message := fmt.Sprintf(format, args...)
 	return &OperationError{
 		State:   OperationStateCanceled,
-		Message: fmt.Sprintf(format, args...),
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: fmt.Sprintf(format, args...),
-			},
-		},
+		Message: message,
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 
 // OperationErrorf creates an [OperationError] with the given state, using [fmt.Sprintf] to construct the message.
 func OperationErrorf(state OperationState, format string, args ...any) *OperationError {
+	message := fmt.Sprintf(format, args...)
 	return &OperationError{
 		State:   state,
-		Message: fmt.Sprintf(format, args...),
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: fmt.Sprintf(format, args...),
-			},
-		},
+		Message: message,
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 
@@ -205,15 +189,12 @@ type HandlerError struct {
 
 // HandlerErrorf creates a [HandlerError] with the given type, using [fmt.Sprintf] to construct the message.
 func HandlerErrorf(typ HandlerErrorType, format string, args ...any) *HandlerError {
+	message := fmt.Sprintf(format, args...)
 	return &HandlerError{
 		Type:    typ,
-		Message: fmt.Sprintf(format, args...),
-		// Also setting Cause as a temporary workaround for compatibility with older servers.
-		Cause: &FailureError{
-			Failure: Failure{
-				Message: fmt.Sprintf(format, args...),
-			},
-		},
+		Message: message,
+		// Also setting Cause for compatibility with the old implementation.
+		Cause: errors.New(message),
 	}
 }
 

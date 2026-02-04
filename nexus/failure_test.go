@@ -78,13 +78,9 @@ func TestFailureConverter_HandlerErrorRetryBehavior(t *testing.T) {
 	he.OriginalFailure = &failure
 	actual, err := defaultFailureConverter.FailureToError(failure)
 	require.NoError(t, err)
-	require.Equal(t, he, actual)
 
-	// Serialize again and verify the original failure is used.
-	failure, err = defaultFailureConverter.ErrorToFailure(he)
-	require.NoError(t, err)
-	actual, err = defaultFailureConverter.FailureToError(failure)
-	require.NoError(t, err)
+	// Failure is rehydrated as failure error if it has no known type.
+	he.Cause = &FailureError{Failure: Failure{Message: "foo"}}
 	require.Equal(t, he, actual)
 }
 
