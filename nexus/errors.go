@@ -6,7 +6,6 @@ import (
 )
 
 // An error that directly represents a wire representation of [Failure].
-// The SDK will convert to this error by default unless the [FailureConverter] instance is customized.
 type FailureError struct {
 	// The underlying Failure object this error represents.
 	Failure Failure
