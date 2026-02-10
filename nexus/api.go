@@ -11,8 +11,7 @@ import (
 )
 
 // A Failure represents failed handler invocations as well as `failed` or `canceled` operation results. Failures
-// shouldn't typically be constructed directly. The SDK APIs take a [FailureConverter] instance that can translate
-// language errors to and from [Failure] instances.
+// shouldn't typically be constructed directly.
 type Failure struct {
 	// A simple text message.
 	Message string `json:"message,omitempty"`
