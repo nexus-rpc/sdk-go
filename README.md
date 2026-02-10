@@ -93,11 +93,11 @@ Returning an arbitrary error from any of the `Operation` and `OperationHandler` 
 logged and the request responded to with a generic Internal Server Error and Failure message.
 
 To fail a request with a custom status error type and failure message, return a `nexus.HandlerError` as the error.
-The error can either be constructed directly or with the `HandlerErrorf` helper.
+The error can either be constructed directly or with the `NewHandlerErrorf` helper.
 
 ```go
 func (h *myAsyncOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
-	return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "invalid input field: %v", input.Field)
+	return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "invalid input field: %v", input.Field)
 }
 ```
 

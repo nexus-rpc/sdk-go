@@ -153,11 +153,11 @@ func (h *authRejectionHandler) Name() string {
 }
 
 func (h *authRejectionHandler) Start(ctx context.Context, input NoValue, options StartOperationOptions) (HandlerStartOperationResult[NoValue], error) {
-	return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+	return nil, NewHandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
 func (h *authRejectionHandler) Cancel(ctx context.Context, token string, options CancelOperationOptions) error {
-	return HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
+	return NewHandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized in test")
 }
 
 func TestHandlerError(t *testing.T) {
@@ -229,7 +229,7 @@ func newAuthMiddleware(authKey string) MiddlewareFunc {
 	return func(ctx context.Context, next OperationHandler[any, any]) (OperationHandler[any, any], error) {
 		info := ExtractHandlerInfo(ctx)
 		if info.Header.Get("authorization") != authKey {
-			return nil, HandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized")
+			return nil, NewHandlerErrorf(HandlerErrorTypeUnauthorized, "unauthorized")
 		}
 		return next, nil
 	}
