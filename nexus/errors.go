@@ -92,12 +92,9 @@ func NewOperationCanceledError(message string) *OperationError {
 //
 // Deprecated: Use NewOperationCanceledErrorf instead.
 func OperationCanceledErrorf(format string, args ...any) *OperationError {
-	message := fmt.Sprintf(format, args...)
 	return &OperationError{
-		State:   OperationStateCanceled,
-		Message: message,
-		// Also setting Cause for compatibility with the old implementation.
-		Cause: errors.New(message),
+		State: OperationStateCanceled,
+		Cause: fmt.Errorf(format, args...),
 	}
 }
 
