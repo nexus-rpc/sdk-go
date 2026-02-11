@@ -266,11 +266,11 @@ func (r *registryHandler) operationHandler(ctx context.Context) (OperationHandle
 	options := ExtractHandlerInfo(ctx)
 	s, ok := r.services[options.Service]
 	if !ok {
-		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", options.Service)
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", options.Service)
 	}
 	h, ok := s.operations[options.Operation]
 	if !ok {
-		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", options.Operation)
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", options.Operation)
 	}
 
 	var handler OperationHandler[any, any]
@@ -298,11 +298,11 @@ func (r *registryHandler) CancelOperation(ctx context.Context, service, operatio
 func (r *registryHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
 	s, ok := r.services[service]
 	if !ok {
-		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
 	}
 	ro, ok := s.operations[operation]
 	if !ok {
-		return nil, HandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
 	}
 
 	h, err := r.operationHandler(ctx)
@@ -314,7 +314,7 @@ func (r *registryHandler) StartOperation(ctx context.Context, service, operation
 	iptr := reflect.New(inputType).Interface()
 	if err := input.Consume(iptr); err != nil {
 		// TODO: log the error? Do we need to accept a logger for this single line?
-		return nil, HandlerErrorf(HandlerErrorTypeBadRequest, "invalid input")
+		return nil, NewHandlerErrorf(HandlerErrorTypeBadRequest, "invalid input")
 	}
 	return h.Start(ctx, reflect.ValueOf(iptr).Elem().Interface(), options)
 }

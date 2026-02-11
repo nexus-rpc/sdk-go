@@ -1,7 +1,6 @@
 package nexus
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -102,28 +101,4 @@ func TestDefaultSerializer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.Deserialize(c, &a))
 	require.Equal(t, nil, a)
-}
-
-func TestDefaultFailureConverterArbitraryError(t *testing.T) {
-	sourceErr := errors.New("test")
-	conv := defaultFailureConverter
-
-	f := conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
-	require.Equal(t, sourceErr.Error(), convErr.Error())
-}
-
-func TestDefaultFailureConverterFailureError(t *testing.T) {
-	sourceErr := &FailureError{
-		Failure: Failure{
-			Message:  "test",
-			Metadata: map[string]string{"key": "value"},
-			Details:  []byte(`"details"`),
-		},
-	}
-	conv := defaultFailureConverter
-
-	f := conv.ErrorToFailure(sourceErr)
-	convErr := conv.FailureToError(f)
-	require.Equal(t, sourceErr, convErr)
 }

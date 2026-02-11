@@ -93,11 +93,11 @@ Returning an arbitrary error from any of the `Operation` and `OperationHandler` 
 logged and the request responded to with a generic Internal Server Error and Failure message.
 
 To fail a request with a custom status error type and failure message, return a `nexus.HandlerError` as the error.
-The error can either be constructed directly or with the `HandlerErrorf` helper.
+The error can either be constructed directly or with the `NewHandlerErrorf` helper.
 
 ```go
 func (h *myAsyncOperation) Start(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[MyOutput], error) {
-	return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "invalid input field: %v", input.Field)
+	return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "invalid input field: %v", input.Field)
 }
 ```
 
@@ -106,13 +106,13 @@ func (h *myAsyncOperation) Start(ctx context.Context, input MyInput, options nex
 `nexus` exports a `Failure` struct that is used in both the client and handlers to represent both application level
 operation failures and framework level HTTP request errors.
 
-`Failure`s typically contain a single `Message` string but may also convey arbitrary JSONable `Details` and `Metadata`.
+`Failure`s typically contain a single `Message` string but may also convey arbitrary JSONable `Details`, `Metadata`, and
+`StackTrace`.
 
 The `Details` field is encoded and it is up to the library user to encode to and decode from it.
 
 A failure can be either directly attached to `HandlerError` and `OperationError` instances by providing `FailureError`
-as the `Cause`, or indirectly by implementing the `FailureConverter` interface, which can translate arbitrary user
-defined errors to `Failure` instances and back.
+as the `Cause`.
 
 ### Links
 
