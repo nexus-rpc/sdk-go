@@ -183,6 +183,53 @@ func TestHandlerError(t *testing.T) {
 	require.Equal(t, "unauthorized in test", handlerError.Message)
 }
 
+// failingSerializer is a [Serializer] that fails with a non retryable internal [HandlerError].
+type failingSerializer struct{}
+
+var errSerializerFailure = &HandlerError{
+	Type:          HandlerErrorTypeInternal,
+	Message:       "serializer failure in test",
+	RetryBehavior: HandlerErrorRetryBehaviorNonRetryable,
+}
+
+func (failingSerializer) Serialize(any) (*Content, error) {
+	return nil, errSerializerFailure
+}
+
+func (failingSerializer) Deserialize(*Content, any) error {
+	return errSerializerFailure
+}
+
+var _ Serializer = failingSerializer{}
+
+func TestStartOperationSerializerError(t *testing.T) {
+	registry := NewServiceRegistry()
+	svc := NewService("service")
+	require.NoError(t, svc.Register(numberValidatorOperation))
+	require.NoError(t, registry.Register(svc))
+
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	ctx := WithHandlerContext(context.Background(), HandlerInfo{
+		Service:   svc.Name,
+		Operation: numberValidatorOperation.Name(),
+	})
+	input := NewLazyValue(failingSerializer{}, &Reader{
+		ReadCloser: io.NopCloser(bytes.NewReader(nil)),
+	})
+
+	_, err = handler.StartOperation(ctx, svc.Name, numberValidatorOperation.Name(), input, StartOperationOptions{})
+	// The serializer error is propagated as is, the handler does not replace it with an error of its own.
+	require.ErrorIs(t, err, errSerializerFailure)
+	var handlerError *HandlerError
+	require.ErrorAs(t, err, &handlerError)
+	require.Equal(t, HandlerErrorTypeInternal, handlerError.Type)
+	require.Equal(t, HandlerErrorRetryBehaviorNonRetryable, handlerError.RetryBehavior)
+	require.False(t, handlerError.Retryable())
+	require.Equal(t, "serializer failure in test", handlerError.Message)
+}
+
 func TestInputOutputType(t *testing.T) {
 	require.True(t, reflect.TypeOf(3).AssignableTo(numberValidatorOperation.InputType()))
 	require.False(t, reflect.TypeOf("s").AssignableTo(numberValidatorOperation.InputType()))
