@@ -65,8 +65,11 @@ func NewLazyValue(serializer Serializer, reader *Reader) *LazyValue {
 //	err := lazyValue.Consume(&v)
 func (l *LazyValue) Consume(v any) (err error) {
 	defer func() {
-		closeErr := l.Reader.Close()
-		err = errors.Join(err, closeErr)
+		// Only join on failure to close, joining a nil error still wraps err and would hide its concrete type from
+		// callers that type assert on the serializer's error.
+		if closeErr := l.Reader.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 	}()
 	data, err := io.ReadAll(l.Reader)
 	if err != nil {
