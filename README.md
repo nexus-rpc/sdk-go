@@ -78,6 +78,42 @@ var service = nexus.NewService("example-service")
 svc.MustRegister(operation, &myAsyncOperation{})
 ```
 
+### Implementing and registering a dynamic Operation handler
+
+A dynamic Operation handler handles requests whose operation name is not registered with a Service. Named Operations take precedence. A Service can have one dynamic handler, with or without named Operations.
+
+The handler receives the requested operation name through `nexus.ExtractHandlerInfo(ctx).Operation` and raw input as
+`*nexus.LazyValue`. Decode the input with `input.Consume`. Do not use the input after the handler returns. The handler can be sync or async.
+
+```go
+type myDynamicOperation struct {
+	nexus.UnimplementedOperation[*nexus.LazyValue, any]
+}
+
+// Dynamic handler that simply echoes the input back synchronously.
+func (h *myDynamicOperation) Start(ctx context.Context, input *nexus.LazyValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
+	operation := nexus.ExtractHandlerInfo(ctx).Operation
+	var value string
+	if err := input.Consume(&value); err != nil {
+		return nil, err
+	}
+	return &nexus.HandlerStartOperationResultSync[any]{Value: value}, nil
+}
+```
+
+Register the handler with `RegisterDynamicOperation(...)` to your Nexus service. Each service can have maximum 1 dynamic handler. The registration will error if:
+* The handler provided is `nil`
+* A dynamic handler is already registered to this Nexus service
+
+```go
+service := nexus.NewService("example-service")
+if err := service.RegisterDynamicOperation(&myDynamicOperation{}); err != nil {
+	// error handling
+}
+```
+
+Middleware applies to dynamic handlers as it does to named Operations and receives the undecoded `*nexus.LazyValue` on start.
+
 ### Resolve an operation as failed
 
 ```go
