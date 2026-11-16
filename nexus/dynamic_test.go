@@ -43,25 +43,25 @@ func (n *namedCancelOperation) Cancel(context.Context, string, CancelOperationOp
 	return nil
 }
 
-// TestRegisterDynamicOperation checks that invalid registrations leave the first handler registered intact.
-func TestRegisterDynamicOperation(t *testing.T) {
+// TestRegisterDynamic checks that invalid registrations leave the first handler registered intact.
+func TestRegisterDynamic(t *testing.T) {
 	service := NewService("tools")
 	handler := &dynamicEcho{}
 	t.Run("nil handler registration fails", func(t *testing.T) {
-		require.EqualError(t, service.RegisterDynamicOperation(nil), "dynamic operation handler must not be nil")
+		require.EqualError(t, service.RegisterDynamic(nil), "dynamic operation handler must not be nil")
 	})
 
 	t.Run("second registration fails", func(t *testing.T) {
-		require.NoError(t, service.RegisterDynamicOperation(handler))
-		require.EqualError(t, service.RegisterDynamicOperation(handler), "dynamic operation handler already registered")
+		require.NoError(t, service.RegisterDynamic(handler))
+		require.EqualError(t, service.RegisterDynamic(handler), "dynamic operation handler already registered")
 		// Check that the first handler is still registered.
-		require.Equal(t, handler, service.DynamicOperation())
+		require.Equal(t, handler, service.dynamicHandler)
 	})
 
 	t.Run("cannot overwrite with nil", func(t *testing.T) {
-		require.EqualError(t, service.RegisterDynamicOperation(nil), "dynamic operation handler must not be nil")
+		require.EqualError(t, service.RegisterDynamic(nil), "dynamic operation handler must not be nil")
 		// Check that the first handler is still registered.
-		require.Equal(t, handler, service.DynamicOperation())
+		require.Equal(t, handler, service.dynamicHandler)
 	})
 }
 
@@ -89,7 +89,7 @@ func TestDynamicOperationRouting(t *testing.T) {
 				service := NewService("tools")
 				dynamic, named := &dynamicEcho{}, &namedCancelOperation{}
 				if tc.serviceHasDynamicHandler {
-					require.NoError(t, service.RegisterDynamicOperation(dynamic))
+					require.NoError(t, service.RegisterDynamic(dynamic))
 				}
 				service.MustRegister(named)
 				registry := NewServiceRegistry()
@@ -130,7 +130,11 @@ func TestDynamicOperationRouting(t *testing.T) {
 					require.Zero(t, named.cancelled.Load())
 					require.Zero(t, dynamic.cancelled.Load())
 				}
-				require.Nil(t, service.Operation("echo"))
+				if tc.serviceHasDynamicHandler {
+					require.NotNil(t, service.Operation("echo"))
+				} else {
+					require.Nil(t, service.Operation("echo"))
+				}
 			})
 		}
 	}
@@ -139,7 +143,7 @@ func TestDynamicOperationRouting(t *testing.T) {
 // TestConcurrentDynamicOperationDispatch checks that concurrent requests keep their operation names and inputs separate.
 func TestConcurrentDynamicOperationDispatch(t *testing.T) {
 	service := NewService("tools")
-	require.NoError(t, service.RegisterDynamicOperation(&dynamicEcho{}))
+	require.NoError(t, service.RegisterDynamic(&dynamicEcho{}))
 	registry := NewServiceRegistry()
 	registry.MustRegister(service)
 	handler, err := registry.NewHandler()
@@ -188,7 +192,7 @@ func TestDynamicServiceValidation(t *testing.T) {
 				service.MustRegister(&namedCancelOperation{})
 			}
 			if tc.dynamic {
-				require.NoError(t, service.RegisterDynamicOperation(&dynamicEcho{}))
+				require.NoError(t, service.RegisterDynamic(&dynamicEcho{}))
 			}
 			registry := NewServiceRegistry()
 			registry.MustRegister(service)
@@ -217,7 +221,7 @@ func (*dynamicSync) Start(ctx context.Context, input *LazyValue, _ StartOperatio
 // TestDynamicOperationSyncResult checks that the fallback can complete synchronously after decoding raw input.
 func TestDynamicOperationSyncResult(t *testing.T) {
 	service := NewService("tools")
-	require.NoError(t, service.RegisterDynamicOperation(&dynamicSync{}))
+	require.NoError(t, service.RegisterDynamic(&dynamicSync{}))
 	registry := NewServiceRegistry()
 	registry.MustRegister(service)
 	handler, err := registry.NewHandler()
@@ -265,7 +269,7 @@ func TestNamedOperationNotFoundDoesNotUseFallback(t *testing.T) {
 			service := NewService("tools")
 			dynamic := &dynamicEcho{}
 			service.MustRegister(&namedNotFound{})
-			require.NoError(t, service.RegisterDynamicOperation(dynamic))
+			require.NoError(t, service.RegisterDynamic(dynamic))
 			registry := NewServiceRegistry()
 			registry.MustRegister(service)
 			handler, err := registry.NewHandler()
@@ -292,7 +296,7 @@ func TestDynamicOperationNotFoundIsFinal(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			service := NewService("tools")
 			dynamic := &dynamicNotFound{}
-			require.NoError(t, service.RegisterDynamicOperation(dynamic))
+			require.NoError(t, service.RegisterDynamic(dynamic))
 			registry := NewServiceRegistry()
 			registry.MustRegister(service)
 			handler, err := registry.NewHandler()
@@ -316,7 +320,7 @@ func TestDynamicOperationNotFoundIsFinal(t *testing.T) {
 func TestDynamicOperationMiddleware(t *testing.T) {
 	service := NewService("tools")
 	dynamic := &dynamicEcho{}
-	require.NoError(t, service.RegisterDynamicOperation(dynamic))
+	require.NoError(t, service.RegisterDynamic(dynamic))
 	registry := NewServiceRegistry()
 	registry.MustRegister(service)
 	var logs []string

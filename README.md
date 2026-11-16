@@ -101,13 +101,13 @@ func (h *myDynamicOperation) Start(ctx context.Context, input *nexus.LazyValue, 
 }
 ```
 
-Register the handler with `RegisterDynamicOperation(...)` to your Nexus service. Each service can have maximum 1 dynamic handler. The registration will error if:
+Register the handler with `RegisterDynamic(...)` to your Nexus service. Each service can have maximum 1 dynamic handler. The registration will error if:
 * The handler provided is `nil`
 * A dynamic handler is already registered to this Nexus service
 
 ```go
 service := nexus.NewService("example-service")
-if err := service.RegisterDynamicOperation(&myDynamicOperation{}); err != nil {
+if err := service.RegisterDynamic(&myDynamicOperation{}); err != nil {
 	// error handling
 }
 ```

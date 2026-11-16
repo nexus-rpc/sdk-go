@@ -174,20 +174,32 @@ func (s *Service) MustRegister(operations ...RegisterableOperation) {
 	}
 }
 
-// Operation returns an operation by name or nil if not found.
+// Operation returns an operation by name, falling back to the dynamic handler if registered.
+// The fallback dynamicOperation will be instantiated with the requested name and accepts a
+// *[LazyValue] as input.
+// Returns nil if no matching operation or dynamic handler is registered.
 func (s *Service) Operation(name string) RegisterableOperation {
-	return s.operations[name]
+	if op := s.operations[name]; op != nil {
+		return op
+	}
+	if s.dynamicHandler != nil {
+		return &dynamicOperation{
+			OperationHandler:   s.dynamicHandler,
+			operationReference: operationReference[*LazyValue, any](name),
+		}
+	}
+	return nil
 }
 
-// RegisterDynamicOperation registers a single OperationHandler that can be used to handle
+// RegisterDynamic registers a single OperationHandler that can be used to handle
 // operations not in the s.operations map.
 //
 // At runtime, any operation that comes to this service will be handled by the dynamicHandler
 // registered here if it's not present in the s.operations map.
 //
-// RegisterDynamicOperation can only be called once with a non-nil OperationHandler provided
+// RegisterDynamic can only be called once with a non-nil OperationHandler provided
 // and is not thread safe.
-func (s *Service) RegisterDynamicOperation(handler OperationHandler[*LazyValue, any]) error {
+func (s *Service) RegisterDynamic(handler OperationHandler[*LazyValue, any]) error {
 	if handler == nil {
 		return errors.New("dynamic operation handler must not be nil")
 	}
@@ -198,16 +210,12 @@ func (s *Service) RegisterDynamicOperation(handler OperationHandler[*LazyValue, 
 	return nil
 }
 
-// DynamicOperation returns the fallback handler, or nil if none is registered.
-func (s *Service) DynamicOperation() OperationHandler[*LazyValue, any] {
-	return s.dynamicHandler
-}
-
-func (s *Service) resolve(name string) (RegisterableOperation, OperationHandler[*LazyValue, any]) {
-	if op := s.operations[name]; op != nil {
-		return op, nil
-	}
-	return nil, s.dynamicHandler
+// dynamicOperation represents a fallback operation registered with [Service.RegisterDynamic].
+// It also contains an operationReference, which we will instantiate with the requested
+// operation name at runtime (via Service.Operation(name) function).
+type dynamicOperation struct {
+	OperationHandler[*LazyValue, any]
+	operationReference[*LazyValue, any]
 }
 
 // MiddlewareFunc is a function which receives an OperationHandler and returns another OperationHandler.
@@ -306,31 +314,25 @@ func (r *registryHandler) wrapHandler(ctx context.Context, handler OperationHand
 	return handler, nil
 }
 
-func (r *registryHandler) resolve(service, operation string) (RegisterableOperation, OperationHandler[*LazyValue, any], error) {
+func (r *registryHandler) resolve(service, operation string) (RegisterableOperation, error) {
 	s := r.services[service]
 	if s == nil {
-		return nil, nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "service %q not found", service)
 	}
-	op, dynamic := s.resolve(operation)
-	return op, dynamic, nil
+	op := s.Operation(operation)
+	if op == nil {
+		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
+	}
+	return op, nil
 }
 
 // CancelOperation implements Handler.
 func (r *registryHandler) CancelOperation(ctx context.Context, service, operation, token string, options CancelOperationOptions) error {
-	op, dynamic, err := r.resolve(service, operation)
+	op, err := r.resolve(service, operation)
 	if err != nil {
 		return err
 	}
-	var handler OperationHandler[any, any]
-	switch {
-	case op != nil:
-		handler = &rootOperationHandler{h: op}
-	case dynamic != nil:
-		handler = &dynamicOperationHandler{handler: dynamic}
-	default:
-		return NewHandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
-	}
-	handler, err = r.wrapHandler(ctx, handler)
+	handler, err := r.wrapHandler(ctx, &rootOperationHandler{h: op})
 	if err != nil {
 		return err
 	}
@@ -339,25 +341,16 @@ func (r *registryHandler) CancelOperation(ctx context.Context, service, operatio
 
 // StartOperation implements Handler.
 func (r *registryHandler) StartOperation(ctx context.Context, service, operation string, input *LazyValue, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	op, dynamic, err := r.resolve(service, operation)
+	op, err := r.resolve(service, operation)
 	if err != nil {
 		return nil, err
 	}
-	var handler OperationHandler[any, any]
 	var value any
-	switch {
-	case op != nil:
-		handler = &rootOperationHandler{h: op}
-	case dynamic != nil:
-		handler = &dynamicOperationHandler{handler: dynamic}
-	default:
-		return nil, NewHandlerErrorf(HandlerErrorTypeNotFound, "operation %q not found", operation)
-	}
-	handler, err = r.wrapHandler(ctx, handler)
+	handler, err := r.wrapHandler(ctx, &rootOperationHandler{h: op})
 	if err != nil {
 		return nil, err
 	}
-	if dynamic != nil {
+	if _, ok := op.(*dynamicOperation); ok {
 		value = input
 	} else {
 		m, _ := reflect.TypeOf(op).MethodByName("Start")
@@ -368,19 +361,6 @@ func (r *registryHandler) StartOperation(ctx context.Context, service, operation
 		value = reflect.ValueOf(iptr).Elem().Interface()
 	}
 	return handler.Start(ctx, value, options)
-}
-
-type dynamicOperationHandler struct {
-	UnimplementedOperation[any, any]
-	handler OperationHandler[*LazyValue, any]
-}
-
-func (h *dynamicOperationHandler) Start(ctx context.Context, input any, options StartOperationOptions) (HandlerStartOperationResult[any], error) {
-	return h.handler.Start(ctx, input.(*LazyValue), options)
-}
-
-func (h *dynamicOperationHandler) Cancel(ctx context.Context, token string, options CancelOperationOptions) error {
-	return h.handler.Cancel(ctx, token, options)
 }
 
 type rootOperationHandler struct {
