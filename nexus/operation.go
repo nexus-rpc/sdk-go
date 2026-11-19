@@ -199,6 +199,8 @@ func (s *Service) Operation(name string) RegisterableOperation {
 //
 // RegisterDynamic can only be called once with a non-nil OperationHandler provided
 // and is not thread safe.
+//
+// NOTE: Experimental
 func (s *Service) RegisterDynamic(handler OperationHandler[*LazyValue, any]) error {
 	if handler == nil {
 		return errors.New("dynamic operation handler must not be nil")
